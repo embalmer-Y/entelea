@@ -1,0 +1,19 @@
+/*
+ * 板级八：estop DT 绑定（DR-11）。xiao_esp32s3 板载唯一按键 = BOOT（GPIO9，
+ * 按下接地/悬空上拉）→ gpio-keys 子节点。
+ * 绑定机制 = aliases（板级八实证：v4.4 EDT 管道不发射非 zephyr 前缀 chosen
+ * 宏——dtlib 属性在、edtlib 弃；aliases 无命名空间过滤，模块已同步切换）。
+ * 触发沿 = 上升沿（松开触发；沿配置 prov 化 = LLD DR-11 既有占位，M2+ 兑现）。
+ */
+/ {
+	estop_keys: estop-keys {
+		compatible = "gpio-keys";
+		estop_key: estop-button {
+			gpios = <&gpio0 9 GPIO_ACTIVE_HIGH>;
+		};
+	};
+
+	aliases {
+		ts-estop-gpio = &estop_key;
+	};
+};

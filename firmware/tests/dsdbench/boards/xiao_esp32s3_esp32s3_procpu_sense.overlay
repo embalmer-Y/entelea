@@ -1,0 +1,46 @@
+/*
+ * dsdbench（MD1.2f）：ts-store flash 五分区（wdtbench 同款）+ esp32s3 硬件
+ * 看门狗（DEC-48）。SD 槽 = Sense 板 DT 自带（spi2），无需追加。
+ */
+
+&wdt0 {
+	status = "okay";
+};
+
+/ {
+	chosen {
+		zephyr,watchdog = &wdt0;
+	};
+};
+
+/delete-node/ &slot1_partition;
+
+&flash0 {
+	partitions {
+		ts_prov_part: partition@170000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-prov";
+			reg = <0x170000 0x1000>;
+		};
+		ts_meta_part: partition@171000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-meta";
+			reg = <0x171000 0x2000>;
+		};
+		ts_slot_a_part: partition@173000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-a";
+			reg = <0x173000 0x8000>;
+		};
+		ts_slot_b_part: partition@17b000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-b";
+			reg = <0x17b000 0x8000>;
+		};
+		ts_noinit_part: partition@183000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-noinit";
+			reg = <0x183000 0x1000>;
+		};
+	};
+};

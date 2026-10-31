@@ -1,0 +1,6 @@
+board:
+  name: esp32p4c5_core_board
+  full_name: Osptek ESP32-P4C5 Core Board
+  vendor: osptek
+  socs:
+  - name: esp32p4

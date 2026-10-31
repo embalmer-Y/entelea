@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+# zenohd TLS 路由器 systemd 用户单元（R4 · DEC-64③——持久化：随用户会话存活，
+# 不随开发会话/终端消亡；失败自动重启）。
+#
+# 安装（本机，凭据路径 = dev-environment 惯例）：
+#   mkdir -p ~/.config/systemd/user
+#   cp tools/board/zenohd-tls.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now zenohd-tls
+#   # 常驻（owner 未登录也活）：sudo loginctl enable-linger $USER
+#
+# 新机前置：tools/board/gen_tls_certs.sh ~/project/tls <本机IP> 签发后启用。
+# 端口：tls/9956（mTLS，板侧 prov 指向）+ tcp/9957（明文，Agent/驱动侧）。
+# 引号语义：zenohd --cfg 值须为 JSON 字符串（字面引号）——systemd 以 \" 转义
+# 保留（未引号路径实测被 zenohd 拒收，2026-10-17）。
+
+[Unit]
+Description=Tessera zenohd router (TLS 9956 mTLS + plain 9957)
+After=network-online.target
+
+[Service]
+ExecStart=%h/project/tools/zenoh-1.10.1/zenohd --listen tls/0.0.0.0:9956 --listen tcp/0.0.0.0:9957 --no-multicast-scouting --cfg=scouting/gossip/enabled:false --cfg=transport/link/tls/enable_mtls:true --cfg=transport/link/tls/listen_private_key:\"%h/project/tls/router.key\" --cfg=transport/link/tls/listen_certificate:\"%h/project/tls/router.crt\" --cfg=transport/link/tls/root_ca_certificate:\"%h/project/tls/ca.crt\"
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

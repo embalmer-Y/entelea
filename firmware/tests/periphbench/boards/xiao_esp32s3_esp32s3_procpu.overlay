@@ -1,0 +1,44 @@
+/*
+ * 板级九：PWM（LEDC）/ADC DT 绑定（xiao_esp32s3）。
+ * - PWM：LEDC_CH0 → GPIO21（板载蓝色 LED，低有效——亮度与 duty 反相，
+ *   寄存器判据不受极性影响）；引脚路由经 ledc0 pinctrl（LEDC 绑定要求），
+ *   通道 0 / timer 0。zephyr,user：pwm-uid = 逻辑名匹配 + pwms 规格。
+ * - ADC：ADC1 通道 1 = GPIO2（D1；板 pinctrl 无占用——twai 占 GPIO3/4、
+ *   spim2 占 7/8/9、i2c0 占 5/6，GPIO2 空闲）。zephyr,user：adc-uid +
+ *   io-channels（ADC_DT_SPEC_GET 官方文档示例即为 zephyr,user 模式）。
+ */
+#include <zephyr/dt-bindings/pinctrl/esp32s3-pinctrl.h>
+
+&pinctrl {
+	pb_ledc0: pb_ledc0 {
+		group1 {
+			pinmux = <LEDC_CH0_GPIO21>;
+			output-enable;
+		};
+	};
+};
+
+&ledc0 {
+	status = "okay";
+	pinctrl-0 = <&pb_ledc0>;
+	pinctrl-names = "default";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	channel0@0 {
+		reg = <0x0>;
+		timer = <0>;
+	};
+};
+
+&adc0 {
+	status = "okay";
+};
+
+/ {
+	zephyr,user {
+		pwm-uid = "pb-pwm";
+		pwms = <&ledc0 0 1000000 0>;
+		adc-uid = "pb-adc";
+		io-channels = <&adc0 1>;
+	};
+};

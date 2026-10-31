@@ -1,0 +1,16 @@
+tests:
+  framework.store:
+    tags: framework
+    integration_platforms:
+      - native_sim
+    platform_allow:
+      - native_sim
+      - native_sim/native/64
+  framework.store.flash:
+    tags: framework
+    integration_platforms:
+      - native_sim
+    platform_allow:
+      - native_sim
+      - native_sim/native/64
+    extra_args: DTC_OVERLAY_FILE=flash.overlay EXTRA_CONF_FILE=flash.conf

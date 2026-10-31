@@ -1,0 +1,9 @@
+tests:
+  framework.wamr:
+    tags: framework
+    integration_platforms:
+      - native_sim
+    # WAMR 接入批仅在 native_sim（源根经 TS_WAMR_DIR 注入；板级目标随移植批映射）。
+    platform_allow:
+      - native_sim
+      - native_sim/native/64

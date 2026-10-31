@@ -1,0 +1,10 @@
+/*
+ * P4 联网批 E1（板级 overlay）：console 重指 uart0（CH343 COM 口——
+ * esptool 下载模式同口，教训 31③ 单线判据纪律；板默认 usb_serial 需另接线）。
+ */
+/ {
+	chosen {
+		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+	};
+};

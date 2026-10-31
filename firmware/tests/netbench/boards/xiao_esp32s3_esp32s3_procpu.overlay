@@ -1,0 +1,4 @@
+/* netbench：使能 SoC dtsi 中默认 disabled 的 wifi 节点（板上天线）。 */
+&wifi {
+	status = "okay";
+};

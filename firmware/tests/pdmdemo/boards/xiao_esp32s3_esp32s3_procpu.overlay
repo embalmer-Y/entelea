@@ -1,0 +1,58 @@
+/*
+ * pdmdemo（V2 纵深 M18）：基础板目标（无摄像头依赖——PDM 引脚走
+ * zephyr,user specs，矩阵路由在驱动）+ WiFi + ts-store flash 五分区
+ * + esp32s3 硬件看门狗（DEC-48）。avdemo/deploybench 同族。
+ */
+
+&wifi {
+	status = "okay";
+};
+
+&wdt0 {
+	status = "okay";
+};
+
+/ {
+	chosen {
+		zephyr,watchdog = &wdt0;
+	};
+
+	zephyr,user {
+		/* Sense 板载 MP34DT05（引脚双源核验 2026-10-13）：
+		 * GPIO41 = PDM DATA 入、GPIO42 = PDM CLK 出。 */
+		pdm-data-gpios = <&gpio0 41 0>;
+		pdm-clk-gpios = <&gpio0 42 0>;
+	};
+};
+
+/delete-node/ &slot1_partition;
+
+&flash0 {
+	partitions {
+		ts_prov_part: partition@170000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-prov";
+			reg = <0x170000 0x1000>;
+		};
+		ts_meta_part: partition@171000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-meta";
+			reg = <0x171000 0x2000>;
+		};
+		ts_slot_a_part: partition@173000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-a";
+			reg = <0x173000 0x4000>;
+		};
+		ts_slot_b_part: partition@177000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-b";
+			reg = <0x177000 0x4000>;
+		};
+		ts_noinit_part: partition@17b000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-noinit";
+			reg = <0x17b000 0x1000>;
+		};
+	};
+};

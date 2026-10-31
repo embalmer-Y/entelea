@@ -1,0 +1,46 @@
+/*
+ * V2-2（DEC-52①）：metabench 同款 ts 五分区 + ts-audit 8KB（两页乒乓）
+ * 借 fw-b 预留头部（fw-b 未接线 V1——缩至 0x186000 起，esptool 偏移零变化）。
+ */
+/delete-node/ &slot1_partition;
+
+&flash0 {
+	partitions {
+		ts_prov_part: partition@170000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-prov";
+			reg = <0x170000 0x1000>;
+		};
+		ts_meta_part: partition@171000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-meta";
+			reg = <0x171000 0x2000>;
+		};
+		ts_slot_a_part: partition@173000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-a";
+			reg = <0x173000 0x8000>;
+		};
+		ts_slot_b_part: partition@17b000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-b";
+			reg = <0x17b000 0x8000>;
+		};
+		ts_noinit_part: partition@183000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-noinit";
+			reg = <0x183000 0x1000>;
+		};
+		/* DEC-52①：审计 flash 环 8KB（两页 × 4KB × 64 槽 × 64B） */
+		ts_audit_part: partition@184000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-audit";
+			reg = <0x184000 0x2000>;
+		};
+		/* fw-b：预留缩至 0x186000 起（原 0x184000——audit 借头部 8KB） */
+		fw_b_part: partition@186000 {
+			label = "fw-b";
+			reg = <0x186000 0x13a000>;
+		};
+	};
+};

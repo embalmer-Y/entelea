@@ -1,0 +1,9 @@
+tests:
+  framework.app:
+    tags: framework
+    integration_platforms:
+      - native_sim
+    # APP 运行时宿主端到端（WAMR 源根经 TS_WAMR_DIR 注入）。
+    platform_allow:
+      - native_sim
+      - native_sim/native/64

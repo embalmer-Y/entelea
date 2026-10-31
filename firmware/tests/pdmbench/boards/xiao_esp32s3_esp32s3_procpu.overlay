@@ -1,0 +1,8 @@
+/* pdmbench：PDM 引脚（Sense 板载 MP34DT05；双源核验 2026-10-13）：
+ * GPIO41 = DATA 入、GPIO42 = CLK 出（zephyr,user specs；矩阵路由在驱动）。 */
+/ {
+	zephyr,user {
+		pdm-data-gpios = <&gpio0 41 0>;
+		pdm-clk-gpios = <&gpio0 42 0>;
+	};
+};

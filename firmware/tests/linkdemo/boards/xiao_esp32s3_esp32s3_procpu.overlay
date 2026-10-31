@@ -1,0 +1,82 @@
+/*
+ * inputdemo（单元 F：D4/D6 输入 demo）：ts-store flash 五分区（deploybench
+ * 同款）+ esp32s3 硬件看门狗（DEC-48）+ ADC/PWM 真后端绑定（板级九模式：
+ * ADC1 通道 1 = GPIO2 悬空拾噪 = 真值变化源；确定性轨到轨注入 = owner
+ * 物理操作〔0V/3.3V，板级九 PB6 同型〕）。
+ */
+
+&wdt0 {
+	status = "okay";
+};
+
+/ {
+	chosen {
+		zephyr,watchdog = &wdt0;
+	};
+};
+
+&pinctrl {
+	id_ledc0: id_ledc0 {
+		group1 {
+			pinmux = <LEDC_CH0_GPIO21>;
+			output-enable;
+		};
+	};
+};
+
+&ledc0 {
+	status = "okay";
+	pinctrl-0 = <&id_ledc0>;
+	pinctrl-names = "default";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	channel0@0 {
+		reg = <0x0>;
+		timer = <0>;
+	};
+};
+
+&adc0 {
+	status = "okay";
+};
+
+/delete-node/ &slot1_partition;
+
+&flash0 {
+	partitions {
+		ts_prov_part: partition@170000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-prov";
+			reg = <0x170000 0x1000>;
+		};
+		ts_meta_part: partition@171000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-meta";
+			reg = <0x171000 0x2000>;
+		};
+		ts_slot_a_part: partition@173000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-a";
+			reg = <0x173000 0x4000>;
+		};
+		ts_slot_b_part: partition@177000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-b";
+			reg = <0x177000 0x4000>;
+		};
+		ts_noinit_part: partition@17b000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-noinit";
+			reg = <0x17b000 0x1000>;
+		};
+	};
+};
+
+/ {
+	zephyr,user {
+		pwm-uid = "dbpwm";
+		pwms = <&ledc0 0 1000000 0>;
+		adc-uid = "dbadc";
+		io-channels = <&adc0 1>;
+	};
+};

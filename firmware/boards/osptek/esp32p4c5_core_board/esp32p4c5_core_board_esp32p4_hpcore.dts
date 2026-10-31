@@ -1,0 +1,193 @@
+/*
+ * Copyright (c) 2026 Tessera Project
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Osptek ESP32-P4C5 Core Board (HP core) — ESP32-P4 + ESP32-C5 companion.
+ * Adapted from in-tree waveshare/esp32p4_wifi6_dev_kit (same P4 SoC family).
+ * Board facts (osptek docs + esptool probe 2026-10-30): 16MB NOR flash,
+ * 32MB embedded PSRAM, CH343 USB-UART bridge on UART0 (GPIO37/38),
+ * ESP32-P4 rev v3.2. No on-board LED/buttons (88-pin stamp core board).
+ * C5 companion wiring (c5-p4-connection.png, row-aligned + esp-hosted
+ * slot convention cross-check with waveshare C6 board): SDIO pads
+ * P4 GPIO14/15/16/17/18/19 = D0/D1/D2/D3/CLK/CMD, reset P4 GPIO54 ->
+ * C5 CHIP_PU (= &gpio1 22 in the gpio1 controller 32-base numbering,
+ * same companion-reset convention as the waveshare C6 reference),
+ * handshake P4 GPIO6 <-> C5 GPIO2 (not modeled by the current
+ * esp_hosted_mcu binding). Enabled: C5 runs an esp-hosted 3.x slave
+ * firmware (owner-confirmed 2026-10-30) matching the driver contract.
+ * Bring-up 2026-10-30: RPC handshake PASS (coprocessor firmware
+ * v3.0.10 reported over SDIO); wifi scan data plane FAILS at the
+ * slave (mgmt-level "Scan request failed", no driver-side error) —
+ * open item, candidate causes: slave-side scan preconditions,
+ * regulatory domain, unmodeled handshake IO; needs C5 UART logs
+ * (pins 4/5, not wired to CH343) or a C6-board A/B comparison.
+ */
+
+/dts-v1/;
+
+#include <espressif/esp32p4/esp32p4_rev3.dtsi>
+#include "esp32p4c5_core_board_esp32p4_hpcore-pinctrl.dtsi"
+#include <espressif/partitions_0x2000_default_16M.dtsi>
+
+/ {
+	model = "Osptek ESP32-P4C5 Core Board HP Core";
+	compatible = "osptek,esp32p4c5-core-board";
+
+	chosen {
+		zephyr,sram = &sramhp;
+		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+		zephyr,flash = &flash0;
+		zephyr,code-partition = &slot0_partition;
+		zephyr,bt-hci = &esp_hosted_mcu_hci;
+	};
+
+	aliases {
+		watchdog0 = &wdt0;
+	};
+};
+
+&flash0 {
+	reg = <0x0 DT_SIZE_M(16)>;
+	ranges = <0x0 0x0 DT_SIZE_M(16)>;
+};
+
+&psram0 {
+	size = <DT_SIZE_M(32)>;
+};
+
+/* v3.x silicon: valid CPU frequencies are 100/200/400 MHz */
+&cpu0 {
+	clock-frequency = <DT_FREQ_M(400)>;
+};
+
+&cpu1 {
+	clock-frequency = <DT_FREQ_M(400)>;
+};
+
+&uart0 {
+	status = "okay";
+	current-speed = <115200>;
+	pinctrl-0 = <&uart0_default>;
+	pinctrl-names = "default";
+};
+
+&i2c0 {
+	status = "okay";
+	clock-frequency = <I2C_BITRATE_STANDARD>;
+	pinctrl-0 = <&i2c0_default>;
+	pinctrl-names = "default";
+	/* Dev-board ES8311 codec on this bus (expect 0x18) — I2S0 pad map
+	 * pending vendor confirmation (schematic text layer has the I2S0_*
+	 * nets but not their GPIO mapping). */
+};
+
+&trng0 {
+	status = "okay";
+};
+
+&coretemp {
+	status = "okay";
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&gpio1 {
+	status = "okay";
+};
+
+&wdt0 {
+	status = "okay";
+};
+
+&dma {
+	status = "okay";
+};
+
+&dma_axi {
+	status = "okay";
+};
+
+&sdhc {
+	sdhc0: sdhc@0 {
+		status = "okay";
+		/* Dev-board TF slot (schematic text layer): CLK=GPIO44,
+		 * CMD=GPIO43, D3..D0=GPIO42..39. SD_DET net exists but its P4
+		 * GPIO is unmapped in the text layer — polled detection. */
+		bus-width = <4>;
+		max-bus-freq = <DT_FREQ_M(40)>;
+		clk-pin = <44>;
+		cmd-pin = <43>;
+		d0-pin = <39>;
+		d1-pin = <40>;
+		d2-pin = <41>;
+		d3-pin = <42>;
+
+		mmc {
+			compatible = "zephyr,sdmmc-disk";
+			disk-name = "SD";
+			status = "okay";
+		};
+	};
+
+	sdhc1: sdhc@1 {
+		status = "okay";
+		/* ESP32-C5 companion (c5-p4-connection.png): C5 slave firmware
+		 * = esp-hosted 3.x (owner-confirmed 2026-10-30, matches the
+		 * driver's major-3 contract).
+		 * Handshake IO: P4 GPIO6 <-> C5 GPIO2 (not modeled by the
+		 * current esp_hosted_mcu binding). */
+		bus-width = <4>;
+		max-bus-freq = <DT_FREQ_M(40)>;
+		clk-pin = <18>;
+		cmd-pin = <19>;
+		d0-pin = <14>;
+		d1-pin = <15>;
+		d2-pin = <16>;
+		d3-pin = <17>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		esp_hosted_mcu: esp-hosted-mcu@0 {
+			compatible = "espressif,esp-hosted-mcu";
+			reg = <0>;
+			reset-gpios = <&gpio1 22 GPIO_ACTIVE_HIGH>;
+			status = "okay";
+
+			esp_hosted_mcu_wifi: wifi {
+				compatible = "espressif,esp-hosted-mcu-wifi";
+				status = "okay";
+			};
+
+			esp_hosted_mcu_hci: bt-hci {
+				compatible = "espressif,esp-hosted-mcu-bt-hci";
+				status = "okay";
+			};
+		};
+	};
+};
+
+&usb_serial {
+	status = "disabled";
+};
+
+&i2s0 {
+	/* Audio face (schematic PDF hi-res render per-pin read, 2026-10-30
+	 * final): MCLK=GPIO13, BCLK(SCLK)=GPIO12, WS(LRCK)=GPIO10,
+	 * DO(DSDIN, P4 out)=GPIO9, DI(ASDOUT, P4 in)=GPIO11; ES8311 @ i2c0
+	 * 0x18 (probed online), NS4150 PA ctrl = GPIO53 (STD), analog MEMS
+	 * mic (LMA3729) differential into MIC1P/N. Acoustic loop verified
+	 * on-target 2026-10-30 (speaker -> mic, evidence
+	 * p4c5_audio_acoustic_loop_20261030.txt) with esp32-gdma PR #123642
+	 * applied in the build tree only; held disabled until that fix
+	 * lands upstream (or passes a pristine-tree run) - flip to "okay"
+	 * then. */
+	status = "disabled";
+	pinctrl-0 = <&i2s0_default>;
+	pinctrl-names = "default";
+	dmas = <&dma 0>, <&dma 1>;
+	dma-names = "rx", "tx";
+};

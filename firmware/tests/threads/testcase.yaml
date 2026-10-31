@@ -1,0 +1,9 @@
+tests:
+  framework.threads:
+    tags: framework
+    integration_platforms:
+      - native_sim
+    # 真 wasm 多线程（DEC-55/Q-37 A）：WAMR 源根经 TS_WAMR_DIR 注入。
+    platform_allow:
+      - native_sim
+      - native_sim/native/64

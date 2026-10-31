@@ -1,0 +1,13 @@
+/*
+ * netbench P4 板级 overlay（P4 无线面批）：console 重指 uart0（CH343
+ * COM 口单线判据——板默认 usb_serial 需另接 USB 口；p4bench 同型）。
+ * esp_hosted WiFi 面 = 板 dts 既有接线（esp_hosted_mcu@0 @ sdhc0 SDIO +
+ * reset GPIO1_22 + wifi 子节点，均 status okay）——本 overlay 零 WiFi
+ * 工作；S3 版的 "&wifi okay" 在 P4 不适用（无原生 wifi 节点）。
+ */
+/ {
+	chosen {
+		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+	};
+};

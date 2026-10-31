@@ -1,0 +1,58 @@
+/*
+ * P4 适配批（板级 bring-up）：ESP32-P4-WIFI6-DEV-KIT（Waveshare，16MB flash，
+ * HP 核 RISC-V @ 400MHz 双核）。板目标 = esp32p4_wifi6_dev_kit/esp32p4/hpcore
+ * （v4.5 斜杠限定语法）。
+ * console 重指 uart0：板载 CH343 桥 = COM/UART Type-C 口（esptool 下载模式
+ * 固定走 UART0 实测即此口）；板默认 usb_serial 需另接 USB 口——单线判据
+ * 走 CH343。
+ * ts-store 五分区 carved 自 4.5 默认 16M 布局 slot1 区（0x7e0000..0xfa0000，
+ * 7936KB）：boot/sys/slot0/lpcore/storage/coredump 原样保留（esptool 偏移零
+ * 变化）；slot1 删除并以 ts 五分区 + fw-b 预留替代（persistbench 同语义，
+ * DEC-23）。分区 4KB 对齐 = esp32p4 擦除块；compatible = zephyr,mapped-
+ * partition = v4.5 PARTITION_ID 宏要求（教训 30）。
+ * 尺寸耦合：slot = CONFIG_TS_STORE_SLOT_SIZE（本板 conf = 32768；part.c
+ * BUILD_ASSERT 把关）。
+ */
+/ {
+	chosen {
+		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+	};
+};
+
+/delete-node/ &slot1_partition;
+
+&flash0 {
+	partitions {
+		ts_prov_part: partition@7e0000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-prov";
+			reg = <0x7e0000 0x1000>;
+		};
+		ts_meta_part: partition@7e1000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-meta";
+			reg = <0x7e1000 0x2000>;
+		};
+		ts_slot_a_part: partition@7e3000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-a";
+			reg = <0x7e3000 0x8000>;
+		};
+		ts_slot_b_part: partition@7eb000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-b";
+			reg = <0x7eb000 0x8000>;
+		};
+		ts_noinit_part: partition@7f3000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-noinit";
+			reg = <0x7f3000 0x1000>;
+		};
+		/* fw-b：未来 MCUmgr 固件第二 slot 预留（DEC-23；V1 未接线） */
+		fw_b_part: partition@7f4000 {
+			label = "fw-b";
+			reg = <0x7f4000 0x7ac000>;
+		};
+	};
+};

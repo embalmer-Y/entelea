@@ -1,0 +1,58 @@
+/*
+ * otabench（单元 G2；v4.5 适配批修订）：MCUboot OTA 分区——image-1 为完整
+ * OTA 槽（AMP 4M 原位 0x170000），ts 五分区后移 0x2C0000（8MB 空闲区）。
+ * mcuboot@0x0(64K) / sys@0x10000(64K) / image-0@0x20000(1344K) /
+ * image-1@0x170000(1344K) / ts-{prov,meta,slot-a,slot-b,noinit}@0x2C0000。
+ * v4.5：分区节点须带 compatible = "zephyr,mapped-partition"；默认布局新增
+ * appcpu/lpcore 分区（0x2C0000 起）与 ts 五分区重叠——删除之。
+ */
+
+&wdt0 {
+	status = "okay";
+};
+
+/ {
+	chosen {
+		zephyr,watchdog = &wdt0;
+	};
+};
+
+/delete-node/ &slot0_appcpu_partition;
+/delete-node/ &slot1_appcpu_partition;
+/delete-node/ &slot0_lpcore_partition;
+/delete-node/ &slot1_lpcore_partition;
+
+&flash0 {
+	partitions {
+		slot1_partition: partition@170000 {
+			compatible = "zephyr,mapped-partition";
+			label = "image-1";
+			reg = <0x170000 DT_SIZE_K(1344)>;
+		};
+		ts_prov_part: partition@2c0000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-prov";
+			reg = <0x2c0000 0x1000>;
+		};
+		ts_meta_part: partition@2c1000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-meta";
+			reg = <0x2c1000 0x2000>;
+		};
+		ts_slot_a_part: partition@2c3000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-a";
+			reg = <0x2c3000 0x4000>;
+		};
+		ts_slot_b_part: partition@2c7000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-b";
+			reg = <0x2c7000 0x4000>;
+		};
+		ts_noinit_part: partition@2cb000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-noinit";
+			reg = <0x2cb000 0x1000>;
+		};
+	};
+};

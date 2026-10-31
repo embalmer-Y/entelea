@@ -1,0 +1,66 @@
+/*
+ * H7 移植批（板级 bring-up）：WeAct Studio MiniSTM32H743 核心板
+ * （STM32H743VIT6：2MB 内部 flash，擦除块 128KB；sram0 512KB）。
+ * 板 dts 无 console chosen——补 USART1（PA9 TX / PA10 RX，AF7；
+ * 排针引出，经外部 USB-TTL 判据，115200）。板载 8MB QSPI（W25Q64）
+ * 本批不用（XIP slot0 声明原样保留）。
+ * ts-store 五分区 carved 自内部 flash 尾部：H743 擦除块 = 128KB——
+ * 每分区独占整扇区（擦除互不伤害；P4/S3 的 4KB 粒度模式不可平移）。
+ * app 域 0..0xC0000（768KB——全配置镜像评估值 ≤500KB，余量充分）；
+ * fw-b 预留到 2MB 尾（DEC-23 MCUmgr 第二 slot 语义，V1 未接线）。
+ * 尺寸耦合：slot = CONFIG_TS_STORE_SLOT_SIZE（本板 conf = 131072；
+ * part.c BUILD_ASSERT 把关）；compatible = zephyr,mapped-partition =
+ * v4.5 PARTITION_ID 宏要求（教训 30）。
+ */
+/ {
+	chosen {
+		zephyr,console = &usart1;
+		zephyr,shell-uart = &usart1;
+	};
+};
+
+&usart1 {
+	status = "okay";
+	current-speed = <115200>;
+	pinctrl-0 = <&usart1_tx_pa9 &usart1_rx_pa10>;
+	pinctrl-names = "default";
+};
+
+&flash0 {
+	partitions {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		ts_prov_part: partition@c0000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-prov";
+			reg = <0x0c0000 0x20000>;
+		};
+		ts_meta_part: partition@c2000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-meta";
+			reg = <0x0c2000 0x20000>;
+		};
+		ts_slot_a_part: partition@c4000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-a";
+			reg = <0x0c4000 0x20000>;
+		};
+		ts_slot_b_part: partition@c6000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-b";
+			reg = <0x0c6000 0x20000>;
+		};
+		ts_noinit_part: partition@c8000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-noinit";
+			reg = <0x0c8000 0x20000>;
+		};
+		/* fw-b：未来 MCUmgr 固件第二 slot 预留（DEC-23；V1 未接线） */
+		fw_b_part: partition@ca000 {
+			label = "fw-b";
+			reg = <0x0ca000 0x36000>;
+		};
+	};
+};

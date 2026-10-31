@@ -1,0 +1,774 @@
+# SPDX-License-Identifier: Apache-2.0
+# Tessera framework module Kconfig（子系统按 design/LLD-* 逐里程碑加入）。
+
+menu "Tessera framework"
+
+config TS_MODULE
+	bool "Tessera framework module present"
+	default y
+	help
+	  Build marker set automatically when the tessera module is wired
+	  into the Zephyr build (ZEPHYR_EXTRA_MODULES / west manifest).
+	  Source: M0 skeleton (design/HLD-firmware-framework.md §7 M0).
+
+config TS_CORE
+	bool "ts-core: boot orchestration / event bus / time / WDT framework"
+	depends on TS_MODULE
+	default y
+	select TASK_WDT
+	help
+	  design/LLD-ts-core.md (M1). TASK_WDT selected per DEC-48 (Q-28):
+	  task_wdt channel as L3 backstop for the soft patrol (NULL callback
+	  => auto sys_reboot on channel expiry).
+
+if TS_CORE
+
+config TS_WDT_NET_PERIOD_MS
+	int "ts-wdt: NET source feed period (ms)"
+	default 2000
+	help
+	  Source: DEC-48 (Q-28②). Tolerates 10x 200ms net_wq poll period.
+
+config TS_WDT_APPMGR_PERIOD_MS
+	int "ts-wdt: APPMGR source feed period (ms)"
+	default 1000
+	help
+	  Source: DEC-48 (Q-28②). Tolerates 10x 100ms APP tick period.
+
+config TS_WDT_SYWORK_PERIOD_MS
+	int "ts-wdt: SYWORK source feed period (ms)"
+	default 1000
+	help
+	  Source: DEC-48 (Q-28②). Fed by the patrol callback itself.
+
+config TS_WDT_CHANNEL_MS
+	int "ts-wdt: task_wdt channel timeout (ms)"
+	depends on TASK_WDT
+	default 5000
+	help
+	  Source: DEC-48 (Q-28④). Aligned with TASK_WDT_MIN_TIMEOUT; HW
+	  fallback (if enabled by board) times out at MIN+DELAY ~= 10s
+	  (matches TS_HARD_WDT_CAP_MS, DEC-22/27 lineage).
+
+config TS_CORE_EVT_QUEUE_DEPTH
+	int "ISR event post queue depth"
+	default 16
+	help
+	  Source: DEC-27 (LLD-ts-core §4/§6).
+
+config TS_CORE_MAX_SUBS
+	int "Max subscribers per event type"
+	default 4
+	help
+	  Source: DEC-27 (LLD-ts-core §4/§6). Registry full = TS_E_NOMEM at init.
+
+config TS_TEST
+	bool "Test build hooks (virtual clock / injection / observable fail path)"
+	default n
+	help
+	  Enables ts_time_test_bind, ts_evt_poll_drain, ts_wdt_patrol_once and
+	  non-halting ts_safety_system_fail (LLD-ts-core §3/§6, LLD-ts-safety §5).
+
+endif # TS_CORE
+
+config TS_SAFETY
+	bool "ts-safety: output protection / three safe states / estop / fail-safe"
+	depends on TS_CORE
+	default y
+	help
+	  design/LLD-ts-safety.md (M1).
+
+if TS_SAFETY
+
+config TS_SAFETY_MAX_CHANNELS
+	int "Output channel registry capacity"
+	default 32
+	help
+	  Source: DEC-27 (LLD-ts-safety §2/§7).
+
+config TS_SAFETY_AUDIT_DEPTH
+	int "Commit audit ring depth"
+	default 64
+	help
+	  Source: DEC-27 (LLD-ts-safety §4/§7). Overflow overwrites oldest and
+	  counts drops (DR-07); not persisted in V1 (DEC-30-4).
+
+endif # TS_SAFETY
+
+config TS_STORE
+	bool "ts-store: partitions / power-loss-safe meta / read-only prov / noinit / slots"
+	depends on TS_CORE
+	default y
+	help
+	  design/LLD-ts-store.md (M2a). native_sim backend = host files
+	  (CONFIG_TS_STORE_SIM_DIR); real-board flash backend lands with board bring-up.
+
+if TS_STORE
+
+config TS_STORE_META_MAX
+	int "Meta record max size (bytes)"
+	default 256
+	help
+	  Source: DEC-27 (LLD-ts-store §7).
+
+config TS_STORE_SLOT_SIZE
+	int "APP slot partition size (bytes)"
+	default 262144
+	help
+	  Source: DEC-23 (slot sizes are per-board configurable; native_sim baseline).
+
+config TS_STORE_SLOT_COUNT
+	int "APP slot pool count (Q-32②, V0.4.0 M6)"
+	range 2 4
+	default 2
+	help
+	  Slot pool = per-APP double-slot ping-pong pairs: 2 slots per
+	  TS_APP_MAX_INSTANCES. Default 2 (single APP, legacy layout). 4 slots
+	  requires ts_slot_c_part/ts_slot_d_part DT nodes on flash builds
+	  (build-time fail-closed). Slots beyond this count are rejected by
+	  ts_store_slot_* regardless.
+
+config TS_APP_MAX_INSTANCES
+	int "max concurrent APP instances (Q-32①, V0.4.0)"
+	range 1 4
+	default 1
+	help
+	  V1 semantics = 1 (single active APP). Storage/meta faces (M6) are
+	  instance-count aware; runtime parallelism (M7) activates N>1. Compile
+	  guard: 2*TS_APP_MAX_INSTANCES <= TS_STORE_SLOT_COUNT.
+
+config TS_STORE_SIM_DIR
+	string "native_sim backend directory (host files)"
+	default "tessera_store"
+	help
+	  One file per partition under this relative directory (resettable in tests).
+
+config TS_STORE_FLASH
+	bool "ts-store: real flash backend (flash_map fixed partitions)"
+	depends on FLASH_MAP
+	default n
+	help
+	  LLD-ts-store section 2 board backend (board bring-up unit 5). Requires
+	  DT fixed partitions ts_prov_part / ts_meta_part / ts_slot_a_part /
+	  ts_slot_b_part / ts_noinit_part (BUILD_ASSERT-checked against
+	  TS_STORE_SLOT_SIZE / META_MAX). RAM backend otherwise (native_sim/CI).
+
+config TS_STORE_AUDIT
+	bool "ts-store: persistent audit ring (DEC-52 safety-event flash survival)"
+	depends on TS_STORE
+	default n
+	help
+	  DEC-52 option 1: 8KB ts_audit_part partition, two 4KB ping-pong pages
+	  of 64 fixed 64B slots. Only safety-exception events are persisted
+	  (commit audits with res != TS_OK plus estop-edge triggers); the
+	  in-memory full ring is unchanged. Requires DT node ts_audit_part
+	  (8192 bytes, BUILD_ASSERT) on flash backends. Boot prints the last
+	  8 records; sys/get-audit gains src=flash.
+
+endif # TS_STORE
+
+config TS_HAL
+	bool "ts-hal: board-independent peripheral API + permission enforcement"
+	depends on TS_SAFETY
+	default y
+	help
+	  design/LLD-ts-hal.md (M2b). ts_perm_v1 grammar + ts_api_v1 + input monitor.
+
+config TS_HAL_FS
+	bool "ts-fs capability surface (ts_fs_* natives, DEC-47)"
+	depends on TS_HAL
+	select FILE_SYSTEM
+	default n
+	help
+	  DEC-47 (MD1.2e): handle-less file API over a mounted FAT.
+	  fs_paths prefix whitelist bound from manifest at load time.
+
+config TS_HAL_FS_PATHS_MAX
+	int "ts-fs: fs_paths whitelist CSV capacity (bytes)"
+	depends on TS_HAL_FS
+	default 256
+	help
+	  Source: DEC-47 (MD1.2e). Semicolon-separated absolute prefixes.
+
+config TS_HAL_AV
+	bool "ts-av capability surface (ts_av_capture/ts_net_publish natives, DEC-47)"
+	depends on TS_HAL
+	select VIDEO
+	default n
+	help
+	  DEC-47 3/6 (MD1.2g): minimal blocking frame capture into the APP
+	  buffer plus av-channel publish (both gated by av:read:0).
+	  Format/resolution declared via manifest (av_fmt/av_w/av_h).
+	  Camera via chosen zephyr,camera (official buffer-pool path,
+	  MD1.2b); boards without it fail TS_E_IO (fail-closed).
+
+config TS_HAL_AV_TIMEOUT_MS
+	int "ts-av: per-capture dequeue timeout in ms"
+	depends on TS_HAL_AV
+	default 400
+	help
+	  Coherence: must stay below TS_WDT_APPMGR_PERIOD_MS (default 1000,
+	  DEC-48) so a camera stall fails with TS_E_IO before the software
+	  watchdog escalates.
+
+config TS_HAL_AV_RECOVER_N
+	int "ts-av: consecutive dequeue timeouts before stream self-heal restart"
+	depends on TS_HAL_AV
+	default 3
+	help
+	  V2-1 workaround for upstream zephyr#121774 (esp32 DVP DMA re-arm
+	  defect): after buffer starvation the DMA stays parked forever, so
+	  dequeue times out on every capture. After N consecutive timeouts the
+	  host restarts the stream (stop + drain + re-enqueue + start) and
+	  capture resumes. 0 disables the self-heal (upstream-fixed trees can
+	  turn it off). Recycle together with the 256B publish bypass once the
+	  upstream fix lands in a release we track.
+
+if TS_HAL
+
+config TS_HAL_MAX_INSTANCES
+	int "Max peripheral instances"
+	default 24
+	help
+	  Source: DEC-27 #7 (LLD-ts-hal §6).
+
+config TS_HAL_INPUT_POLL_MS
+	int "Input poll period in ms"
+	default 100
+	help
+	  Source: DEC-27 #14 (LLD-ts-hal §6, DR-02).
+
+endif # TS_HAL
+
+config TS_APPMGR
+	bool "ts-appmgr: APP lifecycle / package / slot / WAMR host"
+	depends on TS_STORE
+	default y
+	help
+	  design/LLD-ts-appmgr.md (M2b). WAMR runtime binding = M2b.2.
+
+if TS_APPMGR
+
+config TS_APPMGR_PENDING_TIMEOUT_MS
+	int "F3 install-gate pending timeout (ms, fail-closed)"
+	default 60000
+	help
+	  DEC-62 (Q-46①): with prov v2 lconf=1, activate enters a
+	  pending-local-confirm state; on timeout the pending install is
+	  cancelled (slot kept, re-push to retry). Headless builds with
+	  lconf=0 are unaffected. Test benches may lower this value.
+
+config TS_APP_WAMR
+	bool "WAMR wasm runtime (WAMR-2.4.5 pinned)"
+	default y
+	help
+	  DEC-17 WAMR / DEC-25 fast interp + WASI off / DEC-31 no app threads.
+	  Wiring batch complete (boot step 8 loads from active slot). Source
+	  root injected via env TS_WAMR_DIR (repo carries no third-party
+	  source; same discipline as zenoh-pico, dev-environment.md).
+
+config TS_APP_LOAD_MAX
+	int "Boot APP load buffer (bytes)"
+	depends on TS_APP_WAMR
+	default 16384
+	help
+	  Structural cap for wasm bytes loaded from slot at boot (must stay
+	  <= TS_STORE_SLOT_SIZE; board porting revisits per APP size class).
+	  CG4 (Q-39⑤/Q-42 · DEC-59): a board opts into the "large" APP tier by
+	  raising this to >= TS_APP_SIZE_GATE_LARGE (slot size likewise —
+	  device capability is derived from this value, no separate switch).
+
+config TS_APP_SIZE_GATE_SMALL
+	int "wasm size gate, small tier (bytes)"
+	depends on TS_APP_WAMR
+	default 16384
+	help
+	  Source: DEC-27 #6 / Q-39⑤ / Q-42 (DEC-59): 16KB kept for tier=small
+	  (v1 packages default to small — zero behavior change).
+
+config TS_APP_SIZE_GATE_LARGE
+	int "wasm size gate, large tier (bytes)"
+	depends on TS_APP_WAMR
+	default 262144
+	help
+	  Source: Q-39⑤/Q-42 (DEC-59; AG7 measurements: resource-type wasm =
+	  payload + ~147B overhead, linear 8-512KB spectrum; 256KB covers
+	  font-grade UI resources + complex logic). Boards may tighten; the
+	  install-time match rejects tier=large when TS_APP_LOAD_MAX falls
+	  short of this value (small-only device).
+
+config TS_APP_WAMR_HEAP
+	int "WAMR global heap pool size (bytes)"
+	depends on TS_APP_WAMR
+	default 262144
+	help
+	  Source: HLD 4.6 per-board table (DEC-27 #10 dynamic per board).
+	  Board-unit-6 correction: the old 64KB "native_sim baseline" was a
+	  system-allocator-era artifact (linear memory actually came from the
+	  host heap). In true pool mode one linear-memory page alone is 64KB,
+	  so 64KB is structurally infeasible; default now matches the DEC-27
+	  256KB target (native_sim has host RAM to spare).
+
+config TS_APP_PSRAM_HEAP
+	bool "WAMR instance heap in PSRAM (shared multi heap)"
+	depends on TS_APP_WAMR && ESP_SPIRAM && SHARED_MULTI_HEAP
+	default n
+	help
+	  HLD 4.6 PSRAM layering discipline (DEC-27): only the APP sandbox
+	  (WAMR instance heap) may live in external RAM. Pool buffer injected
+	  via wasm_runtime_full_init (zero WAMR patches; esp32s3 registers
+	  PSRAM in SMH as SMH_REG_ATTR_EXTERNAL). Off = internal SRAM static
+	  pool (native_sim/CI path).
+
+config TS_APP_PSRAM_LOAD_BUF
+	bool "Boot APP load buffer in PSRAM (shared multi heap)"
+	depends on TS_APP_WAMR && ESP_SPIRAM && SHARED_MULTI_HEAP
+	default n
+	help
+	  K5 (plan 11f): large-tier boards raise TS_APP_LOAD_MAX to >=
+	  TS_APP_SIZE_GATE_LARGE (256KB class) — a DRAM static buffer of that
+	  size is infeasible on constrained boards. Same HLD 4.6 sandbox-
+	  domain discipline as TS_APP_PSRAM_HEAP (the wasm loader rewrites
+	  the buffer in place — lesson 35 — so it must be writable RAM;
+	  external RAM qualifies). Lazy one-shot alloc, resident thereafter
+	  (boot load path is single-threaded).
+
+config TS_APP_PSRAM_VERIFY_BUF
+	bool "TSAP verify scratch in PSRAM (shared multi heap)"
+	depends on TS_APPMGR && ESP_SPIRAM && SHARED_MULTI_HEAP
+	default n
+	help
+	  K5 (plan 11f): large-tier packages need TS_VERIFY_SCRATCH >= 2x the
+	  container (manifest+wasm+COSE overhead) — a 512KB-class DRAM static
+	  is infeasible on constrained boards. Same sandbox-domain external-RAM
+	  discipline as TS_APP_PSRAM_HEAP/LOAD_BUF (HLD 4.6).
+
+config TS_APP_THREAD_PRIORITY
+	int "APP runtime thread priority"
+	depends on TS_APP_WAMR
+	default 10
+	help
+	  Source: DEC-43 (below net/sysworkq; wamrdemo experiment baseline).
+
+config TS_APP_THREAD_STACK
+	int "APP runtime host thread stack (bytes)"
+	depends on TS_APP_WAMR
+	default 32768
+	help
+	  Host-side stack for WAMR interpreter C frames (experiment baseline:
+	  framework.wamr/wamrdemo); wasm app stack is separate (manifest mem).
+
+config TS_VERIFY_SCRATCH
+	int "TSAP v2 verify scratch buffer (bytes)"
+	depends on TS_APPMGR
+	default 8704
+	help
+	  Source: DEC-49 1/2. Holds sig(64) + Sig_structure prefix(24) + COSE
+	  embedded payload (= manifest+wasm) during ed25519 verification.
+	  Must cover the largest installable package payload (slot size minus
+	  header/digest/COSE framing); boards with small packages may lower it.
+
+config TS_APP_TICK_MS
+	int "APP tick period (ms)"
+	depends on TS_APP_WAMR
+	default 100
+	help
+	  Source: DEC-27 (LLD-ts-appmgr 5).
+
+config TS_APP_HEALTH_MS
+	int "Health probe period (ms)"
+	depends on TS_APP_WAMR
+	default 1000
+	help
+	  Source: DEC-27 (LLD-ts-appmgr 4).
+
+config TS_APP_HEALTH_FAILS
+	int "Consecutive health failures to rollback"
+	depends on TS_APP_WAMR
+	default 3
+	help
+	  Source: DEC-27 (LLD-ts-appmgr 4).
+
+config TS_APP_INSTR_INIT
+	int "WASM instruction budget for app_init call"
+	depends on TS_APP_WAMR
+	default 1000000
+	help
+	  Source: DEC-48 (Q-28③). WAMR instruction metering quota; quota
+	  exhaustion raises "instruction limit exceeded" and rides the
+	  existing health-fail/rollback path (~100-200ms upper bound at
+	  board-bench-02 interpreter throughput).
+
+config TS_APP_INSTR_TICK
+	int "WASM instruction budget for app_tick/app_evt/health calls"
+	depends on TS_APP_WAMR
+	default 200000
+	help
+	  Source: DEC-48 (Q-28③). ~20-40ms upper bound per call at
+	  board-bench-02 interpreter throughput; calibrate via bench.
+
+config TS_APP_THREADS
+	bool "True wasm multi-threading (host-orchestrated spawn)"
+	depends on TS_APP_WAMR
+	default n
+	help
+	  Source: DEC-55 (Q-37 A, 2026-10-13). Enables WAMR thread-mgr +
+	  shared-memory compile flags; APP threads are host-orchestrated
+	  via ts_thread_start/ts_thread_join natives (one-shot worker
+	  model, per-thread instruction budget armed by the host before
+	  the wasm call). Default n keeps DEC-31 semantics (baseline
+	  builds unaffected). Threads>1 APPs are exempted from the
+	  deterministic-replay contract (contract 9,定点豁免).
+
+config TS_APP_INSTR_THREAD
+	int "Per-thread WASM instruction budget (one-shot worker)"
+	depends on TS_APP_THREADS
+	default 200000
+	help
+	  Source: DEC-55 (Q-37④). Hard upper bound per spawned thread:
+	  quota exhaustion raises "instruction limit exceeded" and the
+	  thread terminates (fail-closed; no abort, no lock hold).
+
+config TS_APP_THREAD_WSTACK
+	int "Worker thread host stack (bytes)"
+	depends on TS_APP_THREADS
+	default 8192
+	help
+	  Source: DEC-55 (M19a). Host stack per spawned worker (wasm call
+	  frames land on the host stack on targets without hardware bound
+	  checks). Sized like M7c per-instance APP thread stacks.
+
+config TS_APP_MBOX_DEPTH
+	int "Per-APP event mailbox depth (drop-oldest)"
+	depends on TS_APP_WAMR
+	default 8
+	help
+	  Source: DEC-27 #15 (LLD-ts-appmgr 5, DR-14).
+
+endif # TS_APPMGR
+
+
+config TS_NET
+	bool "ts-net: zenoh session / keyspace / publish queue / link monitor"
+	depends on TS_CORE
+	select CRC
+	default y
+	help
+	  design/LLD-ts-net.md (M3a). Transport seam: logic (keyspace/pubq/
+	  session/linkmon) is transport-agnostic; zenoh-pico binding compiled
+	  only under TS_NET_ZENOH (tests inject a fake transport).
+
+if TS_NET
+
+config TS_FW_VERSION
+	string "Firmware version string (sys get-info; versioning.md §5)"
+	default "dev"
+	help
+	  Release builds inject git describe at build time (versioning.md §5);
+	  dev builds show "dev" (provenance: build stamp discipline).
+
+config TS_NET_HB_PERIOD_MS
+	int "Heartbeat period in ms (cube send + host monitor basis)"
+	default 1000
+	help
+	  Source: DEC-22 (provisionable; factory default 1000ms).
+
+config TS_NET_HB_MISS_LIMIT
+	int "Host heartbeat miss limit (periods) before link-loss"
+	default 6
+	help
+	  Source: DEC-22 (~6s at default period).
+
+config TS_NET_HB_RECOVER
+	int "Consecutive host heartbeats required to re-declare link up"
+	default 2
+	help
+	  Source: DEC-27 (hysteresis).
+
+config TS_NET_PUBQ_DEPTH
+	int "Publish queue depth (drop-oldest when full)"
+	default 8
+	help
+	  Source: DEC-27 (LLD-ts-net §7).
+
+config TS_NET_TELEM_INTERVAL_MS
+	int "Periodic telemetry snapshot interval in ms"
+	default 200
+	help
+	  Source: DEC-27. Consumed by telemetry merge (M3a.2).
+
+config TS_NET_OPEN_BUDGET_MS
+	int "Blocking open() watchdog grace budget in ms"
+	default 15000
+	help
+	  Source: DEC-64(1) (R1 reconnect hardening, 2026-10-17). Session open
+	  to a dead router (TCP connect SYN/ARP timeout + TLS handshake +
+	  session declarations) can block longer than the NET feed period;
+	  the grace window suppresses overdue patrol while the budget lasts
+	  and expires back to fail-safe. Observed single-attempt failure time
+	  2-5s; 15000ms = ~3x margin. Core clamps any grace at 60s.
+
+config TS_NET_LEASE_TTL_MS
+	int "Control lease TTL in ms (lazy expiry on access)"
+	default 10000
+	help
+	  Source: DEC-41 (~link-loss window 6s x1.5 + margin). Lease gates
+	  command admission only; never couples to safety states.
+
+config TS_NET_IDEM_CACHE
+	int "Idempotent reply cache depth (fixed LRU)"
+	default 4
+	help
+	  Source: DEC-40. Same idem replays the cached reply without
+	  re-executing the command (safe retry after network timeout).
+
+config TS_NET_APP_CHUNK_MAX
+	int "Max app-chunk payload bytes (deploy upload)"
+	default 2048
+	help
+	  Source: LLD-agent-deploy-net 3 (2KB default, 4KB ceiling from NeuroLink field data).
+	  Also sizes the zenoh query request buffer (chunk + envelope margin).
+
+config TS_NET_PUBLISH_MAX_BYTES
+	int "Max av chunk payload bytes (ts_net_publish native)"
+	default 1024
+	help
+	  Source: DEC-47 2 (av-transport): chunks stay <=1KB so zenoh-pico
+	  never enters its fragmentation path (Z_BATCH_UNICAST_SIZE=2048).
+
+config TS_NET_PUBLISH_MIN_GAP_MS
+	int "Pacing between av chunk puts in ms (avq flush)"
+	default 4
+	help
+	  Source: DEC-47 2: >=4ms pacing measured mandatory (back-to-back
+	  z_put fails with -100, errno=0, before reaching the syscall layer).
+
+config TS_NET_PUBLISH_RETRY_MAX
+	int "Av chunk publish retries per chunk (avq flush)"
+	default 5
+	help
+	  Source: DEC-47 2 (av-transport field data).
+
+config TS_NET_PUBLISH_RETRY_DELAY_MS
+	int "Delay between av chunk retries in ms"
+	default 20
+	help
+	  Source: DEC-47 2 (av-transport field data; <=5x20ms recovers
+	  from WiFi-degraded BLOCK drops).
+
+config TS_NET_AVQ_DEPTH
+	int "Av chunk queue depth (entries of MAX_BYTES+48)"
+	default 4
+	help
+	  Backpressure surface: APP publishing faster than the paced drain
+	  gets TS_E_BUSY (V1 single app; 4 x ~1KB DRAM).
+
+endif # TS_NET
+
+config TS_POWER
+	bool "ts-power: controlled power slots / current limiting / power budget"
+	depends on TS_HAL
+	default y
+	help
+	  design/LLD-ts-power.md (M3b). Power is output (DEC-03): switching
+	  goes through ts_safety_commit only; budget total is read-only from
+	  provisioning (contract 10).
+
+if TS_POWER
+
+config TS_POWER_MAX_SLOTS
+	int "Power slot registry capacity"
+	default 4
+	help
+	  Source: DEC-27 (LLD-ts-power 5).
+
+endif # TS_POWER
+
+config TS_PERIPH
+	bool "ts-periph: peripheral descriptors + hotplug events"
+	depends on TS_HAL
+	default y
+	help
+	  design/LLD-ts-periph.md (M3b). Logical-uid vs dt_spec decoupling
+	  (DEC-04/DEC-14); DETACH drives channel SAFE_FAULT.
+
+if TS_PERIPH
+
+config TS_PERIPH_MAX_DESCS
+	int "Peripheral descriptor capacity"
+	default 24
+	help
+	  Source: DEC-27 (aligned with TS_HAL_MAX_INSTANCES).
+
+endif # TS_PERIPH
+
+config TS_NET_ZENOH
+	bool "zenoh-pico transport binding (pin 1.10.1, DR-22)"
+	depends on TS_NET && ZENOH_PICO
+	default n
+	select NET_CONTEXT_RCVTIMEO
+	select NET_CONTEXT_SNDTIMEO
+	help
+	  Requires zenoh-pico Zephyr module in ZEPHYR_EXTRA_MODULES. Link-level
+	  liveness refinement (keepalive) lands with M3a.2.
+
+	  RCVTIMEO is a hard requirement (DEC-64(2), R2): zenoh-pico sets
+	  SO_RCVTIMEO=100ms on its socket so its single-thread executor keeps
+	  rotating between the read/lease/keep-alive futures. Without
+	  NET_CONTEXT_RCVTIMEO the option is silently ignored, recv() blocks
+	  forever on an inbound stall, the lease task is starved and pico's
+	  inbound-lease expiry (auto-reconnect) never fires - the session
+	  turns into a permanent one-way zombie (board publishes fine, all
+	  queries time out; real-machine reproduced 2026-10-17).
+
+config TS_NET_TLS
+	bool "TLS command-plane link (mTLS, DEC-63)"
+	depends on TS_NET && TS_NET_ZENOH && ZENOH_PICO_LINK_TLS
+	default n
+	help
+	  zenoh tls/<ip>:<port> locator with prov v2 TLS triple (tls_ca/tls_cert/
+	  tls_key DER, 15-pair schema). Client mTLS: CA verify (VERIFY_REQUIRED,
+	  server cert SAN must match locator host) + device certificate
+	  presentation. Requires ZENOH_PICO_LINK_TLS (repo-carried patch
+	  ext/zenoh-pico-tls.patch, DEC-63-1) and CONFIG_MBEDTLS in the app.
+	  Default off = zero footprint; TLS-off prov (<=12 pair) byte-identical
+	  on any build.
+
+
+
+config TS_DRV_GPIO
+	bool "ts-safety: real GPIO output backend (board porting)"
+	depends on TS_SAFETY && GPIO
+	default n
+	help
+	  Real-machine GPIO write backend (DEC-44 IO latency measurement onwards). Binding = zephyr,user node
+	  (uid matches channel uid; io-gpios = output pin); write path = sim record (L4 golden continuity) + register write.
+	  Default off (native_sim/CI baseline sim backend).
+
+config TS_DRV_PWM
+	bool "ts-safety: real PWM output backend (board porting)"
+	depends on TS_SAFETY && PWM
+	default n
+	help
+	  Real-machine PWM write backend (board-9). Binding = zephyr,user node (pwm-uid matches channel uid;
+	  pwms = 3-cell spec; pin routing via PWM controller pinctrl). Write path = sim record + pwm_set (ns),
+	  packed value low16=permille [0,1000], high16=hz/100 (api enforces hz>=100). Failures counted via
+	  ts_drv_pwm_err_count(). Default off (native_sim/CI baseline sim backend).
+
+config TS_DRV_ADC
+	bool "ts-hal: real ADC input backend (board porting)"
+	depends on TS_HAL && ADC
+	default n
+	help
+	  Real-machine ADC read backend (board-9), input side only (contract 3: no protection layer on inputs).
+	  Binding = zephyr,user node (adc-uid matches hal dev uid; io-channels = <&adcN ch>). 12-bit, internal ref,
+	  12dB attenuation (ADC_GAIN_1_4); millivolts via Zephyr generic conversion (esp32 driver pre-compensates
+	  raw with eFuse calibration). Default off (native_sim/CI stub backend).
+
+config TS_LOG_RATE_PER_S
+	int "ts-hal: log rate budget (lines per second, global window)"
+	depends on TS_HAL
+	default 20
+	help
+	  V0.4.0 M2 (IR-16): global window budget for ts_log_write (console spam bound;
+	  per-app fair-share arrives with multi-APP M7). Over-budget calls return TS_E_BUSY
+	  (visible backpressure) and one notice line per burst window.
+
+config TS_HAL_INPUT_EDGE
+	bool "ts-hal: GPIO input edge-triggered mode (DR-02, V0.4.0 M5)"
+	depends on TS_DRV_GPIO
+	default n
+	help
+	  Edge callbacks do NOT publish events directly (contract 9 single publish path):
+	  they only trigger an immediate input-monitor re-poll via a debounced work item
+	  (acceleration, not bypass; serialized with the periodic poll on sysworkq).
+	  Requires zephyr,user node with gpio-in-uid + in-gpios. ADC stays polled
+	  (analog sampling is inherently periodic); GPIO_IN level reads shared by both.
+
+config TS_HAL_INPUT_DEBOUNCE_MS
+	int "ts-hal: GPIO input edge debounce (ms)"
+	depends on TS_HAL_INPUT_EDGE
+	default 10
+	help
+	  Delay between edge interrupt and the immediate re-poll (contact debounce bound).
+
+config TS_DRV_ES8311
+	bool "ts-hal: ES8311 full-codec audio in/out backend (V0.9.0 K2, Q-44/DEC-61)"
+	depends on TS_HAL
+	default n
+	help
+	  ES8311 codec over I2C (i2c0 @0x18) + I2S0 standard-Philips master
+	  (32-bit slots -> BCLK 1.024MHz; codec derives MCLK from SCLK per
+	  board constraint "SCLK must be >1MHz"). Provides BOTH capture
+	  (pcm16 640B frames, av pcm16 semantics) and playback (ts_av_write
+	  new output face, av:write perm). Requires zephyr,user pins
+	  es8311-{bck,ws,sdout,sdin}-gpios. Board: ATK DNESP32-S3B V1.1.
+
+config TS_DRV_PDM
+	bool "ts-hal: PDM microphone input backend (V0.4.x M17b, Q-36/DEC-54②)"
+	depends on TS_HAL && SOC_ESP32S3
+	default n
+	help
+	  MP34DT05 PDM mic capture via I2S0 PDM RX (i2s_ll register-level, zero
+	  upstream patches) + GDMA ring descriptors + polled frame fetch. Requires
+	  the ts_pdm_pins DT node (pinctrl: I2S0_I_SD_GPIO41 data-in,
+	  I2S0_I_WS_GPIO42 clk-out with output-enable). pcm16 format (16kHz mono
+	  16-bit, 640B frames) is dispatched from ts_av_capture. Board bring-up
+	  iteration knobs: bck_div (PDM CLK = mclk/bck_div) and PDM DSR.
+
+config TS_STORE_KV
+	bool "ts-store: APP state kv persistence (V0.4.0 M9, DR-15)"
+	depends on TS_STORE
+	default n
+	help
+	  Per-APP bounded state blob (<=250B) surviving upgrade/rollback, keyed by
+	  app_id hash (DR-15). 8KB two-page ping-pong (15 slots x 264B per page),
+	  compaction keeps the latest blob per app (bounded to 15 apps, oldest
+	  dropped). Flash builds require the ts_kv_part DT node (build-time
+	  fail-closed); natives ts_kv_save/ts_kv_load gated by the kv perm class.
+
+config TS_STORE_TRUST
+	bool "ts-store: developer trust-root table (V0.8.0 EC2, Q-43/DEC-60)"
+	depends on TS_STORE
+	default n
+	help
+	  TUF-root-style full-replacement trust table (map{"ver","keys[]"}),
+	  8KB two-copy (2x4KB) ping-pong partition (ts_trust_part, BUILD_ASSERT on
+	  flash builds). Effective verification set = factory roots (prov
+	  pk0+pk1 / fixed test root in TEST builds) UNION table keys; updates
+	  via sys/trust-update (COSE_Sign1 signed by any current effective
+	  key, strictly ver N+1 - offline revocation, monotonic anti-rollback).
+	  Disabled or absent partition = factory-roots-only = byte-identical
+	  V0.7 behavior (existing boards need no re-flash).
+
+config TS_TRUST_TABLE_MAX
+	int "Max trust-table CBOR bytes (schema walk ceiling)"
+	depends on TS_STORE_TRUST
+	default 512
+	help
+	  Source: Q-43 structural ceiling. Actual worst case is 270B (2 pairs
+	  + ver + 8x32B keys); 512 leaves headroom for future additive keys.
+
+config TS_INTERACT
+	bool "Local UART interaction terminal (ts shell command set)"
+	depends on TS_APPMGR && TS_SAFETY
+	default n
+	help
+	  Source: DEC-65 (R5, owner directive 2026-10-18). Single UART carries
+	  logs + app output + interactive terminal (Linux serial-console
+	  shape; Zephyr SHELL + SHELL_LOG_BACKEND + LOG_PRINTK). Thin command
+	  layer over existing framework entry points (appmgr pending gate,
+	  safety arb/clear) - no new safety or network face; the shell is a
+	  physical-presence proxy at the same trust level as the BOOT key.
+	  Default n = baseline builds byte-identical. SHELL/LOG are optional
+	  build faces: core logic (twister-testable) compiles without them;
+	  the shell command table is compiled when SHELL is present.
+
+config TS_INTERACT_LOG_LEVEL
+	int "ts-interact module log level (0=off 1=err 2=wrn 3=inf 4=dbg)"
+	depends on TS_INTERACT
+	default 3
+	help
+	  Source: DEC-65 (module default INF; runtime tunable via `ts log`).
+
+endmenu

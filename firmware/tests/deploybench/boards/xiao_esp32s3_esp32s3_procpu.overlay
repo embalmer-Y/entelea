@@ -1,0 +1,96 @@
+/*
+ * 板级十：deploybench = WiFi 使能（netbench 同款）+ ts-store flash 分区
+ * （persistbench 同款——ts 五分区 + fw-b 预留 carved 自 slot1 空闲区，
+ * boot/sys/slot0 与 esptool 偏移零变化）。
+ * 板级十一（MD1.1）：并入 PWM 后端绑定（periphbench 同款——D3 呼吸灯
+ * demo 限幅判据需要板上 PWM 通道；LEDC_CH0 → GPIO21 板载 LED）。
+ */
+#include <zephyr/dt-bindings/pinctrl/esp32s3-pinctrl.h>
+
+&wifi {
+	status = "okay";
+};
+
+&pinctrl {
+	pb_ledc0: pb_ledc0 {
+		group1 {
+			pinmux = <LEDC_CH0_GPIO21>;
+			output-enable;
+		};
+	};
+};
+
+&ledc0 {
+	status = "okay";
+	pinctrl-0 = <&pb_ledc0>;
+	pinctrl-names = "default";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	channel0@0 {
+		reg = <0x0>;
+		timer = <0>;
+	};
+};
+
+/delete-node/ &slot1_partition;
+
+&flash0 {
+	partitions {
+		ts_prov_part: partition@170000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-prov";
+			reg = <0x170000 0x1000>;
+		};
+		ts_meta_part: partition@171000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-meta";
+			reg = <0x171000 0x2000>;
+		};
+		ts_slot_a_part: partition@173000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-a";
+			reg = <0x173000 0x8000>;
+		};
+		ts_slot_b_part: partition@17b000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-b";
+			reg = <0x17b000 0x8000>;
+		};
+		/* V0.4.0 M7c（Q-32②）：槽池扩至 4——entry1 双槽乒乓对 {2,3} */
+		ts_slot_c_part: partition@183000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-c";
+			reg = <0x183000 0x8000>;
+		};
+		ts_slot_d_part: partition@18b000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-d";
+			reg = <0x18b000 0x8000>;
+		};
+		ts_noinit_part: partition@193000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-noinit";
+			reg = <0x193000 0x1000>;
+		};
+		/* V0.4.0 M9（DR-15）：APP 状态 kv 8KB（两页 × 15 槽 × 264B） */
+		ts_kv_part: partition@194000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-kv";
+			reg = <0x194000 0x2000>;
+		};
+		/* fw-b：未来 MCUmgr 固件第二 slot 预留（DEC-23；V1 未接线——
+		 * M7c/M9 连续让位） */
+		fw_b_part: partition@196000 {
+			label = "fw-b";
+			reg = <0x196000 0x12a000>;
+		};
+	};
+};
+
+/ {
+	zephyr,user {
+		/* PWM 后端绑定（板级九模式）：uid 匹配通道逻辑名 */
+		pwm-uid = "dbpwm";
+		pwms = <&ledc0 0 1000000 0>;
+	};
+};

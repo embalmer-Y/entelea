@@ -1,0 +1,49 @@
+/*
+ * Copyright (c) 2026 Tessera Project
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <zephyr/dt-bindings/pinctrl/esp-pinctrl-common.h>
+#include <zephyr/dt-bindings/pinctrl/esp32p4-pinctrl.h>
+#include <zephyr/dt-bindings/pinctrl/esp32p4-gpio-sigmap.h>
+
+&pinctrl {
+	uart0_default: uart0_default {
+		group1 {
+			pinmux = <UART0_TX_GPIO37>;
+			output-high;
+		};
+
+		group2 {
+			pinmux = <UART0_RX_GPIO38>;
+			bias-pull-up;
+		};
+	};
+
+	i2s0_default: i2s0_default {
+		group1 {
+			/* 原理图 PDF 高分辨率渲染逐引脚核读（底板 V1.3 Audio
+			 * CODEC U11 ES8311）：MCLK=GPIO13/SCLK=GPIO12/LRCK=
+			 * GPIO10/DSDIN (P4 出)=GPIO9/ASDOUT (P4 收)=GPIO11，
+			 * PA(STD)=GPIO53——2026-10-30 定案（两轮低清误读 21/20/
+			 * 12/11/13 与 23/22/20/21/26 均废） */
+			pinmux = <I2S0_MCLK_GPIO13>, <I2S0_O_BCK_GPIO12>,
+				 <I2S0_O_WS_GPIO10>, <I2S0_O_SD_GPIO9>;
+		};
+		group2 {
+			pinmux = <I2S0_I_SD_GPIO11>;
+			input-enable;
+		};
+	};
+
+	i2c0_default: i2c0_default {
+		group1 {
+			pinmux = <I2C0_SDA_GPIO7>,
+				 <I2C0_SCL_GPIO8>;
+			bias-pull-up;
+			drive-open-drain;
+			output-high;
+		};
+	};
+};

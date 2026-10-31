@@ -1,0 +1,53 @@
+/*
+ * V3-1（V2-2 既定待办「生产 app flash 面接入」）：auditbench 同款
+ * ts 五分区 + ts-audit 8KB（两页乒乓，DEC-52①）；fw-b 预留缩至 0x186000
+ * 起（借头部 8KB，esptool 偏移零变化——V1 未接线）。
+ */
+/delete-node/ &slot1_partition;
+
+&flash0 {
+	partitions {
+		ts_prov_part: partition@170000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-prov";
+			reg = <0x170000 0x1000>;
+		};
+		ts_meta_part: partition@171000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-meta";
+			reg = <0x171000 0x2000>;
+		};
+		ts_slot_a_part: partition@173000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-a";
+			reg = <0x173000 0x8000>;
+		};
+		ts_slot_b_part: partition@17b000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-b";
+			reg = <0x17b000 0x8000>;
+		};
+		ts_noinit_part: partition@183000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-noinit";
+			reg = <0x183000 0x1000>;
+		};
+		/* DEC-52①：审计 flash 环 8KB（两页 × 4KB × 64 槽 × 64B） */
+		ts_audit_part: partition@184000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-audit";
+			reg = <0x184000 0x2000>;
+		};
+		/* V0.4.0 M9（DR-15）：APP 状态 kv 8KB（两页 × 15 槽 × 264B） */
+		ts_kv_part: partition@186000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-kv";
+			reg = <0x186000 0x2000>;
+		};
+		/* fw-b：预留缩至 0x188000 起（audit/kv 连续借位） */
+		fw_b_part: partition@188000 {
+			label = "fw-b";
+			reg = <0x188000 0x138000>;
+		};
+	};
+};

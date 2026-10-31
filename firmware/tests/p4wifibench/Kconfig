@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# P4 联网批（E1）：WiFi 凭据构建期注入（不入仓——env.sh → extra args）。
+# 凭据红线：SSD/PSK 不落 repo/证据（evidence 脱敏纪律）。
+mainmenu "P4 WiFi bring-up bench (V0.14.0 P4-W1)"
+
+config P4W_SSID
+	string "WiFi SSID (build-time injection)"
+	default ""
+
+config P4W_PSK
+	string "WiFi PSK (build-time injection; never committed/evidenced)"
+	default ""
+
+config P4W_ECHO_HOST
+	string "UDP echo host (host-side listener ip)"
+	default "192.168.2.101"
+
+config P4W_ECHO_PORT
+	int "UDP echo host port"
+	default 9999
+
+source "Kconfig.zephyr"

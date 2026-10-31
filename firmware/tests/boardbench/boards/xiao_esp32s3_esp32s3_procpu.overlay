@@ -1,0 +1,11 @@
+/* boardbench 真机 IO 通道绑定（DEC-44 IO 延迟实测）：
+ * zephyr,user 约定（免自定义 binding）——uid 与 ts 通道 uid 匹配；
+ * GPIO9 = XIAO D10/MOSI（非 strapping，bench 未启用 SPI，悬空安全）。
+ * DT 只声明极性；方向/初值由 ts_drv_gpio_init() 配置。 */
+/ {
+	zephyr,user {
+		status = "okay";
+		uid = "io0";
+		io-gpios = <&gpio0 9 GPIO_ACTIVE_HIGH>;
+	};
+};

@@ -1,0 +1,12 @@
+/*
+ * P4 PSRAM 批板级 overlay（Waveshare ESP32-P4-WIFI6-DEV-KIT HP 核）：
+ * console 重指 uart0（CH343 COM 口单线判据——板默认 usb_serial 需另接
+ * USB 口；p4bench 同型）。PSRAM 走板 dts 既有 &psram0（32MB）+ Kconfig
+ * SPIRAM 面，overlay 无需分区工作。
+ */
+/ {
+	chosen {
+		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+	};
+};

@@ -1,0 +1,7 @@
+/*
+ * avbench（MD1.2d spike）：WiFi 使能（netbench/deploybench 同款——
+ * Sense 板变体 DT 自带摄像头/SD，无需额外节点）。
+ */
+&wifi {
+	status = "okay";
+};
