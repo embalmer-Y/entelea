@@ -44,3 +44,6 @@ The old `tools/env` installer was replaced with isolated source setup. Its
 installer-specific tests were updated for the replacement, retaining TLS patch
 integrity coverage. Forge gateway subprocess tests use a temporary workspace
 rather than assuming the parent directory contains firmware.
+The ignition null-guard test read an uninitialized decision after a no-op call.
+It now verifies unchanged, initialized output for each invalid argument; the
+imported kernel behavior is unchanged.
