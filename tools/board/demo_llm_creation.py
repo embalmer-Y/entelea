@@ -12,7 +12,9 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, "/home/emb/project/Tessera/agent")
+REPO = Path(__file__).resolve().parents[2]
+AGENT = REPO / "agent"
+sys.path.insert(0, str(AGENT))
 
 from tessera_agent.common.config import load_config
 from tessera_agent.common.limits import ContextBudget
@@ -20,16 +22,16 @@ from tessera_agent.platform import AppContext
 from tessera_agent.domain.app_chain import app_develop, app_deploy
 
 KEY_PUB = (
-    "/home/emb/project/Tessera/agent/tests/fixtures/ts-test-root.key",
-    "/home/emb/project/Tessera/agent/tests/fixtures/ts-test-root.pub",
+    str(AGENT / "tests/fixtures/ts-test-root.key"),
+    str(AGENT / "tests/fixtures/ts-test-root.pub"),
 )
-SPEC_PATH = Path("/home/emb/project/Tessera/agent/demos/demo-thermo/spec.md")
-EVIDENCE = Path("/home/emb/project/Tessera/docs/evidence/ag7_console.txt")
+SPEC_PATH = AGENT / "demos/demo-thermo/spec.md"
+EVIDENCE = REPO / "build/board/ag7_console.txt"
 CRITERIA = "AG7 DONE cycles=200"
 
 
 async def main() -> int:
-    cfg = load_config("/home/emb/project/Tessera/agent/config.toml")
+    cfg = load_config(AGENT / "config.toml")
     ctx = AppContext(cfg=cfg, budget=ContextBudget(window_tokens=cfg.context_window))
     spec = SPEC_PATH.read_text(encoding="utf-8")
 

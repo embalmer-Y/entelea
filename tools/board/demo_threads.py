@@ -11,18 +11,20 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, "/home/emb/project/Tessera/agent")
+REPO = Path(__file__).resolve().parents[2]
+AGENT = REPO / "agent"
+sys.path.insert(0, str(AGENT))
 
 from tessera_agent.common.config import load_config
 from tessera_agent.common.limits import ContextBudget
 from tessera_agent.platform import AppContext
 from tessera_agent.domain.app_chain import app_develop
 
-KEY = "/home/emb/project/Tessera/agent/tests/fixtures/ts-test-root.key"
-OUT_DIR = "/home/emb/project/Tessera/agent/build"
-SPEC_PATH = Path("/home/emb/project/Tessera/agent/demos/demo-threads/spec.md")
-PKG_HDR = Path("/home/emb/project/Tessera/firmware/tests/thrdemo/src/dt_wasm.h")
-DEMO_DIR = Path("/home/emb/project/Tessera/agent/demos/demo-threads")
+KEY = str(AGENT / "tests/fixtures/ts-test-root.key")
+OUT_DIR = str(AGENT / "build")
+SPEC_PATH = AGENT / "demos/demo-threads/spec.md"
+PKG_HDR = REPO / "firmware/tests/board/thrdemo/src/dt_wasm.h"
+DEMO_DIR = AGENT / "demos/demo-threads"
 
 
 def tsap_extract_wasm(tsap: Path) -> bytes:
@@ -48,7 +50,7 @@ def gen_wasm_header(wasm: bytes, out: Path) -> None:
 
 
 async def main() -> None:
-    cfg = load_config("/home/emb/project/Tessera/agent/config.toml")
+    cfg = load_config(AGENT / "config.toml")
     ctx = AppContext(cfg=cfg, budget=ContextBudget(window_tokens=cfg.context_window))
     spec = SPEC_PATH.read_text(encoding="utf-8")
 
@@ -72,4 +74,5 @@ async def main() -> None:
     print("done", flush=True)
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

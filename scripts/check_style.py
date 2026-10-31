@@ -8,12 +8,28 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def changed_paths(data):
+    fields = iter(data.decode().split("\0"))
+    paths = []
+    for status in fields:
+        if not status:
+            break
+        path = next(fields)
+        if status.startswith(("R", "C")):
+            path = next(fields)
+            if status == "R100":
+                continue
+        paths.append(path)
+    return paths
+
+
 def main():
     base = sys.argv[1] if len(sys.argv) > 1 else "import-baseline"
-    names = subprocess.check_output(
-        ["git", "diff", "--name-only", "--diff-filter=ACMR", base, "--", "*.c", "*.h"],
+    names = changed_paths(subprocess.check_output(
+        ["git", "diff", "--name-status", "-z", "--find-renames",
+         "--diff-filter=ACMR", base, "--", "*.c", "*.h"],
         cwd=ROOT,
-    ).decode().splitlines()
+    ))
     names += subprocess.check_output(
         ["git", "ls-files", "--others", "--exclude-standard", "--", "*.c", "*.h"], cwd=ROOT
     ).decode().splitlines()

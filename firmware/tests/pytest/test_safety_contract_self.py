@@ -61,6 +61,15 @@ def test_check2_three_states_complete(tmp_path: Path) -> None:
         root.rmdir()
 
 
+def test_write_path_exceptions_are_exact():
+    bench = REPO / "firmware/tests/board/boardbench/src/main.c"
+    assert check_safety_contract.WRITE_PATH_ALLOWED == {
+        check_safety_contract.DISPATCH_FILE, bench,
+    }
+    assert bench.is_file()
+    assert check_safety_contract.check_1_write_path([bench]) == []
+
+
 def test_repo_smoke_green() -> None:
     """仓级烟测：主检查流在当前源码树恒绿（CI 同面）。"""
     r = subprocess.run([sys.executable, str(CHECK)], capture_output=True, text=True)

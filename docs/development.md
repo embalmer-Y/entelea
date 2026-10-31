@@ -1,11 +1,12 @@
-# Development
+# 开发与贡献
 
-## Host baseline
+本文面向 Entelea 贡献者。当前验证的主机为 Linux x86-64，使用 Python
+3.12、`uv`、GCC、CMake、Ninja 和支持 wasm32 的 clang。两个仓库各自维护
+锁文件；不使用其他项目的虚拟环境或修改共享 SDK。
 
-Linux x86-64 is the initial verified host; native_sim/native/64 also avoids an
-unnecessary 32-bit multilib dependency. Use Python 3.12, `uv`, GCC, CMake, Ninja,
-and clang with wasm32 support. `uv.lock` pins host Python tools; Forge has its
-own independent lockfile.
+## 主机环境
+
+在已递归初始化子模块的主仓库中：
 
 ```sh
 uv sync --locked
@@ -14,13 +15,13 @@ make check
 make agent-test
 ```
 
-The affect CMake build fetches pinned Unity into `build/`, or accepts
-`-DFETCHCONTENT_SOURCE_DIR_UNITY=/absolute/path/to/Unity` for offline use.
-No ESP-IDF installation is required.
+预期退出码为 0。情感测试首次可能联网下载固定版本的 Unity；离线时可先通过
+`cmake -S lib/affect -B build/affect -G Ninja -DCMAKE_BUILD_TYPE=Release
+-DFETCHCONTENT_SOURCE_DIR_UNITY=/absolute/path/to/Unity` 配置已有源码。
 
-## Firmware
+## native_sim 固件
 
-To prepare a clean, isolated native_sim source baseline:
+以下准备步骤需要网络并将固定版本源码放在本仓库忽略的 `.deps/` 中：
 
 ```sh
 bash scripts/setup-firmware.sh
@@ -28,11 +29,7 @@ make firmware-build
 make firmware-test
 ```
 
-Sources live in ignored `.deps/`. These commands do not update another
-project's workspace, install system packages, change shell startup files,
-flash devices or contact an LLM.
-
-Existing source checkouts can be used read-only:
+预期构建和测试退出码均为 0。已有源码可以只读使用：
 
 ```sh
 export ZEPHYR_BASE=/absolute/path/to/zephyr
@@ -40,56 +37,23 @@ export TS_WAMR_DIR=/absolute/path/to/wamr
 make firmware-test
 ```
 
-Use the clean isolated baseline for reproducibility. A modified external
-checkout is not equivalent to the pinned revision.
+外部源码有修改或版本不一致时，不等同于固定基线。板级交叉构建还需要 Zephyr
+SDK、对应 west 模块和可能的厂商 blob；主机验证不能替代板级验证。参见
+[测试指南](testing.md)与[板级工具说明](../tools/board/README.md)。
 
-Board work additionally requires the Zephyr SDK, the board's west modules,
-vendor blobs where applicable, network configuration and explicit hardware
-approval. Start from Zephyr's pinned west manifest and the retained board
-definitions. The ESP32 DMA and zenoh TLS patches are tracked explicitly; host
-tests do not validate their physical behavior. No automatic board flashing is
-part of setup or CI.
+## 代码与合并
 
-## Checks and performance
+- C 遵循 [Linux kernel coding style](https://www.kernel.org/doc/html/latest/process/coding-style.html)；
+  格式只是其中一部分，锁、分配、错误路径和数据布局仍须审查。
+- `make style BASE=<commit>` 检查指定基线之后更改的第一方 C/H。先运行固件
+  setup；`import-baseline` 是风格债务边界，不代表迁入代码全部合规。
+- 性能优先服从正确性与硬件安全；性能结论须记录目标、配置、负载及前后数据。
+- `agent/` 是独立子模块：先提交 Forge，再更新 Entelea 指针。其环境和测试
+  见 [Forge 开发文档](../agent/docs/development.md)。
+- 安全、信任、公开合同、CI 和贡献者指令变更需要 owner 审查。`CODEOWNERS`
+  本身不强制审查；必须在 GitHub 分支规则中配置保护。
+- 更改公开行为时更新其权威文档和回归测试。不要提交密钥、运行时工作区、
+  构建缓存或会话报告。
 
-- `make check`: source hygiene, setup/hygiene regressions, safety invariants,
-  affect CTest.
-- `make firmware-build`: host production firmware build.
-- `make firmware-test`: native_sim Twister regression.
-- `make agent-test`: Forge tests and fixture equivalence against this checkout.
-- `make style BASE=<commit>`: changed C/H clang-format and the pinned Zephyr
-  kernel-derived checkpatch, excluding upstream crypto. Run firmware setup first.
-  Unity-required API names have a narrow CamelCase exception in its test runner.
-  Imported style debt is not fixed en masse during behavioral migration.
-
-For C review, follow the
-[Linux kernel coding style](https://www.kernel.org/doc/html/latest/process/coding-style.html).
-Formatting is only part of this: locking, allocation, error paths and data
-layout still need review. Require measured evidence for performance changes,
-with target, configuration, workload and before/after values. Do not trade
-away safety/correctness to improve a benchmark.
-
-The initial local baseline passes 17 native_sim configurations (115 cases),
-36 affect cases, 17 setup/hygiene tests and 7 safety checks. Forge passes
-396 tests with the firmware checkout, or 393 standalone; deployment and Zephyr
-E2E simulation remain opt-in, and standalone fixture comparisons are skipped.
-The inherited FastMCP schema deprecation warning remains to be addressed.
-
-## Forge
-
-`agent/` is a real Git submodule. Commit and push Forge first, then update its
-pointer in Entelea. `uv run --project agent entelea-forge --help` is the branded
-entry point; the old command/import/environment names remain compatible.
-Copy `agent/config.example.toml` to ignored `agent/config.toml` and explicitly
-set the firmware workspace/model. API keys stay in the process environment.
-No default model credentials are copied from existing projects.
-Forge assets default to its own source checkout (`agent.forge_repo`), not the
-firmware checkout's parent/child relationship. Writable factory workspaces keep
-the inherited firmware-root layout during this migration.
-
-## Merge policy
-
-Protect the main branches with required CI checks. Changes to CI, instructions,
-public contracts and safety/trust code require owner review. CODEOWNERS records
-ownership, but enforcement requires repository branch rules; a file alone
-cannot prevent the agent from changing it.
+测试分类及未覆盖范围见[测试指南](testing.md)；依赖版本和历史来源见
+[迁移出处](provenance.md)。

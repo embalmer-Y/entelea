@@ -57,7 +57,7 @@ def c_files(roots: list[Path]) -> list[Path]:
 
 # 唯一写路径豁免：driver_dispatch（驱动分发点）+ boardbench 基准（裸 GPIO
 # 对照层——无它无法量化框架增量，DEC-44；产品代码直调仍一票否决）。
-WRITE_PATH_ALLOWED = {DISPATCH_FILE, FW / "tests" / "boardbench" / "src" / "main.c"}
+WRITE_PATH_ALLOWED = {DISPATCH_FILE, FW / "tests" / "board" / "boardbench" / "src" / "main.c"}
 
 
 def check_1_write_path(files: list[Path]) -> list[str]:

@@ -1,36 +1,71 @@
-# Architecture and migration boundary
+# 架构与实现边界
 
-The system has three separate responsibilities:
+本文面向框架开发者，描述当前实现和目标设计；目标设计不是已有功能或
+已经批准的接口合同。设备安全边界以[安全不变量](safety.md)为准。
 
-1. **Body:** Zephyr, hardware drivers, safety, permissions, App execution,
-   sensing, and eventually bounded reflexes and shared-channel arbitration.
-2. **Cognition:** future task/intent/feedback orchestration with optional affect.
-   It must not block the body or acquire authority to change safety limits.
-3. **Factory:** Forge manufactures and validates capabilities. Its absence must
-   not prevent already-installed local behavior from running.
+## 职责与部署
 
-## What exists
+Body、Cognition、Factory 是**逻辑职责**，不意味着三个独立设备。目标架构中，
+Body 和常驻 Cognition 都位于 Zephyr；可选情感模块也在设备内。推理服务可以
+位于设备、边缘节点或云端，Forge 始终是独立的工程制造系统。
 
-The Tessera firmware is retained under `firmware/module/tessera`. Its namespace
-is a compatibility boundary, not the new product name. WAMR is the implemented
-App engine; Lua and engine-independent hot-swap remain design work.
+```mermaid
+flowchart LR
+  subgraph Device["设备：Zephyr 固件"]
+    Sense["输入与感知数据"]
+    Brain["常驻认知：上下文、决策、任务编排（计划）"]
+    Affect["情感算法（可选，计划接入）"]
+    Apps["Wasm Apps / 本地行为"]
+    Guard["权限、输出安全与驱动"]
+    Sense --> Brain
+    Sense --> Apps
+    Brain <--> Affect
+    Brain --> Apps
+    Apps --> Guard
+  end
+  Model["推理后端：本地、边缘或云"]
+  Forge["Forge：开发、验证、签名与受控部署"]
+  Brain <--> Model
+  Forge -. "经授权交付 App" .-> Apps
+```
 
-`lib/affect` contains Kaleido's single-writer, singleton C kernels and their
-original golden tests. They build without ESP-IDF. They are not yet a general
-multi-instance plugin API and are not wired into the Zephyr execution path.
-The fixed social/stimulation/rest model is a companion policy, not a mandatory
-dependency of task-oriented devices.
+常驻认知应负责有界的本地状态、任务生命周期、推理请求协调和执行反馈。
+推理网络或模型不可用时，安全与已配置的本地行为不能依赖其返回；
+依赖远程推理的任务则应明确暂停或失败。认知与安全同处固件也不意味着共用
+阻塞执行线程；线程、队列及资源预算尚待目标板验证和设计。
 
-Forge is a Git submodule at `agent/` so existing firmware-domain paths remain
-compatible. Forge also runs independently; cross-repository checks explicitly
-use `ENTELEA_ROOT` rather than assuming a parent directory layout.
+## 三条路径
 
-## Next integration order
+```mermaid
+flowchart LR
+  Input["传感输入"] --> Fast["快路径：已安装的有界本地行为（目标）"]
+  Input --> Slow["慢路径：认知、推理、编排（目标）"]
+  Slow --> Fast
+  Fast --> Safe["权限与安全提交"] --> HW["硬件"]
+  Slow -. "缺少能力" .-> Factory["工程路径：Forge"]
+  Factory -. "验证、签名、审批后交付" .-> Fast
+  HW -. "观测与反馈" .-> Input
+```
 
-Validate the target board's concurrent media/control budget, then implement
-typed skill receipts and channel ownership, bounded Lua lifecycle, cognitive
-orchestration, and optional affect lifecycle. Do not combine those behavior
-changes with source relocation or cosmetic namespace replacement.
+- **快路径**不应等待模型或网络。当前有本地 Wasm App；完整反射框架和
+  实时延迟保证尚未实现或测量。
+- **慢路径**计划协调推理、结构化意图、行为与反馈。Lua 临时执行、资源
+  限额、取消和失效机制均未实现。
+- **工程路径**由 Forge 开发、测试和交付复杂能力；Forge 不在线不应妨碍
+  设备已安装的本地行为。
 
-Historical design proposals are referenced by upstream commit in provenance.
-They are not current implementation claims or automatically approved requirements.
+收到或接受命令不等于物理动作完成；需要相应的设备观测才可确认。
+
+## 当前实现
+
+| 模块 | 当前状态 |
+| --- | --- |
+| 固件 | `firmware/module/tessera` 保留 `ts_*` 兼容接口；WAMR 执行 Wasm App。 |
+| App | 支持多实例，默认配置为一个；现有来源仲裁不等于多 App 通道所有权。 |
+| 输出 | 普通输出经权限和安全提交路径；急停走独立路径。输入读取不经过输出提交。 |
+| 情感 | `lib/affect/` 是单写者、单例 C 内核及主机测试；尚未链接至 Zephyr，也不是通用多实例插件。 |
+| Forge | `agent/` 是独立仓库的 Git 子模块；支持独立源代码工作区。 |
+| 尚未实现 | 常驻认知、Lua、通道所有权、类型化完成回执及情感生命周期。 |
+
+目标板的媒体、控制、内存及延迟预算必须实测。历史设计文档的来源见
+[迁移出处](provenance.md)，不自动构成当前需求。

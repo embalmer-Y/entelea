@@ -7,17 +7,20 @@ apps 全景视图双 ACTIVE → console 双流判据（两 APP 各自 init/DONE 
 """
 import sys
 import time
+from pathlib import Path
 
-sys.path.insert(0, "/home/emb/project/Tessera/agent")
+REPO = Path(__file__).resolve().parents[2]
+AGENT = REPO / "agent"
+sys.path.insert(0, str(AGENT))
 
 from tessera_agent.tools_net import deploy
 from tessera_agent.tools_net.zenoh_service import ZenohService
 
 ROUTER = "tcp/127.0.0.1:9955"
 NODE, CUBE = "dbn", "dbc"
-PKG1 = "/home/emb/project/Tessera/agent/build/com.example.cube.nvd-1.0.0.tsap"
-PKG2 = "/home/emb/project/Tessera/agent/demos/demo-lifecycle/v1/demo.d8.lifecycle-1.0.0.tsap"
-PUB = "/home/emb/project/Tessera/agent/tests/fixtures/ts-test-root.pub"
+PKG1 = str(AGENT / "build/com.example.cube.nvd-1.0.0.tsap")
+PKG2 = str(AGENT / "demos/demo-lifecycle/v1/demo.d8.lifecycle-1.0.0.tsap")
+PUB = str(AGENT / "tests/fixtures/ts-test-root.pub")
 TS_APP_ACTIVE = 3
 
 
@@ -76,4 +79,5 @@ def main() -> int:
         return 0 if ok_view else 1
 
 
-sys.exit(main())
+if __name__ == "__main__":
+    sys.exit(main())

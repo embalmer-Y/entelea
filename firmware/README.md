@@ -1,35 +1,8 @@
-# firmware/ · 构建与测试说明（M0）
+# Zephyr 固件
 
-> west 工作区在本仓库之外（`D:\Software\project\zephyrproject`，Zephyr **v4.4.0** 钉版，DEC-19）。
-> 本模块经 `ZEPHYR_EXTRA_MODULES` 接入构建（后续迁入自管 west manifest，见 `docs/std/versioning.md` §4）。
+本目录包含设备应用入口、板级定义、Tessera 兼容模块和测试工程。
 
-## 构建（native_sim —— 需主机 gcc，Windows 原生暂缺，见 AGENTS.md 环境缺口）
-
-```bash
-cd D:/Software/project/zephyrproject
-.venv/Scripts/west build -b native_sim D:/Software/project/Tessera/firmware/app \
-  -d build-m0-app --pristine=always -- \
-  -DZEPHYR_EXTRA_MODULES=D:/Software/project/Tessera/firmware/module/tessera
-```
-
-## 构建（真机板，SDK 交叉工具链，无需主机 gcc）
-
-```bash
-.venv/Scripts/west build -b nucleo_h743zi D:/Software/project/Tessera/firmware/app \
-  -d build-m0-h7 --pristine=always -- \
-  -DZEPHYR_EXTRA_MODULES=D:/Software/project/Tessera/firmware/module/tessera
-```
-
-## twister 冒烟测试
-
-```bash
-.venv/Scripts/west twister -p native_sim -T D:/Software/project/Tessera/firmware/tests \
-  --extra-args=ZEPHYR_EXTRA_MODULES=D:/Software/project/Tessera/firmware/module/tessera
-# 真机板构建验证（不运行）：-p nucleo_h743zi --build-only
-```
-
-## pytest 仓库检查（编码/无 BOM）
-
-```bash
-python -m pytest firmware/tests/pytest -v
-```
+- 环境准备和 native_sim 构建：[开发指南](../docs/development.md)。
+- 自动回归及板级实验的区别：[测试指南](../docs/testing.md)。
+- 设备行为与安全边界：[架构](../docs/architecture.md)、
+  [安全不变量](../docs/safety.md)。

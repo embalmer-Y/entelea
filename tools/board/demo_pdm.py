@@ -11,17 +11,19 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, "/home/emb/project/Tessera/agent")
+REPO = Path(__file__).resolve().parents[2]
+AGENT = REPO / "agent"
+sys.path.insert(0, str(AGENT))
 
 from tessera_agent.common.config import load_config
 from tessera_agent.common.limits import ContextBudget
 from tessera_agent.platform import AppContext
 from tessera_agent.domain.app_chain import app_develop
 
-KEY = "/home/emb/project/Tessera/agent/tests/fixtures/ts-test-root.key"
-OUT_DIR = "/home/emb/project/Tessera/agent/build"
-SPEC_PATH = Path("/home/emb/project/Tessera/agent/demos/demo-pdm-audio/spec.md")
-PKG_HDR = Path("/home/emb/project/Tessera/firmware/tests/pdmdemo/src/dp_pkg.h")
+KEY = str(AGENT / "tests/fixtures/ts-test-root.key")
+OUT_DIR = str(AGENT / "build")
+SPEC_PATH = AGENT / "demos/demo-pdm-audio/spec.md"
+PKG_HDR = REPO / "firmware/tests/board/pdmdemo/src/dp_pkg.h"
 
 
 def gen_pkg_header(tsap: Path, out: Path) -> None:
@@ -39,7 +41,7 @@ def gen_pkg_header(tsap: Path, out: Path) -> None:
 
 
 async def main() -> None:
-    cfg = load_config("/home/emb/project/Tessera/agent/config.toml")
+    cfg = load_config(AGENT / "config.toml")
     ctx = AppContext(cfg=cfg, budget=ContextBudget(window_tokens=cfg.context_window))
     spec = SPEC_PATH.read_text(encoding="utf-8")
 
@@ -53,7 +55,7 @@ async def main() -> None:
 
     print("=== [2/2] dp_pkg.h 机械生成（pdmdemo 嵌入用） ===", flush=True)
     gen_pkg_header(pkg, PKG_HDR)
-    demo_dir = Path("/home/emb/project/Tessera/agent/demos/demo-pdm-audio")
+    demo_dir = AGENT / "demos/demo-pdm-audio"
     demo_dir.mkdir(parents=True, exist_ok=True)
     for name in (pkg.name, pkg.with_suffix(".wasm").name):
         src = pkg.with_name(name) if (pkg.parent / name).exists() else None
@@ -63,4 +65,5 @@ async def main() -> None:
     print("done", flush=True)
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

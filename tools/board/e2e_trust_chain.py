@@ -20,7 +20,7 @@ import threading
 import time
 from pathlib import Path
 
-REPO = Path("/home/emb/project/Tessera")
+REPO = Path(__file__).resolve().parents[2]
 AGENT = REPO / "agent"
 sys.path.insert(0, str(AGENT))
 

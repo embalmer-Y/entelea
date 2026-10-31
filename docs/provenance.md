@@ -1,49 +1,35 @@
-# Migration provenance
+# 迁移来源与依赖
 
-## Imported sources
+## 导入的代码
 
-- [Tessera](https://github.com/embalmer-Y/Tessera/tree/64a2cb7b2cb010be1951bf4a25e153f41519efad):
-  `firmware/`, `tools/board/`, license and attributes. Its `agent/` subtree is
-  independently imported into Forge. Existing notices remain in place.
-- Kaleido commit `3fbc72266b25e4eee1a0667b7d7af4f9e7157ee9`:
-  `kaleido-fw/components/kaleido_{drive,emotion,ignition}` and their golden tests,
-  extracted under `lib/affect/`. The original repositories remain unchanged.
-- Galatea-derived affect code retains its MIT license and source attribution.
-- The imported TweetNaCl code retains its own provenance notice.
+- [Tessera 的固定提交](https://github.com/embalmer-Y/Tessera/tree/64a2cb7b2cb010be1951bf4a25e153f41519efad)：
+  固件、板级工具、许可及属性；其 Agent 子树独立导入 Forge。
+- Kaleido 提交 `3fbc72266b25e4eee1a0667b7d7af4f9e7157ee9`：提取
+  `kaleido_{drive,emotion,ignition}` 及原有黄金测试至 `lib/affect/`。
+- Galatea 衍生情感代码保留 MIT 许可及署名；TweetNaCl 保留自身来源声明。
 
-The `import-baseline` Git tag records imported source before Entelea adaptations.
-Subsequent commits identify modifications. Historical DEC/Q/HLD/LLD references
-in that source resolve against the Tessera commit above. Old plans, research
-reports and session registers were deliberately not copied into the live docs.
+`import-baseline` 标签记录适配前的导入。源代码中的历史 DEC/Q/HLD/LLD
+引用应在上面的 Tessera 提交中查找，不代表当前需求。旧计划、研究和会话
+记录没有复制到当前文档；原仓库保持不变。
 
-## External dependencies
+## 外部依赖
 
-| Dependency | Pinned revision |
+| 依赖 | 固定版本或提交 |
 | --- | --- |
 | Zephyr v4.5.0 | `41d10b59730406bbab4ca9f1fbbe9e96aafb4966` |
 | WAMR 2.4.5 | `25bd7eb63e828e4bd242cc9b38d260b4b31c6605` |
 | zenoh-pico 1.10.1 | `e1ab223a28aaebb5dec1e70d98eab152332f777a` |
-| Unity 2.6.1, host tests only | `cbcd08fa7de711053a3deec6339ee89cad5d2697` |
+| Unity 2.6.1，主机测试 | `cbcd08fa7de711053a3deec6339ee89cad5d2697` |
 
-`patches/zephyr-esp32-gdma.patch` preserves a previously uncommitted modification
-in the existing Zephyr workspace. It is not silently treated as upstream.
-Apply/review it only for the corresponding ESP32 DMA board validation; native_sim
-does not exercise it. The existing zenoh TLS patch remains in
-`firmware/module/tessera/ext/zenoh-pico-tls.patch`.
+`patches/zephyr-esp32-gdma.patch` 保存原 Zephyr 工作区中未提交的 ESP32 DMA
+修改，并非上游代码；仅在对应板级验证时审查和应用，native_sim 不覆盖它。
+zenoh TLS 补丁位于 `firmware/module/tessera/ext/zenoh-pico-tls.patch`。
 
-Public test signing keys and packages are development fixtures, not credentials
-for deployment. Never provision a production device with those roots.
+## 有意排除与适配
 
-## Deliberately excluded
+没有迁入本地凭据、配置、工作区、构建缓存、会话日志及 ESP-IDF 对话/UI
+外壳。公开测试签名材料仅作夹具，不得配置到生产设备。
 
-Local credentials/configuration, runtime workspaces, build caches, session logs,
-full decision histories, unfinished Lua implementation claims, and the ESP-IDF
-conversation/UI shell. Original repositories remain the historical source.
-
-The old `tools/env` installer was replaced with isolated source setup. Its
-installer-specific tests were updated for the replacement, retaining TLS patch
-integrity coverage. Forge gateway subprocess tests use a temporary workspace
-rather than assuming the parent directory contains firmware.
-The ignition null-guard test read an uninitialized decision after a no-op call.
-It now verifies unchanged, initialized output for each invalid argument; the
-imported kernel behavior is unchanged.
+旧环境安装器由隔离源码准备脚本替换，其测试已针对新脚本改写并保留 TLS
+补丁完整性检查。Forge 的 gateway 子进程测试使用临时工作区。情感 ignition
+空参数测试改为初始化结果并逐项检查不变性；内核行为未改。

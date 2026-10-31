@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[2]
+REPO = HERE.parents[3]
 AGENT = REPO / "agent"
 sys.path.insert(0, str(AGENT))
 
