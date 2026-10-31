@@ -1,32 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
-"""tools/env 安装程序套件守恒测试（DEC-79 · V0.16.0）。
-
-覆盖：① 全部 shell 语法；② 步骤编号有序且 install.sh 引用齐全；③ 钉版常量与
-预期字面量一致（改版本须三处同步：env_common/README 依赖表/本测试）；④ zenoh-pico
-TLS 补丁统一 diff 计数自洽（2026-10-24 曾有两处计数/头行潜伏缺陷——本检查防复发）；
-⑤ --help 契约与命名规范合规。
-"""
+"""Entelea setup regressions and retained zenoh TLS patch integrity."""
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
-ENV_DIR = REPO / "tools" / "env"
-
-EXPECTED_PINS = {
-    "PIN_ZEPHYR_REF": "v4.5.0",
-    "PIN_SDK_VER": "1.0.1",
-    "PIN_WAMR_REF": "WAMR-2.4.5",
-    "PIN_ZENOH_PICO_REF": "1.10.1",
-    "PIN_ESPTOOL_VER": "5.4.0",
-    "PIN_ZENOHD_VER": "1.10.1",
-    "PIN_LLVM_VER": "18.1.8",
-    "PIN_CMAKE_VER": "3.31.6",
-    "PIN_PY_VENV": "3.12",
-    "PIN_DEFAULT_MODEL": "anthropic:MiniMax-M3",
-}
+ENV_DIR = REPO / "scripts"
 
 
 def _sh_files() -> list[Path]:
@@ -35,29 +17,31 @@ def _sh_files() -> list[Path]:
 
 def test_shell_syntax_all():
     files = _sh_files()
-    assert len(files) >= 12, "安装套件应 ≥12 个 shell 文件"
+    assert {p.name for p in files} == {"setup-firmware.sh", "firmware.sh"}
     for f in files:
         r = subprocess.run(["bash", "-n", str(f)], capture_output=True, text=True)
         assert r.returncode == 0, f"{f}: {r.stderr}"
 
 
-def test_steps_ordered_and_referenced():
-    steps = sorted(p.name for p in (ENV_DIR / "steps").glob("*.sh"))
-    nums = [int(s.split("-")[0]) for s in steps]
-    assert nums == sorted(nums) and len(set(nums)) == len(nums), "步骤编号须有序唯一"
-    installer = (ENV_DIR / "install.sh").read_text(encoding="utf-8")
-    for s in steps:
-        assert s[:-3] in installer, f"install.sh 未引用步骤 {s}"
+def test_setup_uses_immutable_revisions():
+    src = (ENV_DIR / "setup-firmware.sh").read_text(encoding="utf-8")
+    pins = re.findall(r'^\s+([0-9a-f]{40}) "\$ROOT/\.deps/[^"]+"', src, re.M)
+    assert len(pins) == 2
+    assert "sudo" not in src
+    assert "reset --hard" not in src
 
 
-def test_pins_match_expected():
-    src = (ENV_DIR / "env_common.sh").read_text(encoding="utf-8")
-    pins = dict(re.findall(r'^readonly (PIN_[A-Z_]+)="([^"]+)"', src, re.M))
-    assert pins == EXPECTED_PINS, "钉版漂移：改版本须 env_common/README 依赖表/本测试三处同步"
-    # README 依赖表对齐抽查
-    readme = (REPO / "README.md").read_text(encoding="utf-8")
-    for pin in ("v4.5.0", "1.0.1", "2.4.5", "1.10.1"):
-        assert pin in readme, f"README 依赖与钉版表缺少 {pin}"
+def test_missing_sources_fail_explicitly(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    shutil.copyfile(ENV_DIR / "firmware.sh", scripts / "firmware.sh")
+    result = subprocess.run(
+        ["bash", str(scripts / "firmware.sh"), "build"],
+        capture_output=True, text=True, timeout=10,
+        env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)},
+    )
+    assert result.returncode != 0
+    assert "Missing source:" in result.stderr
 
 
 def test_zenoh_pico_patch_diff_counts_selfconsistent():
@@ -102,20 +86,12 @@ def test_zenoh_pico_patch_diff_counts_selfconsistent():
                 raise AssertionError(f"补丁体异常行：{ln!r}")
     if hunk:
         _close_hunk()
-    assert len(files) == len(set(files)) and len(files) >= 9, f"TLS 补丁应 ≥9 文件（现行 {len(files)}）"
+    assert len(files) == len(set(files)) and len(files) >= 9, (
+        f"TLS 补丁应 ≥9 文件（现行 {len(files)}）")
     # 每个文件段须有 ---/+++ 头（git apply 严格域——缺 --- 行 = 拒收）
     body = "\n".join(patch)
     for f in files:
         assert f"--- a/{f}\n" in body, f"{f} 段缺 --- a/ 头行"
-
-
-def test_installer_help_contract():
-    r = subprocess.run(
-        ["bash", str(ENV_DIR / "install.sh"), "--help"],
-        capture_output=True, text=True, timeout=30,
-        env={"PATH": "/usr/bin:/bin", "HOME": str(REPO)},  # 隔离环境——防副作用
-    )
-    assert r.returncode == 0 and "--dev" in r.stdout and "--config" in r.stdout
 
 
 def test_naming_convention_compliance():

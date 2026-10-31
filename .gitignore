@@ -1,0 +1,16 @@
+.venv/
+.deps/
+.env
+build/
+build-*/
+twister-out*/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.checkpatch-camelcase.*
+*.py[cod]
+compile_commands.json
+*.local.*
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json

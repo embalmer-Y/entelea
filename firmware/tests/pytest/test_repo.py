@@ -3,20 +3,21 @@
 
 军规 4：全库文本 UTF-8 无 BOM——此处在 CI 中机械执行（本地构建不依赖 Zephyr 环境）。
 """
+import subprocess
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]  # firmware/tests/pytest -> 仓库根
 
 TEXT_SUFFIXES = {".md", ".c", ".h", ".py", ".yml", ".yaml", ".txt", ".conf", ".cmake"}
-SKIP_PARTS = {".git", ".venv", "node_modules", "build", "build-hello", "build-m0-app"}
-
-
 def _text_files():
+    names = subprocess.check_output(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=REPO,
+    ).decode().split("\0")
     return [
-        p for p in REPO.rglob("*")
+        p for name in sorted(set(names) - {""})
+        if (p := REPO / name).is_file()
         if p.suffix.lower() in TEXT_SUFFIXES
-        and not (set(p.parts) & SKIP_PARTS)
-        and p.is_file()
     ]
 
 
