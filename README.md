@@ -4,12 +4,18 @@ Entelea 是一个基于 Zephyr 的具身 AI 框架：让设备感知环境、通
 硬件能力行动，并由独立的 [Entelea Forge](https://github.com/embalmer-Y/entelea-forge)
 制造和验证新的 App。
 
+**Galatea 是 Entelea 的首个认知个体产品方向**，不再另建一套设备固件。
+通用框架仍支持不需要情感的任务设备；原 Galatea 仓库保留为研究基线。
+合并边界、模块映射和后续演进见 [Galatea 产品与研究边界](docs/galatea.md)。
+
 ## 当前状态
 
 - 已迁移 Zephyr 固件、硬件抽象、安全路径、Wasm App 管理和 TSAP 交付机制。
 - Kaleido 的驱动、情感和触发内核可以独立测试，**尚未接入固件**。
 - 常驻认知框架、Lua 执行、多 App 通道仲裁和情感生命周期仍在设计中。
 - 主机测试不等于特定开发板、执行机构或实时性能已验证。
+- Galatea 的独立情感参考算子已接入 C 内核回归；这不代表预测脑、长期
+  记忆、在线学习或完整认知个体已在设备实现。
 
 ## 快速开始
 
@@ -40,6 +46,7 @@ make agent-test
 | `scripts/`、`patches/` | 开发检查和显式维护的外部补丁 |
 | `docs/` | 随代码版本维护的项目文档 |
 
-从[文档索引](docs/index.md)选择架构、开发、测试、安全及来源说明。
+更详细的目录说明见[仓库目录说明](docs/repository-structure.md)；从
+[文档索引](docs/index.md)选择架构、开发、测试、安全及来源说明。
 除文件或第三方声明另有说明外采用 Apache-2.0；情感内核保留
 [Galatea MIT 许可](LICENSES/Galatea-MIT.txt)。

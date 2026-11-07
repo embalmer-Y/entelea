@@ -1,0 +1,46 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Storage validation only: carve the reserved image-1 region; keep image-0,
+ * boot, system, LP images, storage and coredump at their existing offsets.
+ * fw-b is a reservation, not a usable firmware OTA slot.
+ */
+/delete-node/ &slot1_partition;
+
+&flash0 {
+	partitions {
+		ts_prov_part: partition@7e0000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-prov";
+			reg = <0x7e0000 0x1000>;
+		};
+		ts_meta_part: partition@7e1000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-meta";
+			reg = <0x7e1000 0x2000>;
+		};
+		ts_slot_a_part: partition@7e3000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-a";
+			reg = <0x7e3000 0x8000>;
+		};
+		ts_slot_b_part: partition@7eb000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-slot-b";
+			reg = <0x7eb000 0x8000>;
+		};
+		ts_noinit_part: partition@7f3000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-noinit";
+			reg = <0x7f3000 0x1000>;
+		};
+		ts_audit_part: partition@7f4000 {
+			compatible = "zephyr,mapped-partition";
+			label = "ts-audit";
+			reg = <0x7f4000 0x2000>;
+		};
+		fw_b_part: partition@7f6000 {
+			compatible = "zephyr,mapped-partition";
+			label = "fw-b";
+			reg = <0x7f6000 0x7aa000>;
+		};
+	};
+};

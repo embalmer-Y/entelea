@@ -22,6 +22,8 @@ int main(void)
 	failures += Unity.TestFailures;
 	ignition_w3_tests_main();
 	failures += Unity.TestFailures;
+	galatea_reference_tests_main();
+	failures += Unity.TestFailures;
 
 	return failures != 0;
 }

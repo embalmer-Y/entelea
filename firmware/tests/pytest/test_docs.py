@@ -14,7 +14,7 @@ LINK = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 def local_links():
     files = [
         ROOT / "README.md", ROOT / "firmware/README.md", ROOT / "tools/board/README.md",
-        *sorted((ROOT / "docs").glob("*.md")),
+        *sorted((ROOT / "docs").rglob("*.md")),
     ]
     for path in files:
         for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):

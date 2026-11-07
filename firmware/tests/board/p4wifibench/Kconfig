@@ -3,6 +3,33 @@
 # 凭据红线：SSD/PSK 不落 repo/证据（evidence 脱敏纪律）。
 mainmenu "P4 WiFi bring-up bench (V0.14.0 P4-W1)"
 
+config P4W_SCAN_ONLY
+	bool "Credential-free scan diagnostic"
+	default n
+	help
+	  Verify the network device and repeated scan completion without
+	  connecting to an AP or printing SSIDs/BSSIDs. This is not DNS,
+	  TLS or complete framework/network acceptance.
+
+config P4W_NETWORK_ONLY
+	bool "Runtime-configured network diagnostic"
+	depends on !P4W_SCAN_ONLY
+	default n
+	help
+	  Receive test credentials over the explicitly selected UART rather
+	  than embedding them in source or build caches. Verify association,
+	  DHCP and controlled disconnect/reconnect; this is not TLS acceptance.
+
+config P4W_NETWORK_TLS
+	bool "Controlled DNS and strict TLS diagnostic"
+	depends on P4W_NETWORK_ONLY && NET_SOCKETS_SOCKOPT_TLS && DNS_RESOLVER && NET_TCP
+	default n
+	help
+	  Receive controlled endpoint, CA and trusted test time over UART.
+	  Verify DNS, exact TLS echo and rejection of hostname mismatch,
+	  untrusted issuer and expired certificate. Verify handshake timeout,
+	  authenticated EOF and fresh-connection recovery. No model calls.
+
 config P4W_SSID
 	string "WiFi SSID (build-time injection)"
 	default ""

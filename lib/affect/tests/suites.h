@@ -6,5 +6,6 @@ void drive_tests_main(void);
 void emotion_tests_main(void);
 void ignition_tests_main(void);
 void ignition_w3_tests_main(void);
+void galatea_reference_tests_main(void);
 
 #endif

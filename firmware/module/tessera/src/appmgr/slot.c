@@ -565,22 +565,27 @@ static ts_res_t boot_load_entry(uint8_t entry, const ts_appmgr_meta_t *meta)
 	/* 数值 app_id = entry+1（M6 单实例装载 entry 0 → 1，与 V1 审计归因
 	 * 兼容；M7 多实例 = 各 entry 各 id）。串身份随载注入（M9：kv 哈希源）。 */
 	ts_appmgr_app_set_idstr(entry + 1, current_apps[entry].app_id);
-	ts_res_t sr = ts_appmgr_app_start(entry + 1, wbuf, wl, boot_caps);
-
-#ifdef CONFIG_TS_HAL_FS
-	if (sr == TS_OK && boot_fs_paths[0] != '\0') {
-		(void)ts_fs_paths_bind(entry + 1, boot_fs_paths); /* DEC-47⑤ */
-	}
-#endif
 #ifdef CONFIG_TS_HAL_AV
 	/* 完备掩码：图像 = fmt|w|h（0x7）；pcm16 = fmt|w（0x3，h 不存在） */
 	{
 		uint8_t need = (boot_av_fmt == TS_AV_FMT_PCM16) ? 0x3U : 0x7U;
 
-		if (sr == TS_OK && boot_av_set == need) {
-			(void)ts_av_config_bind(entry + 1, boot_av_fmt, boot_av_w,
-						boot_av_h); /* DEC-47③ */
+		if (boot_av_set == need) {
+			ts_res_t result =
+				ts_av_config_bind(entry + 1, boot_av_fmt, boot_av_w, boot_av_h);
+
+			if (result != TS_OK) {
+				printk("[appmgr] boot[%u]: av bind failed rc=%d\n", entry, result);
+				return result;
+			}
 		}
+	}
+#endif
+	ts_res_t sr = ts_appmgr_app_start(entry + 1, wbuf, wl, boot_caps);
+
+#ifdef CONFIG_TS_HAL_FS
+	if (sr == TS_OK && boot_fs_paths[0] != '\0') {
+		(void)ts_fs_paths_bind(entry + 1, boot_fs_paths); /* DEC-47⑤ */
 	}
 #endif
 	return sr;

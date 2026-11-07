@@ -1,0 +1,2 @@
+mainmenu "P04 external audio probe"
+source "Kconfig.zephyr"

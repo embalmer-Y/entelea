@@ -16,12 +16,9 @@
  * handshake P4 GPIO6 <-> C5 GPIO2 (not modeled by the current
  * esp_hosted_mcu binding). Enabled: C5 runs an esp-hosted 3.x slave
  * firmware (owner-confirmed 2026-10-30) matching the driver contract.
- * Bring-up 2026-10-30: RPC handshake PASS (coprocessor firmware
- * v3.0.10 reported over SDIO); wifi scan data plane FAILS at the
- * slave (mgmt-level "Scan request failed", no driver-side error) —
- * open item, candidate causes: slave-side scan preconditions,
- * regulatory domain, unmodeled handshake IO; needs C5 UART logs
- * (pins 4/5, not wired to CH343) or a C6-board A/B comparison.
+ * Required pinned-driver patches and network validation boundaries are
+ * documented in docs/development.md and docs/testing.md. Enumeration
+ * alone does not establish scan, association, DHCP or TLS acceptance.
  */
 
 /dts-v1/;
@@ -40,6 +37,7 @@
 		zephyr,shell-uart = &uart0;
 		zephyr,flash = &flash0;
 		zephyr,code-partition = &slot0_partition;
+		zephyr,watchdog = &wdt0;
 		zephyr,bt-hci = &esp_hosted_mcu_hci;
 	};
 

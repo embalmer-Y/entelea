@@ -1,4 +1,12 @@
 tests:
+  framework.periph.registration_failures:
+    tags: framework
+    integration_platforms:
+      - native_sim
+    platform_allow:
+      - native_sim
+      - native_sim/native/64
+    extra_args: TEST_REGISTRATION_FAILURES=ON
   framework.periph:
     tags: framework
     integration_platforms:

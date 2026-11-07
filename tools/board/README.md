@@ -19,6 +19,20 @@
 - 先确保串口只有一个持有者；检查目标板的引脚、分区和硬件安全态。主机测试
   不能证明物理动作或故障处理安全。
 
+## 受控 P4/C5 网络验证
+
+[p4_net_probe.py](p4_net_probe.py)配合独立 `p4-tls` 诊断镜像，验证真实
+关联/DHCP、DNS 正反向、严格 TLS 回显/证书拒绝，以及半开握手超时和
+服务端 EOF 后的重连。使用步骤和 UART 协议见
+[开发指南](../../docs/development.md#tls-能力与运行时联网诊断)，精确判据见
+[测试指南](../../docs/testing.md#受控-dnstls-判据)。
+
+必须显式提供 `--run`、稳定 by-id 目标、仓库外当前用户所有的 0600
+Wi-Fi JSON、`--security wpa2-psk` 和新的仓库外私有证据目录。
+它不烧录、不升级 C5、不调用模型，但会复位 P4、配置 C5，并启动获准
+本机地址上的临时 DNS/TLS 服务；C5 配置可能进入 NVS。证书私钥自动删除，
+脱敏日志/JSON 不提交。受控服务断开不等同于无线 AP 失联测试。
+
 `console_*`、`dav_recv.py`、`pdm_recv.py` 和 `p4_udp_echo.py` 为观测或接收
 辅助；`gen_*`、`ota_client.py` 和其余脚本可能写文件或更改设备状态，应先
 检查实现。板级 blob 使用相应 Zephyr 版本的官方准备流程。

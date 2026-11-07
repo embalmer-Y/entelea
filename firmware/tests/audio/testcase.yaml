@@ -1,0 +1,21 @@
+tests:
+  framework.audio.pdm:
+    tags:
+      - framework
+      - audio
+    integration_platforms:
+      - native_sim
+    platform_allow:
+      - native_sim
+      - native_sim/native/64
+    extra_args: TEST_AUDIO_PDM=1
+  framework.audio.es8311:
+    tags:
+      - framework
+      - audio
+    integration_platforms:
+      - native_sim
+    platform_allow:
+      - native_sim
+      - native_sim/native/64
+    extra_args: TEST_AUDIO_ES8311=1

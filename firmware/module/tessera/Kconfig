@@ -50,6 +50,17 @@ config TS_WDT_CHANNEL_MS
 	  fallback (if enabled by board) times out at MIN+DELAY ~= 10s
 	  (matches TS_HARD_WDT_CAP_MS, DEC-22/27 lineage).
 
+config TS_WDT_REQUIRE_HW
+	bool "Require a board-selected hardware watchdog fallback"
+	depends on !TASK_WDT_DUMMY
+	select WATCHDOG
+	select TASK_WDT_HW_FALLBACK
+	default n
+	help
+	  Require chosen zephyr,watchdog and a ready hardware device at
+	  framework startup. A missing or failed backend stops boot rather
+	  than silently falling back to only the software watchdog.
+
 config TS_CORE_EVT_QUEUE_DEPTH
 	int "ISR event post queue depth"
 	default 16

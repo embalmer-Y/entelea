@@ -4,6 +4,11 @@
 # net/power/periph/store（各 LLD）。
 zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+if(CONFIG_BOARD_ESP32P4C5_CORE_BOARD)
+  # Modules load after the SoC registers esptool's final image conversion.
+  include(${CMAKE_CURRENT_LIST_DIR}/../../boards/osptek/esp32p4c5_core_board/image.cmake)
+endif()
+
 zephyr_library()
 
 zephyr_library_sources(

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+ZEPHYR_CHECKPATCH_EXCEPTIONS = ("PREFER_KERNEL_TYPES", "PRINTK_WITHOUT_KERN_LEVEL")
 
 
 def changed_paths(data):
@@ -54,9 +55,11 @@ def main():
             "perl", str(checker), "--no-tree", "--no-signoff", "--strict",
             "--max-line-length=100", "--file",
         ]
+        exceptions = list(ZEPHYR_CHECKPATCH_EXCEPTIONS)
         if Path(path) == ROOT / "lib/affect/tests/main.c":
             # Unity mandates setUp/tearDown and its public result field names.
-            command += ["--ignore", "CAMELCASE"]
+            exceptions.append("CAMELCASE")
+        command += ["--ignore", ",".join(exceptions)]
         result |= subprocess.run([*command, path], cwd=ROOT).returncode
     return result
 

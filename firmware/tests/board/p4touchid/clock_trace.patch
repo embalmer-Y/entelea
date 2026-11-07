@@ -1,0 +1,89 @@
+diff --git a/soc_init.c b/soc_init.c
+--- a/soc_init.c
++++ b/soc_init.c
+@@ -114,6 +114,7 @@
+ #include "hal/mspi_ll.h"
+ #include "hal/efuse_hal.h"
+ #include "pmu_param.h"
++#include "boot_trace.h"
+ 
+ /*
+  * Custom bootloader_clock_configure() for ESP32-P4 simple boot mode.
+@@ -130,13 +131,17 @@
+ 	rtc_clk_8m_enable(true);
+ 
++	ts_p4_clock_checkpoint('B', '+');
+ 	clk_ll_cpll_enable();
+ 
+ 	clk_ll_cpll_calibration_start();
++	ts_p4_clock_checkpoint('Q', '+');
+ 	while (!clk_ll_cpll_calibration_is_done()) {
+-		;
++		ts_p4_clock_poll();
+ 	}
++	ts_p4_clock_checkpoint('Q', '-');
+ 	esp_rom_delay_us(10);
+ 	clk_ll_cpll_calibration_stop();
++	ts_p4_clock_checkpoint('B', '-');
+ 
+ 	/*
+ 	 * Voltage regulator + DCDC handoff, mirroring ESP-IDF rtc_clk_init().
+@@ -164,6 +169,7 @@
+ 		hp_dcmvset = pvt_hp_dcmvset;
+ 	}
+ 
++	ts_p4_clock_checkpoint('V', '+');
+ 	if (ESP_CHIP_REV_ABOVE(chip_version, 301)) {
+ 		SET_PERI_REG_MASK(PMU_DCM_CTRL_REG, PMU_DCDC_FB_RES_FORCE_PD);
+ 	}
+@@ -178,7 +184,10 @@
+ 		CLEAR_PERI_REG_MASK(PMU_DCM_CTRL_REG, PMU_DCDC_FB_RES_FORCE_PD);
+ 		esp_rom_delay_us(10);
+ 	}
++	ts_p4_clock_checkpoint('V', '-');
++	ts_p4_clock_checkpoint('O', '+');
+ 	pmu_ll_hp_set_regulator_xpd(&PMU, PMU_MODE_HP_ACTIVE, false);
++	ts_p4_clock_checkpoint('O', '-');
+ 
+ 	/* Upscale CPU to CONFIG_BOOTLOADER_CPU_CLK_FREQ_MHZ, mirroring the
+ 	 * reference rtc_clk_cpu_freq_to_cpll_mhz() with cpu_div = 4:
+@@ -189,16 +198,26 @@
+ 	 * In both cases mem_div = sys_div = apb_div = 1.
+ 	 * Upscaling order: APB -> SYS -> MEM -> CPU -> src switch.
+ 	 */
++	ts_p4_clock_checkpoint('a', '+');
+ 	clk_ll_apb_set_divider(1);
+ 	clk_ll_bus_update();
++	ts_p4_clock_checkpoint('a', '-');
++	ts_p4_clock_checkpoint('s', '+');
+ 	clk_ll_sys_set_divider(1);
+ 	clk_ll_bus_update();
++	ts_p4_clock_checkpoint('s', '-');
++	ts_p4_clock_checkpoint('m', '+');
+ 	clk_ll_mem_set_divider(1);
+ 	clk_ll_bus_update();
++	ts_p4_clock_checkpoint('m', '-');
++	ts_p4_clock_checkpoint('c', '+');
+ 	clk_ll_cpu_set_divider(4, 0, 0);
+ 	clk_ll_bus_update();
++	ts_p4_clock_checkpoint('c', '-');
++	ts_p4_clock_checkpoint('F', '+');
+ 	clk_ll_cpu_set_src(SOC_CPU_CLK_SRC_CPLL);
+ 	esp_rom_set_cpu_ticks_per_us(CONFIG_BOOTLOADER_CPU_CLK_FREQ_MHZ);
++	ts_p4_clock_checkpoint('F', '-');
+ 
+ 	/*
+ 	 * MSPI flash: SPLL (480 MHz) with core clock at 80 MHz. On ECO0
+@@ -204,10 +223,12 @@
+ 	 * that silicon; mirror that here.
+ 	 */
++	ts_p4_clock_checkpoint('M', '+');
+ 	if (ESP_CHIP_REV_ABOVE(chip_version, 1)) {
+ 		_mspi_timing_ll_set_flash_clk_src(0, FLASH_CLK_SRC_SPLL);
+ 		_mspi_timing_ll_set_flash_core_clock(0, 80);
+ 	}
++	ts_p4_clock_checkpoint('M', '-');
+ 
+ 	CLEAR_PERI_REG_MASK(LP_WDT_INT_ENA_REG, LP_WDT_SUPER_WDT_INT_ENA);
+ 	CLEAR_PERI_REG_MASK(LP_WDT_INT_ENA_REG, LP_WDT_LP_WDT_INT_ENA);
+ 	CLEAR_PERI_REG_MASK(PMU_HP_INT_ENA_REG, PMU_SOC_WAKEUP_INT_ENA);

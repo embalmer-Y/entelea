@@ -18,6 +18,7 @@ if(BUILD_TESTING)
 		GIT_TAG cbcd08fa7de711053a3deec6339ee89cad5d2697)
 	FetchContent_MakeAvailable(unity)
 	add_executable(affect_tests tests/main.c
+		tests/galatea_reference.c
 		kaleido_drive/test/test_kaleido_drive.c
 		kaleido_emotion/test/test_kaleido_emotion.c
 		kaleido_ignition/test/test_kaleido_ignition.c

@@ -3,4 +3,7 @@ cmake_minimum_required(VERSION 3.20.0)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(tessera_app)
 
-target_sources(app PRIVATE src/main.c)
+target_sources(app PRIVATE src/main.c src/av_boot.c)
+target_link_options(app PUBLIC
+  -Wl,--wrap=ts_av_config_bind
+  -Wl,--wrap=ts_appmgr_app_start)

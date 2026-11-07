@@ -1,0 +1,87 @@
+diff --git a/drivers/misc/esp_hosted_mcu/esp_hosted_mcu.h b/drivers/misc/esp_hosted_mcu/esp_hosted_mcu.h
+--- a/drivers/misc/esp_hosted_mcu/esp_hosted_mcu.h
++++ b/drivers/misc/esp_hosted_mcu/esp_hosted_mcu.h
+@@ -166,7 +166,7 @@ struct esp_hosted_mcu_tlv {
+ 
+ /* RPC request/response round-trip and scan completion timeouts (ms). */
+ #define ESP_HOSTED_MCU_RPC_TIMEOUT  (5000)
+-#define ESP_HOSTED_MCU_SCAN_TIMEOUT (10000)
++#define ESP_HOSTED_MCU_SCAN_TIMEOUT (20000)
+ 
+ /* How long to wait for the coprocessor's boot event before asking over RPC (ms). */
+ #define ESP_HOSTED_MCU_BOOT_EVENT_WAIT (1000)
+diff --git a/drivers/wifi/esp_hosted_mcu/esp_hosted_mcu.c b/drivers/wifi/esp_hosted_mcu/esp_hosted_mcu.c
+--- a/drivers/wifi/esp_hosted_mcu/esp_hosted_mcu.c
++++ b/drivers/wifi/esp_hosted_mcu/esp_hosted_mcu.c
+@@ -68,6 +68,7 @@ struct esp_hosted_mcu_data {
+ 	uint8_t mac_addr[ESP_HOSTED_MCU_IFACE_COUNT][ESP_HOSTED_MCU_MAC_ADDR_LEN];
+ 	enum wifi_iface_state state[ESP_HOSTED_MCU_IFACE_COUNT];
+ 	struct k_sem scan_sem;
++	int scan_status;
+ #if defined(CONFIG_NET_STATISTICS_WIFI)
+ 	struct net_stats_wifi stats;
+ #endif
+@@ -151,6 +152,10 @@ static void esp_hosted_mcu_handle_event(const Rpc *rpc, void *user_data)
+ 		}
+ 		break;
+ 	case RpcId_Event_StaScanDone:
++		data->scan_status = rpc->payload.event_sta_scan_done.resp ||
++					   rpc->payload.event_sta_scan_done.scan_done.status
++					   ? -EIO
++					   : 0;
+ 		k_sem_give(&data->scan_sem);
+ 		break;
+ #if defined(CONFIG_WIFI_ESP_HOSTED_MCU_AP_STA_MODE)
+@@ -263,27 +268,37 @@ static int esp_hosted_mcu_scan(const struct device *dev, struct net_if *iface,
+ 	ARG_UNUSED(params);
+ 
+ 	k_sem_reset(&data->scan_sem);
++	data->scan_status = -EINPROGRESS;
+ 
+-	/* Kick off a blocking scan on the coprocessor. */
++	/* Non-blocking scans signal scan_sem; blocking scans do not emit scan-done. */
+ 	req.msg_id = RpcId_Req_WifiScanStart;
+ 	req.which_payload = Rpc_req_wifi_scan_start_tag;
+-	req.payload.req_wifi_scan_start.block = true;
++	req.payload.req_wifi_scan_start.block = false;
+ 	req.payload.req_wifi_scan_start.config_set = 0;
+ 	ret = esp_hosted_mcu_rpc_call(&req, &resp, ESP_HOSTED_MCU_RPC_TIMEOUT);
+-	if (ret) {
++	if (ret || resp.payload.resp_wifi_scan_start.resp) {
++		LOG_ERR("scan start failed: rpc=%d status=%d", ret,
++			resp.payload.resp_wifi_scan_start.resp);
+ 		return -EIO;
+ 	}
+ 
+ 	/* Wait for the scan-done event, then read how many APs were found. */
+ 	if (k_sem_take(&data->scan_sem, K_MSEC(ESP_HOSTED_MCU_SCAN_TIMEOUT)) != 0) {
++		LOG_ERR("scan completion timed out");
+ 		return -ETIMEDOUT;
+ 	}
++	if (data->scan_status) {
++		LOG_ERR("coprocessor scan failed");
++		return data->scan_status;
++	}
+ 
+ 	req = (Rpc)Rpc_init_zero;
+ 	req.msg_id = RpcId_Req_WifiScanGetApNum;
+ 	req.which_payload = Rpc_req_wifi_scan_get_ap_num_tag;
+ 	ret = esp_hosted_mcu_rpc_call(&req, &resp, ESP_HOSTED_MCU_RPC_TIMEOUT);
+-	if (ret) {
++	if (ret || resp.payload.resp_wifi_scan_get_ap_num.resp) {
++		LOG_ERR("scan AP count failed: rpc=%d status=%d", ret,
++			resp.payload.resp_wifi_scan_get_ap_num.resp);
+ 		return -EIO;
+ 	}
+ 
+@@ -295,7 +310,9 @@ static int esp_hosted_mcu_scan(const struct device *dev, struct net_if *iface,
+ 	req.which_payload = Rpc_req_wifi_scan_get_ap_records_tag;
+ 	req.payload.req_wifi_scan_get_ap_records.number = num;
+ 	ret = esp_hosted_mcu_rpc_call(&req, &resp, ESP_HOSTED_MCU_RPC_TIMEOUT);
+-	if (ret) {
++	if (ret || resp.payload.resp_wifi_scan_get_ap_records.resp) {
++		LOG_ERR("scan AP records failed: rpc=%d status=%d", ret,
++			resp.payload.resp_wifi_scan_get_ap_records.resp);
+ 		pb_release(Rpc_fields, &resp);
+ 		return -EIO;
+ 	}

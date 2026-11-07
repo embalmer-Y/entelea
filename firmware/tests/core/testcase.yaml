@@ -6,3 +6,54 @@ tests:
     platform_allow:
       - native_sim
       - native_sim/native/64
+  framework.core.wdt_start_failures:
+    tags: framework
+    integration_platforms:
+      - native_sim
+    platform_allow:
+      - native_sim
+      - native_sim/native/64
+    extra_args: TEST_WDT_START_FAILURES=ON
+  framework.core.wdt_hardware:
+    tags: framework
+    integration_platforms:
+      - native_sim
+    platform_allow:
+      - native_sim
+      - native_sim/native/64
+    extra_args:
+      - TEST_WDT_HARDWARE=ON
+      - DTC_OVERLAY_FILE=wdt.overlay
+    extra_configs:
+      - CONFIG_TS_WDT_REQUIRE_HW=y
+      - CONFIG_TASK_WDT_MIN_TIMEOUT=5000
+      - CONFIG_TASK_WDT_HW_FALLBACK_DELAY=5000
+      - CONFIG_TASK_WDT_HW_FALLBACK_PAUSE_HALTED_BY_DBG=n
+  framework.core.wdt_hardware_not_ready:
+    tags: framework
+    integration_platforms:
+      - native_sim
+    platform_allow:
+      - native_sim
+      - native_sim/native/64
+    extra_args:
+      - TEST_WDT_HARDWARE=ON
+      - TEST_WDT_HW_NOT_READY=ON
+      - DTC_OVERLAY_FILE=wdt.overlay
+    extra_configs:
+      - CONFIG_TS_WDT_REQUIRE_HW=y
+      - CONFIG_TASK_WDT_MIN_TIMEOUT=5000
+      - CONFIG_TASK_WDT_HW_FALLBACK_DELAY=5000
+      - CONFIG_TASK_WDT_HW_FALLBACK_PAUSE_HALTED_BY_DBG=n
+  framework.core.wdt_required_missing:
+    tags: framework
+    integration_platforms:
+      - native_sim
+    platform_allow:
+      - native_sim
+      - native_sim/native/64
+    extra_args:
+      - TEST_WDT_START_FAILURES=ON
+      - TEST_WDT_REQUIRED_MISSING=ON
+    extra_configs:
+      - CONFIG_TS_WDT_REQUIRE_HW=y

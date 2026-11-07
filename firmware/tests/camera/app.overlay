@@ -1,0 +1,10 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/ {
+	chosen {
+		zephyr,camera = &fake_camera;
+	};
+
+	fake_camera: fake-camera {
+		status = "okay";
+	};
+};
