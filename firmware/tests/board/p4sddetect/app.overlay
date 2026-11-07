@@ -1,8 +1,0 @@
-/* SPDX-License-Identifier: Apache-2.0 */
-#include <zephyr/dt-bindings/gpio/gpio.h>
-
-/ {
-	zephyr,user {
-		sd-detect-gpios = <&gpio1 13 GPIO_ACTIVE_LOW>;
-	};
-};

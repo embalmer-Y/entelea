@@ -1,52 +1,25 @@
 # Entelea
 
-Entelea 是一个基于 Zephyr 的具身 AI 框架：让设备感知环境、通过受保护的
-硬件能力行动，并由独立的 [Entelea Forge](https://github.com/embalmer-Y/entelea-forge)
-制造和验证新的 App。
+面向 Zephyr MCU 与原生 Linux ARM64/x86 的智能硬件和模拟智能框架。
+当前是干净重建的**治理骨架**，尚无新运行时或产品实现。
 
-**Galatea 是 Entelea 的首个认知个体产品方向**，不再另建一套设备固件。
-通用框架仍支持不需要情感的任务设备；原 Galatea 仓库保留为研究基线。
-合并边界、模块映射和后续演进见 [Galatea 产品与研究边界](docs/galatea.md)。
+- [重建规划](docs/rebuild-plan.md)：顺序、边界、决策闸和验收。
+- [唯一资产台账](docs/migration-assets.json)：固定来源、模块映射、迁移与验证状态。
+- 旧源码在相邻 `entelea-legacy`，主基线
+  `e54047b51519fa449dfe4a338af8d126bed8fac4`；Forge 单独固定版本。
+- 新目录是 linked worktree；旧目录包含共享 Git 对象库，**不能删除**。
+- 本地 `rebuild` 分支；远端和默认分支未改，未推送。
 
-## 当前状态
-
-- 已迁移 Zephyr 固件、硬件抽象、安全路径、Wasm App 管理和 TSAP 交付机制。
-- Kaleido 的驱动、情感和触发内核可以独立测试，**尚未接入固件**。
-- 常驻认知框架、Lua 执行、多 App 通道仲裁和情感生命周期仍在设计中。
-- 主机测试不等于特定开发板、执行机构或实时性能已验证。
-- Galatea 的独立情感参考算子已接入 C 内核回归；这不代表预测脑、长期
-  记忆、在线学习或完整认知个体已在设备实现。
-
-## 快速开始
-
-需要 Linux x86-64、Python 3.12、`uv`、C 编译器、CMake、Ninja 和支持
-wasm32 的 clang。安装与固件构建的完整前置条件见[开发指南](docs/development.md)。
+开始下一批前先按规划 review D01–D05，不将内部设计建议当成已批准范围。
+默认只读取当前批次所需上下文；没有业务代码不意味着框架验收通过。
 
 ```sh
-git clone --recurse-submodules https://github.com/embalmer-Y/entelea.git
-cd entelea
-uv sync --locked
-uv sync --project agent --locked --extra dev
-make check
-make agent-test
+python3 tools/check_migration.py --sources
+python3 -m unittest discover -s tools/tests -v
 ```
 
-这些命令不烧录设备或调用付费模型；首次构建情感测试可能需要网络下载
-固定版本的 Unity。成功时测试命令退出码为 0；固件 native_sim 另见
-[测试指南](docs/testing.md)。
+上述命令只验证迁移元数据、固定来源及校验器，不构建固件、不调用云或硬件。
+旧基线检查并非全绿：Python 为243 passed、1 failed（L5机械检查同一根因）；
+具体边界与后续处理见规划，不把它继承为新产品完成。
 
-## 目录与文档
-
-| 路径 | 用途 |
-| --- | --- |
-| `firmware/` | Zephyr 固件、板级定义、自动回归和手动板级实验 |
-| `lib/affect/` | 可移植情感内核与主机测试 |
-| `agent/` | 独立版本管理的 Forge 子模块 |
-| `tools/board/` | 需要明确授权的板级辅助与验收工具 |
-| `scripts/`、`patches/` | 开发检查和显式维护的外部补丁 |
-| `docs/` | 随代码版本维护的项目文档 |
-
-更详细的目录说明见[仓库目录说明](docs/repository-structure.md)；从
-[文档索引](docs/index.md)选择架构、开发、测试、安全及来源说明。
-除文件或第三方声明另有说明外采用 Apache-2.0；情感内核保留
-[Galatea MIT 许可](LICENSES/Galatea-MIT.txt)。
+许可沿用 [Apache-2.0](LICENSE)；迁入第三方资产须保留各自许可与来源。

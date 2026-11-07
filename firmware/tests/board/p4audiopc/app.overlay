@@ -1,3 +1,0 @@
-&i2s0 {
-	status = "okay";
-};

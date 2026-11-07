@@ -1,2 +1,0 @@
-mainmenu "P04 audio diagnostic"
-source "Kconfig.zephyr"

@@ -1,9 +1,0 @@
-tests:
-  framework.conc:
-    tags: framework
-    integration_platforms:
-      - native_sim
-    # DEC-43 锁收口回归（SMP 真并行）；真 SMP 板纳入后追加板级 platform。
-    platform_allow:
-      - native_sim
-      - native_sim/native/64

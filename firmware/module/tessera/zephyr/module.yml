@@ -1,4 +1,0 @@
-name: tessera
-build:
-  cmake: .
-  kconfig: Kconfig

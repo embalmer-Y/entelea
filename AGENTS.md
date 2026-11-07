@@ -1,50 +1,39 @@
-# Entelea development contract
+# Entelea agent entry
 
-Entelea is a Zephyr-based embodied AI framework. Forge, in `agent/`, is an
-independently versioned engineering agent, not the device's runtime brain.
+This tree contains a rebuild governance skeleton, not an implemented framework.
 
-## Scope and authority
-
-- Implement the requested outcome without unrelated cleanup or speculative APIs.
-- Preserve the safety invariants in [docs/safety.md](docs/safety.md).
-- The owner controls product direction. Internal implementation choices are
-  delegated. Obtain approval for safety/trust changes, incompatible public
-  contracts, new dependencies, destructive migration, and hardware deployment.
-- Never modify checks merely to make a failing implementation pass.
-- Do not flash hardware, change provisioning, or start paid model calls as part
-  of ordinary tests.
-
-## Code
-
-- C follows Linux kernel coding style: tabs of width 8, Linux braces, short
-  functions, descriptive names, and 100-column guidance.
-- Performance precedes readability, subject to correctness and hardware safety.
-  Measure latency, throughput, CPU and memory before accepting an optimization.
-  Document the measured trade-off rather than claiming that code "looks faster".
-- Python follows the existing Ruff configuration; do not apply C formatting to it.
-- Keep `ts_*`, `CONFIG_TS_*`, TSAP and the `tessera_agent` import namespace
-  compatible during migration. Product renaming does not justify ABI churn.
-- Reuse existing mechanisms. Do not add unused plugin layers or fallback paths.
-- Keep errors explicit. Add regression tests for changed behavior.
-
-## Validation
-
-- Setup and commands: [docs/development.md](docs/development.md).
-- `make check` runs repository checks, safety checks and host affect tests.
-- `make firmware-test` runs native_sim firmware tests.
-- `make agent-test` runs Forge tests with cross-repository fixture checks.
-- `make style BASE=<commit>` checks changed C/H files. `import-baseline` is
-  the initial style-debt boundary, not a claim that imported code is style-clean.
-- Report exact checks and failures. Host tests do not establish board timing.
-
-## Repository hygiene
-
-- Root instructions must remain under 8 KiB and 100 lines.
-- Do not put session histories, completed plans or recurring status reports here.
-- Update the existing authoritative document when a public behavior changes.
-  Create a persistent document only for a distinct maintainer/user need.
-- Temporary plans and reports belong outside tracked source.
-- Historical DEC/Q references in imported code resolve through
-  [docs/provenance.md](docs/provenance.md), not copied decision registers.
-- Do not commit credentials, local configuration, caches or generated builds.
-- Third-party and generated code retain their upstream format and notices.
+- Read README and the current batch in `docs/rebuild-plan.md` first.
+- Use `docs/migration-assets.json` as the sole migration/status ledger. Query only
+  relevant asset IDs; do not inject the entire generated inventory into context.
+- Confirm required design decisions before implementation. D01-D12 are proposals
+  awaiting owner review, not implicitly approved by permission to archive.
+- Distinguish framework contracts from product requirements. Use auxiliary
+  intelligence / simulated intelligence at framework level; companion only in
+  the companion product context.
+- The sibling `entelea-legacy` is frozen. Never modify its source, delete its
+  caches, or remove its Git object store: this tree is a linked worktree.
+- Read legacy assets from the pinned commits in the ledger. Inventory coverage
+  is not a claim that every source line was audited.
+- Work on one ready batch. Record exact source selections and target paths,
+  preserve applicable behavior, and migrate needed tests with each mechanism.
+- Do not copy whole old modules, create empty future directories, silently
+  expand scope, rename public ABI/protocols, or turn diagnostic code into
+  production behavior without an explicit reviewed contract.
+- Never bypass safety, authorization, signatures, user acceptance, or egress
+  policy, including development configurations.
+- Surface errors and unknown outcomes; acceptance is not completion, cancellation
+  cannot undo effects, and unknown non-idempotent operations must not be retried.
+- Preserve other agents' changes; pause on conflicts. Do not reset or amend their
+  work. No pushes, real cloud/paid calls, flashing, or hardware actions without
+  explicit authorization. Forge is an independent pinned repository.
+- Keep migration state separate from verification. Record failures and untested
+  boundaries; never weaken assertions or exclusions to manufacture green tests.
+- Before marking a batch done, run the smallest applicable behavior tests and:
+  `python3 tools/check_migration.py --sources`
+  `python3 -m unittest discover -s tools/tests -v`
+- The metadata checks do not validate firmware behavior. Legacy L5/Python checks
+  have a documented failure; read the plan before changing their scope.
+- Commit implementation before recording its commit in the ledger, then commit
+  the ledger update. Retain third-party attribution and license files.
+- Keep instructions short; one local contract per implemented module as needed.
+  Do not copy old design discussions into competing architecture/progress files.
