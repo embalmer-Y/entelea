@@ -33,3 +33,10 @@ python3 tools/build_zephyr.py --app platform/zephyr/tests/affect \
   --python ../entelea-legacy/.venv/bin/python3 --build
 ./build/r11-taffect/zephyr/zephyr.exe
 ```
+
+## 计划符合性审查补记（2026-11-08，轨道 1）
+
+- 如实点名（处置归计划修订/轨道 2）：计划 L401 输入资产
+  A-AFFECT/A-REFERENCE 仍 not_migrated 且此前验证记录未声明；
+  计划 L406-407 之"角色连续性"正测与"模型输出/来源丢失/反复恢复"
+  负测未交付亦未逐项归属（异常时间已按层归属 R01 的做法正确）。
