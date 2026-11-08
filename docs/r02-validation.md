@@ -67,6 +67,31 @@ checkout（六补丁完整核验通过）；Zephyr 构建解释器显式使用�
 - 事件 ISR 载荷静态存储约束无机械检查（评审+用例示范承担）。
 - 未运行：sanitizer 目标、旧基线重跑、真实网络/云/硬件/烧录。
 
+## 板形配置预演（软件路径，追加）
+
+- `tools/build_zephyr.py` 新增通用 `--board-root`（仓库内 out-of-tree 板目录，
+  显式 `-DBOARD_ROOT` 传递；仓库外/缺失显式拒绝）——任何板选择都需要的
+  入口能力，不预判 D12-①。负测 3 项新增（20/20 通过）。
+- `platform/zephyr/apps/minimal/taskwdt.conf`：CONFIG_TASK_WDT=y 的板形
+  预演片段（EXTRA_CONF_FILE 叠加）。native_sim 运行 10.03s：单次启动、
+  无 task_wdt 通道误复位（10s = 2× 5000ms 通道超时）；通道挂载/喂狗由
+  wdt_start/wdt_hardware wrap 测试证明。生产板 MWDT（chosen
+  zephyr,watchdog + TASK_WDT_HW_FALLBACK）组合随 D12 冻结在板级 prj.conf
+  固化；通道真失效触发复位属硬件闸实测项。
+
+## D12 冻结裁决表（等待所有者决定——代理不代定）
+
+| 项 | 提案（依据） | 状态 |
+| --- | --- | --- |
+| ① 参考板 | OSPTEK esp32p4c5_core_board/esp32p4/hpcore（固定基线唯一板定义；toolchain=zephyr 对应本机 SDK 1.0.1 riscv64-zephyr-elf 14.3.0 已 dry-run 核验；P4 rev3.2、16MB flash、MWDT 在 chosen） | 待冻结 |
+| ② 负载/测量 | 负载=R02 最小监督镜像；测量=串口时间戳+行为观测（输出停止/复位次数）；需另行明确授权真机烧录/上电/复位操作 | 待冻结+授权 |
+| ③ 停止/WDT 阈值 | DEC-48 旧值：巡检源 1000ms / task_wdt 通道 5000ms / 硬上限 10000ms / 豁免钳制 60000ms（native_sim 已按此验证） | 待冻结 |
+| ④ 安全态/panic | 三安全态如实现；system_fail=停喂WDT→冷复位不掩蔽；compat 旧 void 非法→板级 k_panic；estop 上升沿缺省 | 待冻结 |
+| ⑤ estop 生产板 DT | boot 断言 DT_ALIAS(ts-estop-gpio)+chosen watchdog，缺失即 fail-safe | 待冻结 |
+
+冻结前不执行：A-BOARD 迁移、板级交叉构建、烧录与上电/复位/失联/物理
+故障停止实测。R02 硬件闸保持 blocked，批次保持 in_progress。
+
 ## 复现
 
 ```sh
@@ -79,4 +104,6 @@ python3 tools/build_zephyr.py --app platform/zephyr/apps/minimal \
 # 测试应用同理：tests/{core,safety,wdt_start,wdt_hardware}
 # wdt_start 变体：--cmake-arg=-DTEST_WDT_REQUIRED_MISSING=ON
 # wdt_hardware 变体：--cmake-arg=-DTEST_WDT_HW_NOT_READY=ON
+# task_wdt 预演：--build-dir build/r02-native_sim-taskwdt \
+#   --cmake-arg=-DEXTRA_CONF_FILE=<repo>/platform/zephyr/apps/minimal/taskwdt.conf
 ```

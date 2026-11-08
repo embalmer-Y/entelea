@@ -143,7 +143,15 @@ def preflight(root, args):
             )
 
     cmake_args = ["cmake", "-S", str(app), "-B", str(build_dir), "-G", "Ninja",
-                  f"-DBOARD={args.board}"] + list(args.cmake_arg or [])
+                  f"-DBOARD={args.board}"]
+    if args.board_root:
+        board_root = Path(args.board_root).resolve()
+        if not board_root.is_dir():
+            raise BuildError(f"Board root is not a directory: {board_root}")
+        if root.resolve() not in board_root.parents:
+            raise BuildError(f"Board root outside repository: {board_root}")
+        cmake_args.append(f"-DBOARD_ROOT={board_root}")
+    cmake_args += list(args.cmake_arg or [])
     print(f"[preflight] app={app}")
     print(f"[preflight] board={args.board} build={build_dir}")
     print(f"[preflight] zephyr={zephyr_base} modules= (explicit empty)")
@@ -161,6 +169,7 @@ def main():
     parser.add_argument("--toolchain", help="e.g. riscv64-zephyr-elf (board targets)")
     parser.add_argument("--gcc-version", help="Expected target gcc version substring")
     parser.add_argument("--host-cc", default="cc", help="Host compiler (native targets)")
+    parser.add_argument("--board-root", help="Out-of-tree board directory inside the repo")
     parser.add_argument("--cmake-arg", action="append", help="Extra -D args (repeatable)")
     parser.add_argument("--build", action="store_true", help="Also compile after configure")
     parser.add_argument("--dry-run", action="store_true", help="Preflight only")

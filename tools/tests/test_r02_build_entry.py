@@ -42,6 +42,7 @@ class PreflightTests(unittest.TestCase):
             toolchain=None,
             gcc_version=None,
             host_cc="cc",
+            board_root=None,
             cmake_arg=None,
         )
 
@@ -179,6 +180,40 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(env["ZEPHYR_SDK_INSTALL_DIR"], str(self.root / "sdk"))
         self.assertEqual(env["ZEPHYR_MODULES"], "")
         self.assertTrue(build_dir.is_relative_to(self.repo / "build"))
+
+    def test_board_root_outside_repo_rejected(self):
+        outside = self.root / "boards"
+        outside.mkdir()
+        self.base["board"] = "some_board"
+        self.base["sdk"] = str(self.root / "sdk")
+        self.base["sdk_version"] = "1.0.1"
+        self.base["toolchain"] = "riscv64-zephyr-elf"
+        self.base["gcc_version"] = "14.3.0"
+        self.make_sdk()
+        self.base["board_root"] = str(outside)
+        self.fails("Board root outside repository")
+
+    def test_board_root_missing_dir_rejected(self):
+        self.base["board"] = "some_board"
+        self.base["sdk"] = str(self.root / "sdk")
+        self.base["sdk_version"] = "1.0.1"
+        self.base["toolchain"] = "riscv64-zephyr-elf"
+        self.base["gcc_version"] = "14.3.0"
+        self.make_sdk()
+        self.base["board_root"] = str(self.root / "nope")
+        self.fails("not a directory")
+
+    def test_board_root_passed_explicitly(self):
+        boards = self.repo / "platform" / "zephyr" / "boards"
+        boards.mkdir(parents=True)
+        self.make_sdk()
+        base = self.board_base()
+        base["board_root"] = str(boards)
+        with mock.patch.object(BZ, "run", side_effect=self.ok_run):
+            env, cmake_args, build_dir = BZ.preflight(
+                self.repo, type("Args", (), base)()
+            )
+        self.assertIn(f"-DBOARD_ROOT={boards.resolve()}", cmake_args)
 
     def test_check_dependencies_invoked_read_only(self):
         seen = []
