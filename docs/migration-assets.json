@@ -68,7 +68,7 @@
       "title": "存储提交与命名空间",
       "planned_root": "framework/services/storage",
       "first_batch": "R03",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "id": "M-CONFIG",
@@ -241,7 +241,7 @@
       "depends_on": [
         "R01"
       ],
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": "R04",
@@ -855,12 +855,18 @@
       "first_batch": "R01",
       "migration_action": "extract",
       "status": "in_progress",
-      "constraints": "meta 双副本、audit/KV 各有不同恢复能力；250B KV 不能当经历库或试用隔离。 R01仅迁上述源项/声明或核验子集；组级验证未完成。",
-      "target_paths": [],
+      "constraints": "meta 双副本、audit/KV 各有不同恢复能力；250B KV 不能当经历库或试用隔离。 R03子闭环1已迁端口(RAM)/meta/noinit+R02留痕接线并 native_sim 验证；slot.c→R05包事实批次(defer)，prov/audit/kv/trust 待后续子闭环，组级未完成。",
+      "target_paths": [
+        "framework/services/storage/part.c",
+        "framework/services/storage/meta.c",
+        "framework/services/storage/noinit.c",
+        "framework/services/storage/internal.h",
+        "framework/include/entelea/storage.h"
+      ],
       "verification": {
         "state": "not_run",
         "evidence_paths": [
-          "docs/r01-validation.md"
+          "docs/r03-validation.md"
         ]
       },
       "source_file_count": 11
@@ -4754,10 +4760,9 @@
       "asset_id": "A-STORE",
       "disposition": "migrate",
       "target_paths": [
-        "framework/include/entelea/sha256.h",
-        "framework/compat/include/ts/common.h"
+        "framework/services/storage/internal.h"
       ],
-      "migration_commit": "f9fcba53d89a0e7f76ceeb6bdf2c8d6616e3ded7",
+      "migration_commit": "681d7855d719dbc9308c7e983df83cc9b2e0f059",
       "migration_note": "仅提取SHA布局/声明；其他存储/CRC/IO接口未迁入，资产组保持in_progress。"
     },
     {
@@ -4782,9 +4787,13 @@
       "sha256": "2e4dc3a3c8ce4672b85bf95867e784bab243533f7817c03c3aa1bd202d2712a8",
       "id": "S-legacy-c1d2d6beeb8e1ff16ca8",
       "asset_id": "A-STORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/storage/meta.c",
+        "framework/include/entelea/storage.h",
+        "platform/zephyr/tests/store/src/main.c"
+      ],
+      "migration_commit": "681d7855d719dbc9308c7e983df83cc9b2e0f059"
     },
     {
       "repository": "legacy",
@@ -4795,9 +4804,14 @@
       "sha256": "1996d4af85fc093750c13f14a5ac3413ad30091a34568dc385e31b9e8e2b9318",
       "id": "S-legacy-bc9e7e27f1ee8b2d477b",
       "asset_id": "A-STORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/storage/noinit.c",
+        "framework/include/entelea/storage.h",
+        "framework/execution/safety/force.c",
+        "platform/zephyr/tests/store/src/main.c"
+      ],
+      "migration_commit": "681d7855d719dbc9308c7e983df83cc9b2e0f059"
     },
     {
       "repository": "legacy",
@@ -4808,9 +4822,12 @@
       "sha256": "a11ac7eb8162e6df1abf3c922857cd602c840fbee2e9e37ec1063e288b0cd321",
       "id": "S-legacy-ba72daf421281d6ae084",
       "asset_id": "A-STORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/storage/part.c",
+        "framework/include/entelea/storage.h"
+      ],
+      "migration_commit": "681d7855d719dbc9308c7e983df83cc9b2e0f059"
     },
     {
       "repository": "legacy",
@@ -4881,7 +4898,7 @@
       "sha256": "2efed05e12e64e4cda26663d7ffcea784ebc60729f15746437b6fd8fcacd6655",
       "id": "S-legacy-aa2870748eaf9db9317e",
       "asset_id": "A-STORE",
-      "disposition": "pending_review",
+      "disposition": "defer",
       "target_paths": [],
       "migration_commit": null
     },

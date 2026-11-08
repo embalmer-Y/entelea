@@ -3,9 +3,9 @@
 面向 Zephyr MCU 与原生 Linux ARM64/x86 的智能硬件和模拟智能框架。
 '已完成 **R01 公共合同与构建底座**：时间/截止时间、独立CBOR/SHA、
 所迁旧子集适配和主机验证。
-**R02 进行中**：最小监督/输出保护软件闭环已按 review 整改交付
-（构建入口、监督、安全输出保护，native_sim 验证）；A-BOARD 迁移、
-板级构建与硬件闸待 D12 冻结（blocked）。见
+**R02 进行中**（软件闭环已交付；板级+硬件闸待 D12，blocked）；
+**R03 进行中**：存储端口/meta/noinit 子闭环 1 已交付，审计/prov/
+信任表/KV 子闭环推进中。见
 [R02 验证记录](docs/r02-validation.md)与[R01 验证记录](docs/r01-validation.md)。
 
 - [重建规划](docs/rebuild-plan.md)：顺序、边界、决策闸和验收。

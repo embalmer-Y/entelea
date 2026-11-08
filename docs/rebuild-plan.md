@@ -229,8 +229,9 @@ R13 中 Linux 的 required output 只是已批准 D02 所选框架证明，不�
 
 ### R01：公共合同与构建底座
 
-R01 已完成并验收；R02 软件闭环进行中（板级/硬件闸 blocked，见
-docs/r02-validation.md）。唯一台账记录13个旧源条目的实际提取/
+R01 已完成并验收；R02 软件闭环已交付（板级/硬件闸 blocked，见
+docs/r02-validation.md）；R03 进行中（子闭环 1 见 docs/r03-validation.md）。
+唯一台账记录13个旧源条目的实际提取/
 适配（含6个原字节补丁）及新-only公共合同；只有CBOR/SHA完整资产组验收通过，
 部分头/脚本/规则的组级迁移仍未完成。
 
