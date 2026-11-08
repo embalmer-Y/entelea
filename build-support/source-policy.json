@@ -51,7 +51,10 @@
     "platform/zephyr/tests/pkg/src/main.c",
     "platform/zephyr/tests/wasm/src/main.c",
     "platform/zephyr/tests/wasm/src/wamr_compat.c",
-    "platform/zephyr/tests/net/src/main.c"
+    "platform/zephyr/tests/net/src/main.c",
+    "platform/linux/clock.c",
+    "platform/linux/host_main.c",
+    "platform/linux/zephyr_shim.c"
   ],
   "diagnostics": {},
   "protected_output_sources": [

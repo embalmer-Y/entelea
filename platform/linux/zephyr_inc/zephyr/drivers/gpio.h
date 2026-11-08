@@ -1,0 +1,8 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+#ifndef ENTELEA_LINUX_GPIO_STUB
+#define ENTELEA_LINUX_GPIO_STUB
+#define GPIO_OUTPUT_INACTIVE 0
+#define GPIO_INT_EDGE_RISING 0
+#define GPIO_INT_EDGE_FALLING 1
+#define GPIO_INT_EDGE_BOTH 2
+#endif

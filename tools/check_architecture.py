@@ -95,13 +95,18 @@ def validate(root, policy):
                 if group == "zephyr_framework"
                 else "platform/zephyr/"
             )
-            ok = (
-                path.startswith("framework/runtime/")
-                or path.startswith("framework/execution/")
-                or path.startswith("framework/services/")
-                if group == "zephyr_framework"
-                else path.startswith(expected)
-            )
+            if group == "zephyr_framework":
+                ok = (
+                    path.startswith("framework/runtime/")
+                    or path.startswith("framework/execution/")
+                    or path.startswith("framework/services/")
+                )
+            elif group == "platform_zephyr":
+                ok = path.startswith("platform/zephyr/") or path.startswith(
+                    "platform/linux/"
+                )
+            else:
+                ok = path.startswith(expected)
             fail(ok, f"Source crosses target boundary: {path}")
     tracked_sources = set()
     for directory in ("framework", "platform", "products", "tests"):

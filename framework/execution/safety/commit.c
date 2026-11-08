@@ -65,6 +65,7 @@ static entelea_result_t commit_src_gate(entelea_commit_src_t src)
 static entelea_result_t commit_run(int i, entelea_ch_kind_t kind,
 				   entelea_out_value_t v)
 {
+	(void)kind; /* 审计面裁剪（R03）；R04 commit_src 经 wrapper 传参 */
 	struct entelea_ch_slot *s = &entelea_ch_table[i];
 	const entelea_out_channel_t *ch = s->desc;
 
