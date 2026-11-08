@@ -7,6 +7,7 @@
 
 - [重建规划](docs/rebuild-plan.md)：顺序、边界、决策闸和验收。
 - [唯一资产台账](docs/migration-assets.json)：固定来源、模块映射、迁移与验证状态。
+- [接手 prompt](docs/agent-handoff-prompt.md)：新 Agent 首轮核对、协作边界和验证入口。
 - 旧源码在相邻 `entelea-legacy`，主基线
   `e54047b51519fa449dfe4a338af8d126bed8fac4`；Forge 单独固定版本。
 - 新目录是 linked worktree；旧目录包含共享 Git 对象库，**不能删除**。

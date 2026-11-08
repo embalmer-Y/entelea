@@ -13568,12 +13568,14 @@
     {
       "name": "Galatea",
       "commit": "a90c094f23a50452cbb8e8786a026c7ebf8ababb",
-      "role": "研究来源，不是已迁移资产或新产品验收"
+      "local_path": "../../project-archive/entelea-handoff-2026-11-08/Galatea",
+      "role": "用户授权整体外移的研究来源，不是已迁移资产或新产品验收"
     },
     {
       "name": "Kaleido",
       "commit": "3fbc72266b25e4eee1a0667b7d7af4f9e7157ee9",
-      "role": "归档研究/产品参考；本地尚有6条状态变化，未包含在主基线，不移动"
+      "local_path": "../../project-archive/entelea-handoff-2026-11-08/Kaleido",
+      "role": "用户授权整体外移的研究/产品参考；6条未跟踪文档原样保留，未提交、未包含在主基线"
     }
   ]
 }

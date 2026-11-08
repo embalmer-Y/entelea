@@ -15,6 +15,47 @@ cmake --build build/common-only
 编译器须有其配套runtime。本机Clang缺ASan库，使用现有GCC验证，
 不是禁用检查制造通过。BUILD_TESTING=OFF默认不构建旧void适配库。
 
+## 工作区、Zephyr 构建与 SDK 目录合同
+
+本节是用户确认的后续构建布局，不是已经交付的 Zephyr 构建入口。
+R01 只有主机公共库；R02 的应用装配、依赖准备、SDK/工具链前置校验
+尚未实现，不能因路径已规定就声称固件可构建或平台验收通过。
+
+| 类别 | 目录与约束 |
+| --- | --- |
+| 新版受管理源码 | 按需放仓库忽略的 `.deps/<dependency>`，如 `.deps/zephyr`、`.deps/hal_espressif`；不提前创建空目录或复制全部旧依赖 |
+| 外部源码复用 | 可显式指定固定、完整核验通过的外部 checkout，只读消费；现有 `../entelea-legacy/.deps` 保持不变，不能借复用之名修补归档 |
+| 构建产物 | 统一放本仓库 `build/<batch>-<target>`；R01 保留已记录的 `build/r01` 等路径，R02 的 native/板级/诊断/实验目标各用独立目录 |
+| Python 环境 | 未来有需要时按批准的依赖/锁文件建立本仓库 `.venv`；不继承旧 `agent-venv` 或搬迁前的 shebang，不为纯 R01 测试额外安装包 |
+| Zephyr SDK | 安装在 Project 外，通过显式 `ZEPHYR_SDK_INSTALL_DIR` 选择；只读复用，不自动发现替代 SDK、不执行共享安装的 setup、不修改注册表或 shell 配置 |
+
+本机已只读核实的参考环境是 `/home/emb/zephyr-sdk-1.0.1`：
+`sdk_version` 为 `1.0.1`，实际 RISC-V GCC 为 `14.3.0`，
+编译器位于 `gnu/riscv64-zephyr-elf/bin/riscv64-zephyr-elf-gcc`。
+这是本机参考位置/版本，不是跨机器硬编码路径，也不批准所有未来板卡组合。
+R02 在冻结实际参考板时还须明确该目标的 SDK/工具链版本及验证范围；
+不同主机或目标的变更要显式记录，不能凭目录名认定版本。
+
+R02 构建入口在调用 CMake/Twister 前必须落实并负测：
+
+1. 显式选择 `ZEPHYR_BASE` 和实际模块目录，核验固定提交、完整批准补丁、
+   staged/untracked/mode 差异；现有核验器可复用，不只做 reverse-check。
+2. native_sim 显式选择适用 host 工具链；板级目标显式选择
+   `ZEPHYR_TOOLCHAIN_VARIANT=zephyr` 和 SDK 路径，不混用 R01 主机编译器。
+3. 校验 SDK 实际 `sdk_version`、所需目标编译器的存在/版本和模块组合。
+   缺失、版本不符、实验污染或无批准组合时显式失败，不自动下载或回退。
+4. 使用新目标的独立构建目录，不消费旧 CMake/Twister 缓存或全局 west
+   工作区。若后续引入 west，其 manifest/模块选择也必须显式固定。
+5. 记录实际路径、版本、配置与执行证据；源码/SDK 核验通过不等于
+   编译通过，交叉编译通过不等于设备运行或物理停止通过。
+
+旧顶层 `zephyrproject` 已按用户授权外移到
+`/home/emb/project-archive/entelea-handoff-2026-11-08/zephyrproject`。
+它虽在同一 Zephyr 提交，却含 DMA 实验修改，不符合新批准补丁集合；
+只能作历史参考，不能直接选为新版正式依赖或迁回新 `.deps`。
+SDK 没有移动。外移工具/虚拟环境/缓存可能仍含旧绝对路径；
+保存这些目录是保留资产，不是宣称搬迁后旧运行环境仍可执行。
+
 ## 来源与核验
 
 [固定依赖](dependencies.json)目前只涵盖未来首个Zephyr/Wasm目标的

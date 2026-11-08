@@ -36,6 +36,24 @@
 不能把远端旧 main 当成本基线。跨机器仅携带 Git 不会携带忽略的私有文件；
 备份这些文件必须另行授权，禁止上传凭据。
 
+### Project 工作区交接布局
+
+用户已确认以 `/home/emb/project` 为工作区，保留新树 `entelea` 与
+固定来源/对象库 `entelea-legacy`；11个顶层历史项目、旧环境、资料及缓存
+整体外移到 `/home/emb/project-archive/entelea-handoff-2026-11-08`，
+保留原目录名、隐藏文件及未提交状态，不删除或提交这些旧仓库。
+外移清单及恢复边界记录在该目录的 `relocation-manifest.json`；
+它是搬迁记录，不是第二份迁移/开发进度台账。
+Galatea/Kaleido 的参考位置见唯一台账 `external_references`。
+根 AGENTS 仅作路由，新 Agent 的详细入口见[接手 prompt](agent-handoff-prompt.md)。
+该交接不启动 R02，也不改变 R00/R01 的完成状态。
+
+新版受管理源码 `.deps/<dependency>`、产物 `build/<batch>-<target>`、
+外部只读 SDK 和实际构建前核验要求已确认，见
+[构建目录合同](../build-support/README.md#工作区zephyr-构建与-sdk-目录合同)。
+Zephyr 构建入口/SDK 自动校验仍待 R02 实现；旧顶层 `zephyrproject`
+有 DMA 实验修改，不能因外移或提交相同就当作批准构建源。
+
 ## 2. 权威顺序与最小上下文
 
 1. 用户已经确认的框架与产品定义分别读取基线
@@ -90,7 +108,8 @@ python3 tools/check_migration.py --sources
 旧 activate/rollback 不等于完整试用/晋升。
 独立诊断结果、native_sim 桩通过、历史板卡验证不继承为新产品通过。
 Forge 为独立工程工具，不内嵌设备大脑，不复制整个工厂进固件。
-Galatea/Kaleido 只作固定历史研究参考，不能顺手移动/提交它们。
+Galatea/Kaleido 只作固定历史研究参考；本次用户专门授权其整体外移，
+不包含提交其现有修改或纳入800项迁移来源。不得再次擅自移动/修改/提交。
 
 ## 4. 资产身份、状态与映射规则
 
@@ -236,7 +255,9 @@ R13 中 Linux 的 required output 只是已批准 D02 所选框架证明，不�
 
 输入：A-CORE/A-SAFETY/A-BOARD/A-PATCHES、core/safety 测试。
 允许面：M-SUPERVISION/M-SAFETY/M-PLATFORM-ZEPHYR。
-步骤：保留同步事件语义与借用寿命，拆监督与业务 boot；
+步骤：先按构建目录合同落实新版独立构建入口和源码/SDK/工具链前置核验，
+依赖实际需要时才准备，不复用外移实验工作区或旧缓存；
+保留同步事件语义与借用寿命，拆监督与业务 boot；
 建立安全起始态、故障强停/实际驱动提交；独立诊断不混入产品。
 输出：无智脑也能启动、保持安全并显式关闭输出的 Zephyr 最小配置。
 正测：注册/启动/WDT/安全态转换、保护批准的真实输出路径。
