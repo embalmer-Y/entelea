@@ -36,8 +36,27 @@
   （断链/detach/recover 的落驱写）= 物理效果未知 → 通道进 `SAFE_FAULT`
   （撤销输出资格：其后的 commit 一律 `E_STATE`，即使后端已恢复——须显式
   `channel_recover`）；影子保留最后确认值（不伪称安全值已落驱）。
-  commit 自身的后端失败则保持 ACTIVE（瞬态可重试）——两类失败的资格
-  语义不同，属合同而非实现细节。
+  commit 自身的后端失败则保持 ACTIVE（瞬态可重试；外部效果未知的
+  非幂等动作是否允许自动重试属调用方合同，本模块不替其决定）。
+- **释放资格按故障来源（三轮 review 发现 1）**：`clear_fault` 仅释放
+  estop 锁存面；安全写失败所致 SAFE_FAULT 的通道被跳过（仅
+  `channel_recover`），后续**成功的** fault 落驱（确认写）会覆盖早期
+  “物理未知”标记并回到可释放面；`system_fail` 为终态（对齐 wdt halt
+  一次性），其后 `clear_fault` 返回 `E_STATE`。
+- **estop/system_fail 落驱失败（三轮 review 发现 2）**：失败通道影子
+  保留最后确认值（不伪称 fault 已落驱）、状态 SAFE_FAULT/recover-only、
+  计数留痕；其余通道继续执行强停序列。失败后的升级策略（是否 halt/
+  重写）为 owner 待决，当前仅锁存+计数。
+- **slew 总预算（三轮 review 发现 4）**：界 = slew × (now − last_t)，
+  锚定最后一次**确认写**（值+时刻）；无每笔 +1 免跳——同一毫秒内任意
+  次提交的总变化 ≤ slew。首笔/恢复后提交建立基线（min/max/限幅生效，
+  幅度不受 slew 限——旧行为；是否收紧为 owner 选项）。溢出饱和到 u32
+  极限（确定性）。时钟门覆盖基线建立与后续提交。
+- **事件语义（三轮 review 发现 7）**：`SAFE_STATE_CHANGED` 是**历史迁移
+  事实**（“某时刻迁移到 X”），非当前状态通知——estop 可在发布前复查与
+  分发之间抢入；消费者不得据事件推断当前态，权威态以
+  `channel_state`/`summary` 查询为准。不为制造表面原子性而在长关中断
+  区内同步执行回调。
 - 时钟簿记（单调护栏/失败计数）在 irq_lock 微临界区维护（ISR/线程并发，
   32 位目标 u64 防撕裂）；`entelea_safety_clock_faults()` 可观。
 - **相对旧实现裁剪（延后批次，非行为声明）**：审计环形与 flash 下沉
