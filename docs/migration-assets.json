@@ -3200,13 +3200,19 @@
       ],
       "first_batch": "R11",
       "migration_action": "new",
-      "status": "not_migrated",
-      "constraints": "没有旧完整实现；先冻结窄合同和验收，不从目录/日志推断完成。",
-      "target_paths": [],
+      "status": "migrated",
+      "constraints": "驱力/情感单写者+确定性演进（步长饱和可回放）；适应版本环（单调不复用/回滚不删经历）；无权限/安全写路径（安全不可被适应修改=结构保证）；情感关闭不破坏辅助配置。",
+      "target_paths": [
+        "framework/services/affect/affect.c",
+        "framework/include/entelea/affect.h"
+      ],
       "verification": {
-        "state": "not_run",
-        "evidence_paths": []
-      }
+        "state": "passed",
+        "evidence_paths": [
+          "docs/r11-validation.md"
+        ]
+      },
+      "implementation_commit": "43b91621ad65af7a62f03142323b2e6c3b39fb4a"
     },
     {
       "id": "N-CONTRACT",
