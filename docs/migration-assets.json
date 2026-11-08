@@ -3175,13 +3175,19 @@
       ],
       "first_batch": "R10",
       "migration_action": "new",
-      "status": "not_migrated",
-      "constraints": "没有旧完整实现；先冻结窄合同和验收，不从目录/日志推断完成。",
-      "target_paths": [],
+      "status": "migrated",
+      "constraints": "有界链64（满=让位+计数）；写入须显式同意（采集≠记忆）；删除=tombstone不可逆不复活；来源随条目；持久化/断电恢复随板级批。",
+      "target_paths": [
+        "framework/services/memory/memory.c",
+        "framework/include/entelea/memory.h"
+      ],
       "verification": {
-        "state": "not_run",
-        "evidence_paths": []
-      }
+        "state": "passed",
+        "evidence_paths": [
+          "docs/r10-validation.md"
+        ]
+      },
+      "implementation_commit": "d5feb7e68c98b87e6a2aacdbe51baadbe0fdfabc"
     },
     {
       "id": "N-ADAPTATION",
