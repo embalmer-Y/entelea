@@ -1285,8 +1285,8 @@
       ],
       "first_batch": "R11",
       "migration_action": "adapt",
-      "status": "not_migrated",
-      "constraints": "单例/单写者、tick 时间和产品特有策略逐项说明；不当完整认知框架。",
+      "status": "in_progress",
+      "constraints": "单例/单写者、tick 时间和产品特有策略逐项说明；不当完整认知框架。 2026-11-09 owner A6 决议 reference 迁移：kaleido 驱力/情感/点火的单写者/单时间源/确定性重放纪律与升-降-回中模型谱系作为 R11 新实现参考（数值参数/产品策略未取——D06/D12 真机决策）；正式驱力/情感策略批继续参考。",
       "target_paths": [],
       "verification": {
         "state": "not_run",
@@ -1308,8 +1308,8 @@
       ],
       "first_batch": "R11",
       "migration_action": "reuse",
-      "status": "not_migrated",
-      "constraints": "参考向量不可按新算法输出反改；保持独立来源与误差判据。",
+      "status": "in_progress",
+      "constraints": "参考向量不可按新算法输出反改；保持独立来源与误差判据。 2026-11-09 owner A6 决议 reference 迁移：Galatea 独立 oracle 保持独立来源与误差判据（未按新算法输出反改）；R11 机制面以确定性重放自证，数值对拍归正式策略批。",
       "target_paths": [],
       "verification": {
         "state": "not_run",
@@ -9972,7 +9972,7 @@
       "sha256": "7704b0feb94ae75576b391a6290387f7f5d9019f1a8b38166c075e66580c75ba",
       "id": "S-legacy-93a9b30ac3872874e934",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -9985,7 +9985,7 @@
       "sha256": "c636942165e6ecc80effe92e759d0274b77d51e82ccf9a64dfdf52e799fe1cea",
       "id": "S-legacy-899bad059728ed978e3a",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -9998,7 +9998,7 @@
       "sha256": "3c6637e5de14d10533b095d51dca60e18ae06f42664a35a8799d32d9c40b044a",
       "id": "S-legacy-a795d33288e6bff1edda",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -10011,7 +10011,7 @@
       "sha256": "93a8e8e3ba011b325832f1aaed97619a482fa428e14a09211634e7e344f256f7",
       "id": "S-legacy-4e9da4dad6754fb4bbba",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -10024,7 +10024,7 @@
       "sha256": "d21a37da36860363b313f87c3f611731d4353ef89e98b5ca5e18287bcf13facf",
       "id": "S-legacy-78f696534886058a1126",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -10037,7 +10037,7 @@
       "sha256": "536bd55a8a3c2755c9828059e8850910c3854b548bb59955bc54bd442011766e",
       "id": "S-legacy-5e831212bc7c843bec18",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -10050,7 +10050,7 @@
       "sha256": "57f7fdeaa2634185c953b2eb70b9d3f034544d8dfc9bfa5f891581de9ca2060c",
       "id": "S-legacy-127cdbd12fa3ac2b335d",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -10063,7 +10063,7 @@
       "sha256": "8212bcc58294f7ea8f0656c4174034924fa0994e016eee76b770bdc490f6bb2b",
       "id": "S-legacy-54807dc78cf526bc6e3f",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -10076,7 +10076,7 @@
       "sha256": "70fd53e7b6c01bbb523c92a760700f17425736d3b3cfc40c3f3935e9d8f992a8",
       "id": "S-legacy-7840f408362ce1371634",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -10089,7 +10089,7 @@
       "sha256": "f0eb55d6d2d822cc228e3d14a19c50abe02c381ff115d042eea86e67190ff0b7",
       "id": "S-legacy-ca10c4efc23a72398dc2",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -10102,7 +10102,7 @@
       "sha256": "d600b00538d5e03a720e7e29edfdbc723d7bc6c11de259cb755b9fbe4daf2adb",
       "id": "S-legacy-9e8cd6eaedf8d0465a24",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -10115,7 +10115,7 @@
       "sha256": "8f776ec9e90e88a1e45507b6b1c73eff884ee5f1ec973a3759f6c2bf630cac2f",
       "id": "S-legacy-671ea38c2204c5a5bb37",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -10128,7 +10128,7 @@
       "sha256": "b5d0b0401d27d85f3c4bf8c54001babb06d94c4f1e753b1a517f97b8de5dbd2a",
       "id": "S-legacy-172dba128d9f5f070811",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -10141,7 +10141,7 @@
       "sha256": "8e7659aa20f47bc8b179080b1526c039c062c1a5a19ebf194643449b84ee829d",
       "id": "S-legacy-9983d6b500e5e2348c1e",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -10154,7 +10154,7 @@
       "sha256": "b7942571626d34f44e76277b180d2b4c10db15f5b56537f0fe682969ed7565ab",
       "id": "S-legacy-14b3ceb74c7aac4da725",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -10167,7 +10167,7 @@
       "sha256": "957e31d9244254874d63a17e43ce9c1584f59ab82f2a3ce7afbdbfb6c54e0bc7",
       "id": "S-legacy-05b41aa49874a2be6f99",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -10180,7 +10180,7 @@
       "sha256": "4392cc6c3393366981fd35b5a5dc1a1b01faacea1fd01d5abd4b057a38ef9dff",
       "id": "S-legacy-cfa01dfa6dec5b44ace7",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -10193,7 +10193,7 @@
       "sha256": "44cb629577e1a2e0e86e5e56505766f6bb6a0a0379df6e58263c7549b54a918c",
       "id": "S-legacy-df304ccbe7b626ec30fb",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -10206,7 +10206,7 @@
       "sha256": "ff89902ffa7488e2684c2e971ab32f342a64c98d42cfdf87dca0d3f7623e530b",
       "id": "S-legacy-48474ad9bca983ee1b52",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -10219,7 +10219,7 @@
       "sha256": "dfdf5a2d25a60e847a51183f2fe6de5586c38dfa1e0385f31b83434a56ea004b",
       "id": "S-legacy-2067e5fb3519e85e73d6",
       "asset_id": "A-REFERENCE",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
@@ -10232,7 +10232,7 @@
       "sha256": "9c08292d66ed5a78798a971fe8f23cb7500296f843d5892d1657294d649a9dae",
       "id": "S-legacy-31c431d52fd6289337f3",
       "asset_id": "A-AFFECT",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
       "migration_commit": null
     },
