@@ -14,10 +14,12 @@
 #define META_SIZE 1024U   /* 双副本各 512B */
 #define NOINIT_SIZE 256U
 #define AUDIT_SIZE 8192U  /* 两页乒乓 × 64 槽 × 64B（DEC-52①） */
+#define PROV_SIZE 4096U
 
 static uint8_t ram_meta[META_SIZE];
 static uint8_t ram_noinit[NOINIT_SIZE];
 static uint8_t ram_audit[AUDIT_SIZE];
+static uint8_t ram_prov[PROV_SIZE];
 
 static uint8_t *part_ram(entelea_store_part_t part, uint32_t *size)
 {
@@ -31,6 +33,9 @@ static uint8_t *part_ram(entelea_store_part_t part, uint32_t *size)
 	case ENTELEA_PART_AUDIT:
 		*size = AUDIT_SIZE;
 		return ram_audit;
+	case ENTELEA_PART_PROV:
+		*size = PROV_SIZE;
+		return ram_prov;
 	default:
 		*size = 0;
 		return NULL;
@@ -134,3 +139,26 @@ entelea_result_t entelea_storage_test_reset(void)
 	return ENTELEA_OK;
 }
 #endif
+
+/* 公共端口原语（后端表保持模块私有；跨模块消费经此窄面）。 */
+entelea_result_t entelea_storage_read(entelea_store_part_t part, uint32_t off,
+				      void *buf, uint32_t len)
+{
+	return ram_read(part, off, buf, len);
+}
+
+entelea_result_t entelea_storage_write(entelea_store_part_t part, uint32_t off,
+				       const void *buf, uint32_t len)
+{
+	return ram_write(part, off, buf, len);
+}
+
+entelea_result_t entelea_storage_erase(entelea_store_part_t part)
+{
+	return ram_erase(part);
+}
+
+uint32_t entelea_storage_part_size(entelea_store_part_t part)
+{
+	return ram_size(part);
+}

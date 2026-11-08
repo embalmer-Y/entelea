@@ -21,12 +21,22 @@ typedef enum {
 	ENTELEA_PART_META,   /* 掉电安全小状态（双副本） */
 	ENTELEA_PART_NOINIT, /* 复位留痕（一次性） */
 	ENTELEA_PART_AUDIT,  /* 审计两页乒乓环（子闭环 2） */
+	ENTELEA_PART_PROV,   /* 配置 provisioning（子闭环 3，只读装载） */
 	ENTELEA_PART_COUNT,
 } entelea_store_part_t;
 
-/** [boot] 存储初始化（后端就绪 + noinit 消费）。失败显式返回；
- * 上层按 fail-safe 处置。 */
+/** [boot] 存储初始化（后端就绪 + noinit 消费 + 审计游标）。失败显式
+ * 返回；上层按 fail-safe 处置。 */
 entelea_result_t entelea_storage_init(void);
+
+/* ---- 共享存储端口（跨模块消费面；namespace 越界拒绝同内部约束） ---- */
+
+entelea_result_t entelea_storage_read(entelea_store_part_t part, uint32_t off,
+				      void *buf, uint32_t len);
+entelea_result_t entelea_storage_write(entelea_store_part_t part, uint32_t off,
+				       const void *buf, uint32_t len);
+entelea_result_t entelea_storage_erase(entelea_store_part_t part);
+uint32_t entelea_storage_part_size(entelea_store_part_t part);
 
 /** [boot] 上次异常复位留痕（init 消费后可查；present=false = 无/损坏）。 */
 void entelea_storage_last_reset(uint32_t *reason, bool *present);

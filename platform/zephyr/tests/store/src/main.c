@@ -5,6 +5,7 @@
 #include <string.h>
 #include <zephyr/ztest.h>
 #include <entelea/events.h>
+#include <entelea/prov.h>
 #include <entelea/safety.h>
 #include <entelea/storage.h>
 #include <entelea/supervision.h>
@@ -283,6 +284,236 @@ ZTEST(framework_store, test_safety_exception_audit_wiring)
 	zassert_equal(out[1].evt, 1);
 	zassert_equal(out[1].ch_idx, 0xFFFF, "系统事件");
 	entelea_wdt_test_reset();
+}
+
+/* ---- prov：CBOR 构造 + oracle（迁自旧 T-STORE prov 用例族） ---- */
+#define CB_MAX 2048
+struct cb {
+	uint8_t b[CB_MAX];
+	uint32_t n;
+};
+
+static void cb_u8(struct cb *c, uint8_t v) { c->b[c->n++] = v; }
+
+static void cb_hdr(struct cb *c, uint8_t mt, uint32_t val)
+{
+	if (val < 0x18) {
+		cb_u8(c, (uint8_t)(mt | val));
+	} else if (val <= 0xFF) {
+		cb_u8(c, (uint8_t)(mt | 0x18));
+		cb_u8(c, (uint8_t)val);
+	} else {
+		cb_u8(c, (uint8_t)(mt | 0x19));
+		cb_u8(c, (uint8_t)(val >> 8));
+		cb_u8(c, (uint8_t)val);
+	}
+}
+
+static void cb_tstr(struct cb *c, const char *s)
+{
+	cb_hdr(c, 0x60, strlen(s));
+	for (size_t i = 0; i < strlen(s); i++) {
+		cb_u8(c, (uint8_t)s[i]);
+	}
+}
+
+static void cb_bstr32(struct cb *c, uint8_t fill)
+{
+	cb_hdr(c, 0x40, 32);
+	for (int i = 0; i < 32; i++) {
+		cb_u8(c, fill + (uint8_t)i);
+	}
+}
+
+static void cb_bstr_var(struct cb *c, uint32_t len, uint8_t fill)
+{
+	if (len < 24) {
+		cb_hdr(c, 0x40, len);
+	} else if (len < 256) {
+		cb_u8(c, 0x58);
+		cb_u8(c, (uint8_t)len);
+	} else {
+		cb_u8(c, 0x59);
+		cb_u8(c, (uint8_t)(len >> 8));
+		cb_u8(c, (uint8_t)len);
+	}
+	for (uint32_t i = 0; i < len; i++) {
+		cb_u8(c, fill + (uint8_t)i);
+	}
+}
+
+static void build_prov(struct cb *c, const char *node, const char *cube,
+		       const char *router, uint32_t pwr, int ver,
+		       uint8_t deploy_mode, uint8_t remote_clear, int lconf,
+		       const uint32_t *tls)
+{
+	memset(c, 0, sizeof(*c));
+	uint32_t pairs = 9;
+
+	if (ver == 2) {
+		pairs = (tls != NULL) ? 15 : ((lconf >= 0) ? 12 : 11);
+	}
+	cb_hdr(c, 0xA0, pairs);
+	cb_tstr(c, "v");
+	cb_hdr(c, 0x00, (uint32_t)ver);
+	cb_tstr(c, "node_id");
+	cb_tstr(c, node);
+	cb_tstr(c, "cube_id");
+	cb_tstr(c, cube);
+	cb_tstr(c, "routers");
+	cb_hdr(c, 0x80, 1);
+	cb_tstr(c, router);
+	cb_tstr(c, "pk0");
+	cb_bstr32(c, 0x10);
+	cb_tstr(c, "pk1");
+	cb_bstr32(c, 0x60);
+	cb_tstr(c, "cred");
+	cb_tstr(c, "test-cred");
+	cb_tstr(c, "pwr_ma");
+	cb_hdr(c, 0x00, pwr);
+	cb_tstr(c, "estop");
+	cb_hdr(c, 0x00, 1);
+	if (ver == 2) {
+		cb_tstr(c, "deploy_mode");
+		cb_hdr(c, 0x00, deploy_mode);
+		cb_tstr(c, "estop_remote_clear");
+		cb_hdr(c, 0x00, remote_clear);
+		if (lconf >= 0 || tls != NULL) {
+			cb_tstr(c, "lconf");
+			cb_hdr(c, 0x00, (uint32_t)(lconf >= 0 ? lconf : 0));
+		}
+		if (tls != NULL) {
+			cb_tstr(c, "tls_ca");
+			cb_bstr_var(c, tls[0], 0xA0);
+			cb_tstr(c, "tls_cert");
+			cb_bstr_var(c, tls[1], 0xB0);
+			cb_tstr(c, "tls_key");
+			cb_bstr_var(c, tls[2], 0xC0);
+		}
+	}
+}
+
+ZTEST(framework_store, test_prov_v1_and_defaults)
+{
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	entelea_prov_maint_test_reset();
+	struct cb c;
+
+	build_prov(&c, "node-1", "cube-9", "tcp/10.0.0.1:7447", 500, 1, 0, 0, -1,
+		   NULL);
+	zassert_equal(entelea_prov_write_test(c.b, c.n), ENTELEA_OK);
+	zassert_equal(entelea_prov_load(), ENTELEA_OK);
+	const entelea_prov_t *p = entelea_prov();
+
+	zassert_ok(strcmp(p->node_id, "node-1"));
+	zassert_ok(strcmp(p->cube_id, "cube-9"));
+	zassert_ok(strcmp(p->router_locators[0], "tcp/10.0.0.1:7447"));
+	zassert_equal(p->router_locators[1][0], '\0', "routers 余位清零");
+	zassert_equal(p->power_budget_ma, 500);
+	zassert_equal(p->estop_trigger_flags, 1);
+	zassert_equal(p->root_pubkeys[0][0], 0x10);
+	zassert_equal(p->root_pubkeys[1][0], 0x60);
+	zassert_ok(strcmp(p->zenoh_cred, "test-cred"));
+	/* v1 缺字段缺省（现网兼容）。 */
+	zassert_equal(p->deploy_mode, ENTELEA_DEPLOY_ORCHESTRATED);
+	zassert_equal(p->estop_remote_clear, 1);
+	zassert_equal(p->local_confirm, 0);
+	zassert_equal(p->tls_ca_len, 0, "v1 = TLS off");
+}
+
+ZTEST(framework_store, test_prov_v2_domain_and_schema)
+{
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	entelea_prov_maint_test_reset();
+	struct cb c;
+
+	build_prov(&c, "n-v2", "c-v2", "tcp/10.0.0.2:7447", 200, 2, 1, 0, -1,
+		   NULL);
+	zassert_equal(entelea_prov_write_test(c.b, c.n), ENTELEA_OK);
+	zassert_equal(entelea_prov_load(), ENTELEA_OK);
+	zassert_equal(entelea_prov()->deploy_mode, ENTELEA_DEPLOY_STANDALONE);
+	zassert_equal(entelea_prov()->estop_remote_clear, 0);
+
+	/* 域外值 fail-closed（未知模式/清除/lconf 不静默归并）。 */
+	build_prov(&c, "n-x", "c-x", "tcp/x:1", 1, 2, 2, 1, -1, NULL);
+	zassert_equal(entelea_prov_write_test(c.b, c.n), ENTELEA_OK);
+	zassert_equal(entelea_prov_load(), ENTELEA_E_IO, "deploy_mode=2 拒");
+	build_prov(&c, "n-y", "c-y", "tcp/x:1", 1, 2, 1, 2, -1, NULL);
+	zassert_equal(entelea_prov_write_test(c.b, c.n), ENTELEA_OK);
+	zassert_equal(entelea_prov_load(), ENTELEA_E_IO, "remote_clear=2 拒");
+	build_prov(&c, "n-l", "c-l", "tcp/x:1", 1, 2, 0, 1, 2, NULL);
+	zassert_equal(entelea_prov_write_test(c.b, c.n), ENTELEA_OK);
+	zassert_equal(entelea_prov_load(), ENTELEA_E_IO, "lconf=2 拒");
+
+	/* v/pairs 错配：v1 9 对 + v=2。 */
+	build_prov(&c, "n-z", "c-z", "tcp/x:1", 1, 1, 0, 0, -1, NULL);
+	c.b[3] = 0x02;
+	zassert_equal(entelea_prov_write_test(c.b, c.n), ENTELEA_OK);
+	zassert_equal(entelea_prov_load(), ENTELEA_E_IO, "v/pairs 错配拒");
+
+	/* 尾部余量字节拒（超集）。 */
+	build_prov(&c, "n-t", "c-t", "tcp/x:1", 1, 1, 0, 0, -1, NULL);
+	c.b[c.n++] = 0x00;
+	zassert_equal(entelea_prov_write_test(c.b, c.n), ENTELEA_OK);
+	zassert_equal(entelea_prov_load(), ENTELEA_E_IO, "尾部余量拒");
+
+	/* CRC 失败：破坏 CBOR 一字节（头仍自洽）→ E_IO。 */
+	build_prov(&c, "n-c", "c-c", "tcp/x:1", 1, 1, 0, 0, -1, NULL);
+	zassert_equal(entelea_prov_write_test(c.b, c.n), ENTELEA_OK);
+	uint8_t scratch[8];
+
+	zassert_equal(entelea_storage_read(ENTELEA_PART_PROV, 10, scratch, 1),
+		      ENTELEA_OK);
+	scratch[0] ^= 0xFF;
+	zassert_equal(entelea_storage_write(ENTELEA_PART_PROV, 10, scratch, 1),
+		      ENTELEA_OK);
+	zassert_equal(entelea_prov_load(), ENTELEA_E_IO, "CRC 失败拒");
+}
+
+ZTEST(framework_store, test_prov_lconf_tls_and_maint)
+{
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	entelea_prov_maint_test_reset();
+	struct cb c;
+
+	/* lconf 12 对 + TLS 15 对形态与长度镜像。 */
+	build_prov(&c, "n-lc", "c-lc", "tcp/x:1", 1, 2, 0, 1, 1, NULL);
+	zassert_equal(entelea_prov_write_test(c.b, c.n), ENTELEA_OK);
+	zassert_equal(entelea_prov_load(), ENTELEA_OK);
+	zassert_equal(entelea_prov()->local_confirm, 1);
+	const uint32_t tls[3] = {600, 620, 121};
+
+	build_prov(&c, "n-tls", "c-tls", "tcp/x:1", 1, 2, 0, 1, 0, tls);
+	zassert_equal(entelea_prov_write_test(c.b, c.n), ENTELEA_OK);
+	zassert_equal(entelea_prov_load(), ENTELEA_OK);
+	zassert_equal(entelea_prov()->tls_ca_len, 600);
+	zassert_equal(entelea_prov()->tls_cert_len, 620);
+	zassert_equal(entelea_prov()->tls_key_len, 121);
+	zassert_equal(entelea_prov_tls()->ca_len, 600, "装载态长度镜像");
+	zassert_equal(entelea_prov_tls()->key[0], 0xC0);
+
+	/* 维护窗：非法 blob 零写入（分区保持空 → load E_IO）。 */
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	entelea_prov_maint_test_reset();
+	build_prov(&c, "n", "c", "r", 1, 1, 0, 0, -1, NULL);
+	c.b[3] ^= 0xFF;
+	zassert_equal(entelea_prov_write_maint(c.b, c.n), ENTELEA_E_IO);
+	zassert_equal(entelea_prov_load(), ENTELEA_E_IO, "零写入（分区仍空）");
+
+	/* 合法 → 写入装载；一次性窗；复位模拟后再写。 */
+	build_prov(&c, "mn-7", "mc-7", "tcp/10.1.1.1:9955", 700, 1, 0, 0, -1,
+		   NULL);
+	zassert_equal(entelea_prov_write_maint(c.b, c.n), ENTELEA_OK);
+	zassert_equal(entelea_prov_load(), ENTELEA_OK);
+	zassert_ok(strcmp(entelea_prov()->node_id, "mn-7"));
+	build_prov(&c, "mn-8", "mc-8", "tcp/10.1.1.2:9955", 800, 1, 0, 0, -1,
+		   NULL);
+	zassert_equal(entelea_prov_write_maint(c.b, c.n), ENTELEA_E_STATE,
+		      "per-boot 一次性窗");
+	entelea_prov_maint_test_reset();
+	zassert_equal(entelea_prov_write_maint(c.b, c.n), ENTELEA_OK);
+	zassert_equal(entelea_prov_load(), ENTELEA_OK);
+	zassert_ok(strcmp(entelea_prov()->node_id, "mn-8"));
 }
 
 /* ---- 启动表：storage_init 尾部追加 ---- */
