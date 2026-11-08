@@ -22,6 +22,8 @@ typedef enum {
 	ENTELEA_PART_NOINIT, /* 复位留痕（一次性） */
 	ENTELEA_PART_AUDIT,  /* 审计两页乒乓环（子闭环 2） */
 	ENTELEA_PART_PROV,   /* 配置 provisioning（子闭环 3，只读装载） */
+	ENTELEA_PART_TRUST,  /* 信任根表双副本（子闭环 4） */
+	ENTELEA_PART_KV,     /* App 业务状态两页追加（子闭环 4） */
 	ENTELEA_PART_COUNT,
 } entelea_store_part_t;
 
@@ -82,6 +84,9 @@ entelea_result_t entelea_storage_audit_append(
 
 /** [thread] 按 seq 升序读最近 max 条（两页过渡态 ≤128）；返回条数。 */
 size_t entelea_storage_audit_read(entelea_storage_audit_entry_t *out, size_t max);
+
+#include <entelea/kv.h>
+#include <entelea/trust.h>
 
 /* 尺寸出处 DEC-23/27 语义（基线结构性数值；板级按 DT 调整）。 */
 #define ENTELEA_STORAGE_META_MAX 256

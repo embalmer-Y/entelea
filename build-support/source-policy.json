@@ -23,7 +23,9 @@
     "framework/services/storage/noinit.c",
     "framework/services/storage/audit.c",
     "framework/services/config/prov.c",
-    "framework/services/config/prov_maint.c"
+    "framework/services/config/prov_maint.c",
+    "framework/services/storage/trust.c",
+    "framework/services/storage/kv.c"
   ],
   "platform_zephyr": [
     "platform/zephyr/clock.c",

@@ -5,7 +5,9 @@
 #include <string.h>
 #include <zephyr/ztest.h>
 #include <entelea/events.h>
+#include <entelea/kv.h>
 #include <entelea/prov.h>
+#include <entelea/trust.h>
 #include <entelea/safety.h>
 #include <entelea/storage.h>
 #include <entelea/supervision.h>
@@ -514,6 +516,123 @@ ZTEST(framework_store, test_prov_lconf_tls_and_maint)
 	zassert_equal(entelea_prov_write_maint(c.b, c.n), ENTELEA_OK);
 	zassert_equal(entelea_prov_load(), ENTELEA_OK);
 	zassert_ok(strcmp(entelea_prov()->node_id, "mn-8"));
+}
+
+/* ---- 信任表（子闭环 4）：schema 矩阵/乒乓/撕裂 ---- */
+static void build_trust(struct cb *c, uint32_t ver, int nkeys, int dup_at)
+{
+	memset(c, 0, sizeof(*c));
+	cb_hdr(c, 0xA0, 2);
+	cb_tstr(c, "ver");
+	cb_hdr(c, 0x00, ver);
+	cb_tstr(c, "keys");
+	cb_hdr(c, 0x80, (uint32_t)nkeys);
+	for (int i = 0; i < nkeys; i++) {
+		cb_bstr32(c, (dup_at == i) ? 0x10 : (uint8_t)(0x10 + 4 * i));
+	}
+}
+
+ZTEST(framework_store, test_trust_table)
+{
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	entelea_trust_test_reset();
+	struct cb c;
+	entelea_trust_table_t t;
+
+	zassert_equal(entelea_trust()->ver, 0, "初始空分区=工厂根哨兵");
+	zassert_equal(entelea_trust()->n_keys, 0);
+
+	build_trust(&c, 1, 2, -1);
+	zassert_equal(entelea_trust_validate(c.b, c.n, &t), ENTELEA_OK);
+	zassert_equal(t.ver, 1);
+	zassert_equal(t.n_keys, 2);
+	build_trust(&c, 0, 1, -1);
+	zassert_equal(entelea_trust_validate(c.b, c.n, &t), ENTELEA_E_IO, "ver=0 拒");
+	build_trust(&c, 1, 9, -1);
+	zassert_equal(entelea_trust_validate(c.b, c.n, &t), ENTELEA_E_IO, "超 8 键拒");
+	build_trust(&c, 1, 2, 1);
+	zassert_equal(entelea_trust_validate(c.b, c.n, &t), ENTELEA_E_IO, "键内重复拒");
+	build_trust(&c, 1, 2, -1);
+	c.b[c.n++] = 0x00;
+	zassert_equal(entelea_trust_validate(c.b, c.n, &t), ENTELEA_E_IO, "尾部余量拒");
+
+	build_trust(&c, 1, 2, -1);
+	zassert_equal(entelea_trust_write(c.b, c.n), ENTELEA_OK);
+	zassert_equal(entelea_trust()->ver, 1);
+	zassert_equal(entelea_trust()->keys[0][0], 0x10);
+	zassert_equal(entelea_trust()->keys[1][0], 0x14);
+
+	build_trust(&c, 1, 9, -1);
+	zassert_equal(entelea_trust_write(c.b, c.n), ENTELEA_E_IO, "坏表零写入");
+	zassert_equal(entelea_trust()->n_keys, 2);
+
+	build_trust(&c, 2, 1, -1);
+	zassert_equal(entelea_trust_write(c.b, c.n), ENTELEA_OK);
+	zassert_equal(entelea_trust()->ver, 2);
+
+	entelea_trust_test_reset();
+	zassert_equal(entelea_trust_corrupt_test(1), ENTELEA_OK);
+	zassert_equal(entelea_trust_load(), ENTELEA_OK);
+	zassert_equal(entelea_trust()->ver, 1, "撕裂回退旧副本");
+	zassert_equal(entelea_trust()->n_keys, 2);
+
+	zassert_equal(entelea_trust_corrupt_test(0), ENTELEA_OK);
+	entelea_trust_test_reset();
+	zassert_equal(entelea_trust_load(), ENTELEA_OK);
+	zassert_equal(entelea_trust()->ver, 0, "双损=工厂根哨兵");
+}
+
+/* ---- kv：往返/隔离/压实/重装载 ---- */
+ZTEST(framework_store, test_kv_roundtrip_compact_reload)
+{
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	entelea_kv_test_reset();
+	uint8_t buf[ENTELEA_KV_BLOB_MAX];
+	uint8_t w[64];
+
+	/* 未存 = NOTFOUND；参数负测。 */
+	zassert_equal(entelea_kv_load(0xAAAA, buf, sizeof(buf)),
+		      (int32_t)ENTELEA_E_NOTFOUND);
+	zassert_equal(entelea_kv_save(1, w, 0), ENTELEA_E_PARAM);
+	zassert_equal(entelea_kv_save(1, w, ENTELEA_KV_BLOB_MAX + 1),
+		      ENTELEA_E_PARAM);
+
+	for (int app = 0; app < 3; app++) {
+		for (int i = 0; i < 64; i++) {
+			w[i] = (uint8_t)(app * 64 + i);
+		}
+		zassert_equal(entelea_kv_save(0x1000 + (uint32_t)app, w, 64),
+			      ENTELEA_OK);
+	}
+	for (int app = 0; app < 3; app++) {
+		int32_t n = entelea_kv_load(0x1000 + (uint32_t)app, buf, sizeof(buf));
+
+		zassert_equal(n, 64, "app %d 往返", app);
+		zassert_equal(buf[0], (uint8_t)(app * 64), "隔离（app %d）", app);
+	}
+
+	/* 覆盖写（同 app 取最新）。 */
+	for (int i = 0; i < 64; i++) {
+		w[i] = 0xEE;
+	}
+	zassert_equal(entelea_kv_save(0x1000, w, 8), ENTELEA_OK);
+	zassert_equal(entelea_kv_load(0x1000, buf, sizeof(buf)), 8);
+	zassert_equal(buf[0], 0xEE);
+	zassert_equal(entelea_kv_load(0x1000, buf, 4), (int32_t)ENTELEA_E_RANGE,
+		      "容量不足如实");
+
+	/* 压实翻页：把页 0 写满（15 槽）→ 触发压实 → 重装载后数据仍在。 */
+	for (int round = 0; round < 14; round++) {
+		w[0] = (uint8_t)round;
+		zassert_equal(entelea_kv_save(0x2000, w, 16), ENTELEA_OK);
+		zassert_equal(entelea_kv_save(0x3000, w, 16), ENTELEA_OK);
+	}
+	entelea_kv_test_reset(); /* 模拟复位：重扫描 */
+	zassert_equal(entelea_kv_init(), ENTELEA_OK);
+	zassert_equal(entelea_kv_load(0x1000, buf, sizeof(buf)), 8);
+	zassert_equal(buf[0], 0xEE, "重装载后最新保留");
+	zassert_true(entelea_kv_load(0x2000, buf, sizeof(buf)) == 16,
+		     "压实后 app 存活");
 }
 
 /* ---- 启动表：storage_init 尾部追加 ---- */

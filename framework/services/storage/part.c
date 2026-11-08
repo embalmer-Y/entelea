@@ -15,11 +15,15 @@
 #define NOINIT_SIZE 256U
 #define AUDIT_SIZE 8192U  /* 两页乒乓 × 64 槽 × 64B（DEC-52①） */
 #define PROV_SIZE 4096U
+#define TRUST_SIZE 8192U
+#define KV_SIZE 8192U
 
 static uint8_t ram_meta[META_SIZE];
 static uint8_t ram_noinit[NOINIT_SIZE];
 static uint8_t ram_audit[AUDIT_SIZE];
 static uint8_t ram_prov[PROV_SIZE];
+static uint8_t ram_trust[TRUST_SIZE];
+static uint8_t ram_kv[KV_SIZE];
 
 static uint8_t *part_ram(entelea_store_part_t part, uint32_t *size)
 {
@@ -36,6 +40,12 @@ static uint8_t *part_ram(entelea_store_part_t part, uint32_t *size)
 	case ENTELEA_PART_PROV:
 		*size = PROV_SIZE;
 		return ram_prov;
+	case ENTELEA_PART_TRUST:
+		*size = TRUST_SIZE;
+		return ram_trust;
+	case ENTELEA_PART_KV:
+		*size = KV_SIZE;
+		return ram_kv;
 	default:
 		*size = 0;
 		return NULL;
