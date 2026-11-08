@@ -82,7 +82,7 @@
       "title": "有界诊断与审计",
       "planned_root": "framework/services/observability",
       "first_batch": "R03",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "id": "M-CAPABILITY",
@@ -854,8 +854,8 @@
       ],
       "first_batch": "R01",
       "migration_action": "extract",
-      "status": "in_progress",
-      "constraints": "meta 双副本、audit/KV 各有不同恢复能力；250B KV 不能当经历库或试用隔离。 R03子闭环1已迁端口(RAM)/meta/noinit+R02留痕接线并 native_sim 验证；slot.c→R05包事实批次(defer)，kv/trust 待后续子闭环（audit 子闭环2已迁；prov v1/v2+维护窗+烧录通道子闭环3已迁并 oracle 全绿），组级未完成。",
+      "status": "migrated",
+      "constraints": "meta 双副本、audit/KV 各有不同恢复能力；250B KV 不能当经历库或试用隔离。 R03子闭环1已迁端口(RAM)/meta/noinit+R02留痕接线并 native_sim 验证；slot.c→R05包事实批次(defer)，全部五个子闭环已迁：端口/meta/noinit、audit环、prov、trust双副本、kv两页追加（store 套件 12/12）；slot→R05，组级未完成。",
       "target_paths": [
         "framework/services/storage/part.c",
         "framework/services/storage/meta.c",
@@ -864,7 +864,11 @@
         "framework/include/entelea/storage.h",
         "framework/services/storage/audit.c",
         "framework/services/config/prov.c",
-        "framework/services/config/prov_maint.c"
+        "framework/services/config/prov_maint.c",
+        "framework/services/storage/trust.c",
+        "framework/services/storage/kv.c",
+        "framework/include/entelea/trust.h",
+        "framework/include/entelea/kv.h"
       ],
       "verification": {
         "state": "not_run",
@@ -4781,9 +4785,13 @@
       "sha256": "b240db96034a611479d941df9e37f8014d1e0291cbf21b21c29939a8af53e9a2",
       "id": "S-legacy-1a754eefd3cfb6f8fbd3",
       "asset_id": "A-STORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/storage/kv.c",
+        "framework/include/entelea/kv.h",
+        "platform/zephyr/tests/store/src/main.c"
+      ],
+      "migration_commit": "b58d62b876ae3b4227a281bbfc4621c42300f375"
     },
     {
       "repository": "legacy",
@@ -4927,9 +4935,13 @@
       "sha256": "0c27035e1629ef64b6d074ccaba777cba002b6d197c57d7ddb0724a110cf9713",
       "id": "S-legacy-6af94ca838d4d62fcd0f",
       "asset_id": "A-STORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/storage/trust.c",
+        "framework/include/entelea/trust.h",
+        "platform/zephyr/tests/store/src/main.c"
+      ],
+      "migration_commit": "b58d62b876ae3b4227a281bbfc4621c42300f375"
     },
     {
       "repository": "legacy",

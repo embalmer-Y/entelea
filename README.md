@@ -4,8 +4,8 @@
 '已完成 **R01 公共合同与构建底座**：时间/截止时间、独立CBOR/SHA、
 所迁旧子集适配和主机验证。
 **R02 进行中**（软件闭环已交付；板级+硬件闸待 D12，blocked）；
-**R03 进行中**：存储端口/meta/noinit 子闭环 1 已交付，审计/prov/
-信任表/KV 子闭环推进中。见
+**R03 软件面已交付**（端口/meta/noinit、审计环、prov、信任表、KV
+五子闭环，store 套件 12/12；flash/板级持久化待 D12）。见
 [R02 验证记录](docs/r02-validation.md)与[R01 验证记录](docs/r01-validation.md)。
 
 - [重建规划](docs/rebuild-plan.md)：顺序、边界、决策闸和验收。
