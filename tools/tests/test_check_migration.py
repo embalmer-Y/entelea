@@ -47,6 +47,7 @@ class MigrationChecks(unittest.TestCase):
         self.rejected("Dependency cycle")
 
     def test_unfinished_prerequisite(self):
+        self.data["batches"][1]["status"] = "pending"
         self.data["batches"][2]["status"] = "in_progress"
         self.rejected("Unfinished prerequisite")
 
@@ -62,6 +63,7 @@ class MigrationChecks(unittest.TestCase):
 
     def test_no_pass_without_evidence(self):
         self.data["assets"][-1]["verification"]["state"] = "passed"
+        self.data["assets"][-1]["verification"]["evidence_paths"] = []
         self.rejected("Missing passed evidence")
 
     def test_changed_baseline(self):
@@ -127,10 +129,37 @@ class MigrationChecks(unittest.TestCase):
         self.data["design_decisions"][0]["record_path"] = "missing/approval.md"
         self.rejected("Missing target/evidence file")
 
+    def test_direction_approval_preserves_pending_details(self):
+        decision = self.data["design_decisions"][0]
+        decision["status"] = "direction_approved"
+        decision["record_path"] = "docs/rebuild-plan.md"
+        decision["pending_details"] = []
+        self.rejected("Missing pending decision details")
+
+    def test_direction_approval_needs_record(self):
+        decision = self.data["design_decisions"][0]
+        decision["status"] = "direction_approved"
+        decision["record_path"] = "missing/approval.md"
+        self.rejected("Missing target/evidence file")
+
     def test_new_asset_with_fake_source(self):
         asset = self.data["assets"][-1]
         asset["source_selector"] = {"kind": "exact", "path": "memory.c"}
         self.rejected("New asset has old source")
+
+    def test_new_asset_requires_implementation_commit(self):
+        asset = self.data["assets"][-1]
+        asset["status"] = "migrated"
+        asset["target_paths"] = ["README.md"]
+        asset["implementation_commit"] = None
+        self.rejected("Missing new implementation commit")
+
+    def test_new_target_must_exist_in_implementation_commit(self):
+        asset = self.data["assets"][-1]
+        asset["status"] = "migrated"
+        asset["target_paths"] = ["tools/check_dependencies.py"]
+        asset["implementation_commit"] = CHECK.BASELINES["legacy"]
+        self.rejected("New target absent")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,11 @@
+{
+  "common": [
+    "framework/common/time.c",
+    "framework/common/cbor.c",
+    "framework/common/sha256.c"
+  ],
+  "compat": ["framework/compat/common.c"],
+  "contract_tests": ["tests/contracts/main.c"],
+  "diagnostics": {},
+  "protected_output_sources": []
+}

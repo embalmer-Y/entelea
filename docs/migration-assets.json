@@ -112,7 +112,7 @@
     },
     {
       "id": "M-APP",
-      "title": "受限 Wasm 执行",
+      "title": "受限 App 契约与 Wasm 执行",
       "planned_root": "framework/services/app",
       "first_batch": "R05",
       "status": "planned"
@@ -328,51 +328,76 @@
   "design_decisions": [
     {
       "id": "D01",
-      "status": "needs_owner_review"
+      "status": "direction_approved",
+      "record_path": "docs/rebuild-plan.md",
+      "pending_details": ["后续模块接口、跨平台旧ABI适配；R01公共合同与命名已落实"]
     },
     {
       "id": "D02",
-      "status": "needs_owner_review"
+      "status": "direction_approved",
+      "record_path": "docs/rebuild-plan.md",
+      "pending_details": ["适用后端、ARM64/x86验证环境与具体预算"]
     },
     {
       "id": "D03",
-      "status": "needs_owner_review"
+      "status": "direction_approved",
+      "record_path": "docs/rebuild-plan.md",
+      "scope": "首期设计覆盖Lua接入合同及关键可行性验证；正式运行支持可后续交付",
+      "pending_details": ["Lua依赖/版本、适用平台、预算/停止方案及正式交付批次"]
     },
     {
       "id": "D04",
-      "status": "needs_owner_review"
+      "status": "direction_approved",
+      "record_path": "docs/rebuild-plan.md",
+      "pending_details": ["重启体验、旧ABI/持久格式兼容与恢复策略"]
     },
     {
       "id": "D05",
-      "status": "needs_owner_review"
+      "status": "direction_approved",
+      "record_path": "docs/rebuild-plan.md",
+      "pending_details": ["槽布局、数据晋升/迁移、跨重启试用状态"]
     },
     {
       "id": "D06",
-      "status": "needs_owner_review"
+      "status": "direction_approved",
+      "record_path": "docs/rebuild-plan.md",
+      "pending_details": ["最低特性、删除/不记住/纠正、只读/满盘产品处置"]
     },
     {
       "id": "D07",
-      "status": "needs_owner_review"
+      "status": "direction_approved",
+      "record_path": "docs/rebuild-plan.md",
+      "pending_details": ["成本/恢复比较、后端与新依赖选择"]
     },
     {
       "id": "D08",
-      "status": "needs_owner_review"
+      "status": "direction_approved",
+      "record_path": "docs/rebuild-plan.md",
+      "pending_details": ["失效/恢复阈值、防抖、日志容量/保留"]
     },
     {
       "id": "D09",
-      "status": "needs_owner_review"
+      "status": "direction_approved",
+      "record_path": "docs/rebuild-plan.md",
+      "pending_details": ["连接入口、自动工程闭环和适用验证要求"]
     },
     {
       "id": "D10",
-      "status": "needs_owner_review"
+      "status": "direction_approved",
+      "record_path": "docs/rebuild-plan.md",
+      "pending_details": ["撤销/解绑、保留/删除、备份与物理擦除合同"]
     },
     {
       "id": "D11",
-      "status": "needs_owner_review"
+      "status": "direction_approved",
+      "record_path": "docs/rebuild-plan.md",
+      "pending_details": ["单帧视觉、打断/AEC、代表任务/App及固定功能"]
     },
     {
       "id": "D12",
-      "status": "needs_owner_review"
+      "status": "direction_approved",
+      "record_path": "docs/rebuild-plan.md",
+      "pending_details": ["参考板、停止/唤醒/并发/长期阈值、外发/云服务"]
     }
   ],
   "read_depth": {

@@ -88,11 +88,20 @@ def validate(data, root, sources=False):
     )
     for decision in decisions.values():
         require(
-            decision["status"] in {"needs_owner_review", "approved", "rejected"},
+            decision["status"]
+            in {"needs_owner_review", "direction_approved", "approved", "rejected"},
             f"Invalid decision state: {decision['id']}",
         )
         if decision["status"] != "needs_owner_review":
             local_file(root, decision["record_path"])
+        if decision["status"] == "direction_approved":
+            pending = decision["pending_details"]
+            require(
+                isinstance(pending, list)
+                and pending
+                and all(isinstance(item, str) and item.strip() for item in pending),
+                f"Missing pending decision details: {decision['id']}",
+            )
 
     visiting, visited = set(), set()
 
@@ -259,6 +268,23 @@ def validate(data, root, sources=False):
             )
             for target in asset["target_paths"]:
                 local_file(root, target)
+            if asset["source_repository"] is None:
+                commit = asset.get("implementation_commit")
+                require(
+                    isinstance(commit, str)
+                    and re.fullmatch(r"[0-9a-f]{40}", commit) is not None,
+                    f"Missing new implementation commit: {ident}",
+                )
+                require(
+                    git(root, "cat-file", "-t", commit).strip() == b"commit",
+                    f"New implementation object is not a commit: {ident}",
+                )
+                tree = source_tree(root, commit)
+                for target in asset["target_paths"]:
+                    require(
+                        target in tree,
+                        f"New target absent from implementation commit: {target}",
+                    )
 
     gitlink = next(
         (

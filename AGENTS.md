@@ -1,12 +1,13 @@
 # Entelea agent entry
 
-This tree contains a rebuild governance skeleton, not an implemented framework.
+This tree has R01 common primitives, not an implemented device runtime or product.
 
 - Read README and the current batch in `docs/rebuild-plan.md` first.
 - Use `docs/migration-assets.json` as the sole migration/status ledger. Query only
   relevant asset IDs; do not inject the entire generated inventory into context.
-- Confirm required design decisions before implementation. D01-D12 are proposals
-  awaiting owner review, not implicitly approved by permission to archive.
+- D01-D12 have owner-approved directions, not fully frozen details. Read section 7
+  of the plan before implementing unresolved boundaries. D03 requires first-phase
+  Lua contracts and feasibility validation, not first-phase production support.
 - Distinguish framework contracts from product requirements. Use auxiliary
   intelligence / simulated intelligence at framework level; companion only in
   the companion product context.
@@ -28,7 +29,12 @@ This tree contains a rebuild governance skeleton, not an implemented framework.
   explicit authorization. Forge is an independent pinned repository.
 - Keep migration state separate from verification. Record failures and untested
   boundaries; never weaken assertions or exclusions to manufacture green tests.
+- Common primitive contracts are in `framework/common/contract.md`; build sources
+  are explicitly classified in `build-support/source-policy.json`. Diagnostics
+  must be separate exact targets, never common/production source exemptions.
 - Before marking a batch done, run the smallest applicable behavior tests and:
+  `cmake -S . -B build/r01 && cmake --build build/r01`
+  `ctest --test-dir build/r01 --output-on-failure`
   `python3 tools/check_migration.py --sources`
   `python3 -m unittest discover -s tools/tests -v`
 - The metadata checks do not validate firmware behavior. Legacy L5/Python checks

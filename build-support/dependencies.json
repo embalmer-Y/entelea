@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "dependencies": [
+    {
+      "id": "zephyr",
+      "commit": "41d10b59730406bbab4ca9f1fbbe9e96aafb4966",
+      "patches": [
+        {"path": "patches/zephyr-p4-dsi-frame-size.patch", "sha256": "36435e29410dd91210c95151ddac33db74985169924caecaff1146c0b8a2346f"},
+        {"path": "patches/zephyr-esp32-gpio-base.patch", "sha256": "6000bd83af589ee3b83e6fa1adf0683f2ee618685eddf8db04da13426cecbf20"},
+        {"path": "patches/zephyr-cst8xx-report.patch", "sha256": "483b45d6021f2c9a2643fab50daa1da000b7b54c6254625015e1d2ef832797fc"},
+        {"path": "patches/zephyr-c5-scan.patch", "sha256": "2778b94c4ba5fd00070f2723ef2b443c1885b53bd092318ebe6f7811b8bab2ea"},
+        {"path": "patches/zephyr-p4-ram-digest.patch", "sha256": "120c0d3354733cc79005b47ea5dc554336f34af1df912f809d2a6baa73d00974"},
+        {"path": "patches/zephyr-task-wdt-setup.patch", "sha256": "f824b43fafaa06bf32ad95a6094c4185a68461eac132fbaba00c7154fe43125c"}
+      ]
+    },
+    {"id": "wamr", "commit": "25bd7eb63e828e4bd242cc9b38d260b4b31c6605", "patches": []},
+    {"id": "hal_espressif", "commit": "cc81db00233af6020f2fea9fbb0d0098fb3d0d86", "patches": []}
+  ]
+}
