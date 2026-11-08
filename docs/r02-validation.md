@@ -1,9 +1,12 @@
 # R02 最小启动与输出保护验证（进行中批次）
 
-授权边界：R02 软件整改已按 owner review 确认的方案实施（缺陷 1–6，提交
-`a2fa264`）；D12 硬件闸（参考板/负载/测量方法/停止阈值/安全状态/panic/
-estop DT）未冻结，物理验收保持 blocked，本记录只覆盖软件路径与
-native_sim 证据。修复前每项缺陷有对应的“修复前失败”负测（见矩阵）。
+授权边界：R02 软件整改两轮（一轮缺陷 1–6 → `a2fa264`；二轮发现 1–6 →
+`c3713db`，A1/A2/A3 由 owner 2026-11-08 授权按建议定案）；D12 硬件闸
+（参考板/负载/测量方法/停止阈值/安全状态/panic/estop DT）未冻结，物理
+验收保持 blocked，本记录只覆盖软件路径与 native_sim 证据。二轮整改各项
+按故障类别（未配置/单次/持续/恢复/重复/并发/后端未知）验证；动态反例
+（发现 1–4）与仅代码审查结论（发现 5 并发撕裂——结构修复+ISR 冒烟，
+残余交错风险如实保留为未测）区分表述。
 
 ## 交付范围
 
@@ -33,12 +36,17 @@ A-BOARD 迁移与板级构建→D12 冻结后；testcase.yaml（twister）defer�
 | PWM 故障值=物理停止 | u==0 解码占空 0（固定 1s 周期脉宽 0） | 假 PWM 断言 pulse==0（poweron/显式提交/force 三面；修复前：hz==0 拒绝落驱、保持原输出） | 真机波形/停止延迟 |
 | estop 不被覆盖 | 写+影子+状态全在 irq_lock 内；发布前复查 forced | force 后 poweron/set_link/recover 守卫用例（修复前：poweron 覆盖 SAFE_FAULT） | 真实 ISR-线程随机交错（结构闭环，未做交错模糊） |
 | 故障=全局停机 | system_fail 先置一次性 halt→巡检不喂不排 | 非巡检线程 fail 后 tick=false、task_wdt 零喂（wrap 计数；修复前：巡检继续喂） | 真机 WDT 复位闭环 |
-| 时间失败/回退不放宽限制 | 三模块单调护栏+失败计数；commit now<last_t 拒绝 | 一次性失败/回退注入→事件戳不回退、巡检不伪逾期、slew 界不放大（修复前：dt 下溢界巨大，提交“成功”落 300） | — |
+| 时间失败/回退不放宽限制 | 三模块单调护栏+失败计数；commit now<last_t 拒绝 | 一次性失败/回退注入→事件戳不回退、巡检不伪逾期、slew 界不放大（一轮修复前：dt 下溢界巨大） | — |
+| 持续时钟失败不改变输出/不假活（二轮 1） | slew 时钟门（本次读不可知→整笔 E_STATE）；WDT 失明策略 A1（≥3 轮→FAIL_WDT(0xFF)，好读复位） | **持续失败**：3 次重复提交全 E_STATE 且 readback 不变（二轮修复前：每笔一跳可逐步走满）；失明 1–2 轮不 fail、好读复位、第 3 轮 fail+halted | 单次瞬态与连续的边界仅按轮数刻画 |
+| 后端未就绪不伪成功（二轮 2） | 绑定通道（uid 匹配）就绪检查→-ENODEV | poweron 未 init→E_IO+SAFE_FAULT；ACTIVE 后失去就绪→commit E_IO（可重试）+恢复 | 后端“再次失去就绪”目前仅测试钩子可达（真实热拔留给板级） |
+| 安全写失败撤销输出资格（二轮 3/A2） | write_transition 失败→SAFE_FAULT（物理未知）；shadow 留最后确认值 | 失败后的**下一次请求** E_STATE（即使后端恢复）；recover 闭环；commit 失败保持 ACTIVE（可重试）的对照断言 | 物理是否真的未动不可由软件确认 |
+| 时钟簿记并发（二轮 5） | 三模块比较/更新/计数入 irq_lock 微临界区（ISR 可嵌套） | ISR 上下文（irq_offload）feed×30 后精确逾期数学成立、零失败计数 | **仅代码审查+冒烟**，未做穷尽交错/多核压测；残余风险如实保留 |
+| 构建生效配置=核验配置（二轮 4/6） | `:TYPE` 变体拒绝 + configure 后读 CMakeCache/zephyr_modules.txt 与核验值比对 | 真实 `-DBOARD:STRING=`/`-DZEPHYR_MODULES:STRING=` 拒绝（exit 1）；8 次真实 configure 均打印 effective 验证通过；单测：缓存 BOARD/编译器/模块数不符→拒 | 生效验证覆盖 cache 已检变量与模块计数；非全部缓存项 |
 | 构建配置不可偷换 | 受管变量黑名单+受管注入+绑定已核验编译器 | `-DBOARD=`/`-DCMAKE_C_COMPILER=` 真实拒绝（exit 1）；native 计划含 CMAKE_C_COMPILER | — |
 | 启动顺序=规格 | 平台表守卫用例 + boot 失败集成（线程停机挂起、无后续步骤） | wdt_hardware 集成（fail reason/BOOT_STEP 计数/输出不保留） | — |
 | D12 硬件闸 | — | — | 保持 blocked：真实负载、物理测量手段、触发条件、停止阈值未定；串口正常≠物理停止 |
 
-## 真实验证结果（2026-11-08，本机；整改提交 `a2fa264`）
+## 真实验证结果（2026-11-08，本机；二轮整改提交 `c3713db`）
 
 环境：host cc=Ubuntu GCC 15.2.0（入口显式 `-DCMAKE_C_COMPILER=/usr/bin/cc`
 绑定）；Zephyr 4.5.0 固定 checkout（六补丁只读核验通过）；构建解释器
@@ -48,25 +56,29 @@ pyelftools/jsonschema；系统 python 缺包且不安装共享工具）；native
 主机（全部实际执行）：
 - `python3 tools/check_architecture.py`：PASS（20 源恰分类；输出门=
   drivers.c；`entelea_drivers` 模块外引用拒绝）。
-- `python3 -m unittest discover -s tools/tests`：85 项 OK（构建入口 30 项
-  含 F6 黑名单/受管注入负测；架构 27 项含驱动表旁路正负测）。
+- `python3 -m unittest discover -s tools/tests`：90 项 OK（新增：`:TYPE`
+  变体拒绝、生效配置 BOARD/编译器/模块数不符负测）。
 - `python3 tools/check_migration.py --sources`：PASS（800 项源核验）。
 - CTest（build/r01）6/6。
 
-native_sim（全部经新入口，8 构建目标 13 次执行）：
+native_sim（全部经新入口，8 构建目标；每次 configure 均通过
+`[effective]` 生效配置比对）：
 - minimal：启动→安全起始态→常驻空闲（5s 截止，无重启）。
-- taskwdt 预演：10.03s 单次启动零通道复位。
-- core 5/5：订阅序/容量、ISR 队列+静态载荷、时钟护栏（失败/回退不伪
-  逾期、计数可观）、WDT 数学（激活/逾期/豁免/钳制/去激活）、system_fail
-  可观、启动顺序守卫。
+- taskwdt 预演：10s 单次启动零通道复位。
+- core 7/7：+ 失明策略 A1（1–2 轮不 fail/好读复位/第 3 轮
+  FAIL_WDT(0xFF)+halted）、ISR 上下文 feed×30 精确逾期数学。
 - safety 基 4/4：注册校验、三态迁移、限幅/slew（含 dt=0 护栏界）/限流、
   detach/recover、ISR 拒绝、容量、estop 锁存/释放/再锁存、
   **poweron 保持 estop 锁存（F3）**、poweron 落驱动、边沿映射。
-- safety PWM 变体（TEST_PWM_REAL）6/6：基套件不受真后端影响 +
-  **u==0 停止（pulse==0×3 面）**、**后端失败 E_IO/影子与 golden 不变**、
-  poweron 失败 E_IO、force 失败计数（F2）。
-- wdt_start 3/1：task_wdt 失败不报成功（×2 变体）；**halt 后 tick=false、
-  200ms 零喂、start 拒绝；system_fail 全局零喂（F4）**（默认变体）。
+- safety PWM 变体（TEST_PWM_REAL）8/8：基 4/4 不受真后端影响 +
+  **u==0 停止（pulse==0×3 面）**、后端失败 E_IO/影子与 golden 不变、
+  **绑定未就绪：poweron E_IO+SAFE_FAULT、ACTIVE 期 commit E_IO 可重试、
+  recover 恢复（二轮 2）**、**安全写失败→SAFE_FAULT→下一次请求被拒→
+  recover 闭环（二轮 3/A2，断链与 detach 双面）**。
+- safety 基 4/4（slew 时钟门改 E_STATE 后全绿：持续失败 3×拒绝+readback
+  不变+恢复后界 55）。
+- wdt_start（默认 3 用例+missing 变体）：task_wdt 失败不报成功；halt 后
+  tick=false、零喂、start 拒绝；system_fail 全局零喂（F4）。
 - wdt_hardware 1/1×2：假 wdt 设备后端错误不报成功/不被喂、boot 第 3 步
   失败无后续步骤、线程停机挂起、**boot 内 system_fail 后 tick=false（F4）**、
   成功启动被喂、通道不泄漏；not-ready 变体零安装零喂。
