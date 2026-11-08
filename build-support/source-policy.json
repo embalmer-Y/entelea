@@ -20,7 +20,8 @@
     "framework/execution/safety/drivers.c",
     "framework/services/storage/part.c",
     "framework/services/storage/meta.c",
-    "framework/services/storage/noinit.c"
+    "framework/services/storage/noinit.c",
+    "framework/services/storage/audit.c"
   ],
   "platform_zephyr": [
     "platform/zephyr/clock.c",

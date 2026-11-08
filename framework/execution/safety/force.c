@@ -8,6 +8,7 @@
  * estop 沿触发入 flash 审计环归 R03。
  */
 #include <entelea/safety.h>
+#include <entelea/storage.h>
 #include <entelea/wdt.h>
 #include "internal.h"
 
@@ -136,5 +137,14 @@ void entelea_safety_estop_deferred_publish(void)
 			.len = sizeof(payload),
 		};
 		entelea_evt_publish(&evt);
+		/* estop 沿触发入审计环（低频沿，不节流；evt=1）。 */
+		const entelea_storage_audit_entry_t au = {
+			.t_ms = payload.t_ms,
+			.ch_idx = 0xFFFF,
+			.res = ENTELEA_E_STATE,
+			.evt = 1,
+		};
+
+		(void)entelea_storage_audit_append(&au, 1);
 	}
 }

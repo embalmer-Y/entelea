@@ -215,6 +215,9 @@ int entelea_drv_gpio_init(void);
 /** [any] 模块时钟读取失败累计（护栏生效：失败/回退沿用最后有效值）。 */
 uint32_t entelea_safety_clock_faults(void);
 
+/** [any] 审计落盘节流丢弃累计（风暴 1Hz 采样期间的观测量）。 */
+uint32_t entelea_safety_audit_throttled(void);
+
 /* 容量出处 DEC-27（旧 LLD-ts-safety §2/§7），R02 为编译期常量。 */
 #define ENTELEA_SAFETY_MAX_CHANNELS 32
 /* 每通道写序列环形容量（结构性数值）。 */

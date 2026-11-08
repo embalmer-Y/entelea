@@ -50,6 +50,11 @@ extern const entelea_driver_ops_t entelea_drivers[ENTELEA_CH_KIND_COUNT];
 /** 驱动写失败计数（channel.c 持有；commit/force 调用点登记）。 */
 void entelea_safety_count_write_failure(void);
 
+/** 审计落盘（channel.c）：异常类节流（首条立即，其后 1Hz 采样——旧
+ * DEC-52① 语义；风暴丢弃计数可观）。persist 失败不反噬提交路径
+ * （观测面降级）。 */
+void entelea_safety_audit_persist(const void *entry, uint16_t evt);
+
 #ifdef ENTELEA_TEST
 /** 后端就绪位/失败计数复位（drivers.c；测试隔离）。 */
 void entelea_drv_test_reset(void);

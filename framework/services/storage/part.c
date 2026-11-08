@@ -13,9 +13,11 @@
 
 #define META_SIZE 1024U   /* 双副本各 512B */
 #define NOINIT_SIZE 256U
+#define AUDIT_SIZE 8192U  /* 两页乒乓 × 64 槽 × 64B（DEC-52①） */
 
 static uint8_t ram_meta[META_SIZE];
 static uint8_t ram_noinit[NOINIT_SIZE];
+static uint8_t ram_audit[AUDIT_SIZE];
 
 static uint8_t *part_ram(entelea_store_part_t part, uint32_t *size)
 {
@@ -26,6 +28,9 @@ static uint8_t *part_ram(entelea_store_part_t part, uint32_t *size)
 	case ENTELEA_PART_NOINIT:
 		*size = NOINIT_SIZE;
 		return ram_noinit;
+	case ENTELEA_PART_AUDIT:
+		*size = AUDIT_SIZE;
+		return ram_audit;
 	default:
 		*size = 0;
 		return NULL;
@@ -105,6 +110,13 @@ entelea_result_t entelea_storage_test_backend_read(entelea_store_part_t part,
 						   uint32_t len)
 {
 	return entelea_store_backend.read(part, off, buf, len);
+}
+
+entelea_result_t entelea_storage_test_backend_write(entelea_store_part_t part,
+						    uint32_t off, const void *buf,
+						    uint32_t len)
+{
+	return entelea_store_backend.write(part, off, buf, len);
 }
 
 entelea_result_t entelea_storage_test_reset(void)

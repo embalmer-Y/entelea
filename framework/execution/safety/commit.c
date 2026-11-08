@@ -10,6 +10,7 @@
  */
 #include <string.h>
 #include <entelea/safety.h>
+#include <entelea/storage.h>
 #include "internal.h"
 
 static struct k_mutex commit_lock = Z_MUTEX_INITIALIZER(commit_lock);
@@ -47,13 +48,10 @@ entelea_result_t entelea_safety_commit_locked(const char *uid,
 	return commit_impl(uid, v);
 }
 
-static entelea_result_t commit_impl(const char *uid, entelea_out_value_t v)
+/* 内核：一切早退路径经外层统一落审计（异常类）。 */
+static entelea_result_t commit_run(int i, entelea_ch_kind_t kind,
+				   entelea_out_value_t v)
 {
-	int i = entelea_ch_find(uid);
-
-	if (i < 0) {
-		return ENTELEA_E_NOTFOUND;
-	}
 	struct entelea_ch_slot *s = &entelea_ch_table[i];
 	const entelea_out_channel_t *ch = s->desc;
 
@@ -144,6 +142,31 @@ static entelea_result_t commit_impl(const char *uid, entelea_out_value_t v)
 		entelea_safety_count_write_failure();
 		res = (atomic_get(&entelea_forced) != 0) ? ENTELEA_E_STATE
 							 : ENTELEA_E_IO;
+	}
+	return res;
+}
+
+/* 外层：查表 + 异常审计（含 E_NOTFOUND/安全态/时钟门等全部早退）。 */
+static entelea_result_t commit_impl(const char *uid, entelea_out_value_t v)
+{
+	int i = entelea_ch_find(uid);
+
+	if (i < 0) {
+		return ENTELEA_E_NOTFOUND;
+	}
+	entelea_ch_kind_t kind = entelea_ch_table[i].desc->kind;
+	entelea_result_t res = commit_run(i, kind, v);
+
+	if (res != ENTELEA_OK) {
+		const entelea_storage_audit_entry_t e = {
+			.t_ms = entelea_safety_now_ms(),
+			.ch_idx = (uint16_t)i,
+			.kind = (uint8_t)kind,
+			.res = res,
+			.value_u = entelea_value_encode(kind, v),
+		};
+
+		entelea_safety_audit_persist(&e, 0);
 	}
 	return res;
 }

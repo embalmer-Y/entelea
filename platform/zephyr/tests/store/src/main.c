@@ -164,6 +164,127 @@ ZTEST(framework_store, test_system_fail_reason_persisted)
 	entelea_wdt_test_reset();
 }
 
+static uint64_t audit_virt_now;
+
+static entelea_result_t audit_virt_read(void *user, uint64_t *out)
+{
+	ARG_UNUSED(user);
+	*out = audit_virt_now;
+	return ENTELEA_OK;
+}
+
+static entelea_clock_t audit_clock = {
+	.read_ms = audit_virt_read,
+	.user = NULL,
+	.clock_id = 0xA0D0,
+	.last_ms = 0,
+	.sampled = false,
+};
+
+/* ---- 审计两页乒乓环（子闭环 2） ---- */
+ZTEST(framework_store, test_audit_ring_flip_and_recovery)
+{
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	zassert_not_equal(entelea_storage_audit_append(
+				  &(entelea_storage_audit_entry_t){0}, 0),
+			  ENTELEA_OK, "未 init 前 append 拒绝");
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+
+	entelea_storage_audit_entry_t e = {.ch_idx = 7, .res = -4, .value_u = 42};
+	entelea_storage_audit_entry_t out[130];
+
+	for (uint32_t i = 1; i <= 65; i++) {
+		e.t_ms = i;
+		zassert_equal(entelea_storage_audit_append(&e, 0), ENTELEA_OK);
+	}
+	/* 翻页后两页过渡态：65 条全部可见（≤128）。 */
+	size_t n = entelea_storage_audit_read(out, 130);
+
+	zassert_equal(n, 65, "两页过渡态全部可见");
+	zassert_equal(out[0].seq, 1);
+	zassert_equal(out[64].seq, 65, "seq 升序");
+
+	/* 恰满 128：两页全满瞬间全部可见（覆盖最旧的边界形态）。 */
+	for (uint32_t i = 66; i <= 128; i++) {
+		e.t_ms = i;
+		zassert_equal(entelea_storage_audit_append(&e, 0), ENTELEA_OK);
+	}
+	n = entelea_storage_audit_read(out, 130);
+	zassert_equal(n, 128, "两页全满=128");
+	zassert_equal(out[0].seq, 1);
+	/* 翻页第 129 条：页首写擦旧页（1..64 丢失）→ 可见=64+2。 */
+	for (uint32_t i = 129; i <= 130; i++) {
+		e.t_ms = i;
+		zassert_equal(entelea_storage_audit_append(&e, 0), ENTELEA_OK);
+	}
+	n = entelea_storage_audit_read(out, 130);
+	zassert_equal(n, 66, "翻页后旧页被擦（保留 ~64/瞬态 128 语义）");
+	zassert_equal(out[0].seq, 65, "最旧段被翻页覆盖");
+	zassert_equal(out[n - 1].seq, 130);
+
+	/* 重启恢复（游标续接）：re-init 后 seq 继续。 */
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+	zassert_equal(entelea_storage_audit_append(&e, 0), ENTELEA_OK);
+	n = entelea_storage_audit_read(out, 130);
+	zassert_equal(out[n - 1].seq, 131, "reboot 后 seq 续接");
+
+	/* 半写断尾：破坏活动页槽0（seq129）→ 该页断尾，仅另一页可见。 */
+	uint8_t garbage[64] = {0xDE};
+
+	zassert_equal(
+		entelea_storage_test_backend_write(ENTELEA_PART_AUDIT, 0, garbage,
+						   64),
+		ENTELEA_OK, "撕裂注入：破坏槽0");
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+	n = entelea_storage_audit_read(out, 130);
+	zassert_equal(n, 64, "断尾后仅存另一页连续段");
+	zassert_equal(out[n - 1].seq, 128);
+}
+
+ZTEST(framework_store, test_safety_exception_audit_wiring)
+{
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	entelea_safety_test_reset();
+	entelea_wdt_test_reset();
+	audit_virt_now = 1000;
+	zassert_equal(entelea_safety_bind_clock(&audit_clock), ENTELEA_OK);
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+
+	static const entelea_out_channel_t ch = {
+		.uid = "aud", .kind = ENTELEA_CH_GPIO,
+		.poweron = {.b = false}, .linkloss = {.b = false},
+		.fault = {.b = true},
+	};
+	zassert_equal(entelea_safety_register_channel(&ch), ENTELEA_OK);
+
+	/* commit 异常（安全态拒绝）→ 审计 evt=0。 */
+	zassert_equal(entelea_safety_commit("aud", (entelea_out_value_t){.b = true}),
+		      ENTELEA_E_STATE);
+	entelea_storage_audit_entry_t out[4];
+	size_t n = entelea_storage_audit_read(out, 4);
+
+	zassert_equal(n, 1, "首条异常立即落盘");
+	zassert_equal(out[0].evt, 0);
+	zassert_equal(out[0].res, ENTELEA_E_STATE);
+	zassert_equal(out[0].ch_idx, 0);
+
+	/* 同窗口再拒绝 → 节流丢弃（计数可观），环不增长。 */
+	zassert_equal(entelea_safety_commit("aud", (entelea_out_value_t){.b = true}),
+		      ENTELEA_E_STATE);
+	zassert_equal(entelea_safety_audit_throttled(), 1, "风暴节流计数");
+	n = entelea_storage_audit_read(out, 4);
+	zassert_equal(n, 1, "节流期不落盘");
+
+	/* estop 沿 → evt=1（不节流）。补发由巡检驱动——测试直调补发面。 */
+	entelea_safety_force_all_fault();
+	entelea_safety_estop_deferred_publish();
+	n = entelea_storage_audit_read(out, 4);
+	zassert_equal(n, 2, "estop 沿入环");
+	zassert_equal(out[1].evt, 1);
+	zassert_equal(out[1].ch_idx, 0xFFFF, "系统事件");
+	entelea_wdt_test_reset();
+}
+
 /* ---- 启动表：storage_init 尾部追加 ---- */
 ZTEST(framework_store, test_boot_table_has_storage_step)
 {

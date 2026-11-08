@@ -105,5 +105,7 @@ entelea_result_t entelea_storage_init(void)
 		last_reason = entelea_get_le32(rec);
 		last_present = true;
 	}
-	return ENTELEA_OK;
+	/* 审计环游标恢复（分区缺失/扫描失败如实传递——观测面降级由
+	 * 调用方处置；RAM 后端不触发）。 */
+	return entelea_storage_audit_init();
 }

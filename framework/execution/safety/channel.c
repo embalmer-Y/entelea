@@ -15,6 +15,7 @@
  */
 #include <string.h>
 #include <entelea/safety.h>
+#include <entelea/storage.h>
 #include "internal.h"
 
 struct entelea_ch_slot entelea_ch_table[ENTELEA_SAFETY_MAX_CHANNELS]; /* 容量 32（DEC-27） */
@@ -76,6 +77,32 @@ uint32_t entelea_safety_clock_faults(void)
 uint32_t entelea_safety_force_write_failures(void)
 {
 	return driver_write_failures;
+}
+
+/* 审计落盘节流（旧 F1/DEC-52①：锁内零 flash；失败提交循环会把异常
+ * 下沉放大为写/擦风暴——首条立即，其后 1Hz 采样）。 */
+#define ENTELEA_SAFETY_AUDIT_MIN_MS 1000
+static uint32_t audit_last_persist_ms;
+static uint32_t audit_throttled_count;
+
+uint32_t entelea_safety_audit_throttled(void)
+{
+	return audit_throttled_count;
+}
+
+void entelea_safety_audit_persist(const void *entry, uint16_t evt)
+{
+	const entelea_storage_audit_entry_t *e = entry;
+	uint32_t now = (uint32_t)entelea_safety_now_ms();
+
+	if (audit_last_persist_ms != 0 &&
+	    (uint32_t)(now - audit_last_persist_ms) < ENTELEA_SAFETY_AUDIT_MIN_MS) {
+		audit_throttled_count++;
+		return;
+	}
+	audit_last_persist_ms = now;
+	/* 失败不反噬提交路径（观测面降级——内存/读面另行可观）。 */
+	(void)entelea_storage_audit_append(e, evt);
 }
 
 /** 模块内调用点（commit/force 路径）登记驱动写失败。 */
@@ -276,6 +303,8 @@ void entelea_safety_test_reset(void)
 	clock_last_good = 0;
 	clock_fault_count = 0;
 	driver_write_failures = 0;
+	audit_last_persist_ms = 0;
+	audit_throttled_count = 0;
 	entelea_drv_test_reset();
 	entelea_safety_test_reset_system_failed();
 	entelea_safety_estop_announce_reset();
