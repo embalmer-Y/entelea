@@ -43,10 +43,13 @@
   `channel_recover`），后续**成功的** fault 落驱（确认写）会覆盖早期
   “物理未知”标记并回到可释放面；`system_fail` 为终态（对齐 wdt halt
   一次性），其后 `clear_fault` 返回 `E_STATE`。
-- **estop/system_fail 落驱失败（三轮 review 发现 2）**：失败通道影子
-  保留最后确认值（不伪称 fault 已落驱）、状态 SAFE_FAULT/recover-only、
-  计数留痕；其余通道继续执行强停序列。失败后的升级策略（是否 halt/
-  重写）为 owner 待决，当前仅锁存+计数。
+- **estop/system_fail 落驱失败与升级（三轮 review 发现 2；升级策略
+  owner 2026-11-08 定案①）**：失败通道影子保留最后确认值（不伪称
+  fault 已落驱）、状态 SAFE_FAULT/recover-only、计数留痕；强停序列
+  先尽力安全化其余通道，**任一落驱失败 → 立即 `entelea_wdt_halt`**
+  （原子置位，estop ISR 上下文安全；停喂后由 WDT 复位收口——“无法
+  保证输出达安全值即停机”）。范围：estop/system_fail 强停面；单通道
+  detach 失败维持 A2 按通道语义，不升级整系统。
 - **slew 总预算（三轮 review 发现 4）**：界 = slew × (now − last_t)，
   锚定最后一次**确认写**（值+时刻）；无每笔 +1 免跳——同一毫秒内任意
   次提交的总变化 ≤ slew。首笔/恢复后提交建立基线（min/max/限幅生效，

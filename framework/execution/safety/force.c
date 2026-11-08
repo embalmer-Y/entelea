@@ -26,6 +26,8 @@ void entelea_safety_test_reset_system_failed(void)
  * 合同迁移（物理未知由 fail-safe/WDT 收口）。 */
 void entelea_safety_force_all_fault(void)
 {
+	bool any_write_failed = false;
+
 	atomic_set(&entelea_forced, 1);
 	atomic_set(&entelea_forced_at,
 		   (atomic_val_t)(uint32_t)entelea_safety_now_ms());
@@ -41,12 +43,19 @@ void entelea_safety_force_all_fault(void)
 			s->state = ENTELEA_ST_SAFE_FAULT;
 			s->fault_by_write_failure = true;
 			s->have_last = false;
+			any_write_failed = true;
 			continue;
 		}
 		s->shadow = s->desc->fault; /* 确认写：覆盖早期“物理未知”标记 */
 		s->fault_by_write_failure = false;
 		s->state = ENTELEA_ST_SAFE_FAULT;
 		s->have_last = false;
+	}
+	if (any_write_failed) {
+		/* 强停升级（owner 2026-11-08 定案①）：estop 强停落驱失败 =
+		 * 无法保证输出达安全值 → 全局停机（halt=原子置位，ISR 安全；
+		 * 停喂后由 WDT 复位收口）。先尽力安全化其余通道再升级。 */
+		entelea_wdt_halt();
 	}
 	/* 事后补发 ENTELEA_EVT_ESTOP：由 sysworkq 周期项检测 forced 上升沿后
 	 * 发布（ISR 内不提交工作项——队列禁令）；响应上界 = 巡检周期 + 调度延迟。 */

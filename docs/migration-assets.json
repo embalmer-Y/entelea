@@ -658,7 +658,7 @@
       "first_batch": "R02",
       "migration_action": "extract",
       "status": "in_progress",
-      "constraints": "保护提交、强制故障和驱动分开；取消不等待普通队列。R02 已迁通道/唯一写路径/force/驱动分发（保护门）并 native_sim 验证；审计环形+留痕持久化→R03、控制源仲裁→R04、estop prov 边沿/通用输入后端→后续批次，组级未完成。 2026-11-08 review 缺陷1-3整改（a2fa264）：驱动表模块私有+架构禁旁路；后端失败传播E_IO且影子/golden不更新；PWM u==0=占空0停止；estop窗口全临界区闭合。 二轮review发现1-3整改（c3713db）：slew时钟门（时间不可知整笔E_STATE）；绑定后端未就绪=ENODEV显式失败（未绑定=软件通道，A3）；安全态写失败→SAFE_FAULT撤销输出资格、shadow留最后确认值（A2）。 三轮review发现1-4,7整改（07cfd29）：释放资格按故障来源（写失败仅recover；system_fail终态拒clear）；强停写失败影子留最后确认值；slew严格总预算（锚定确认写，无每笔+1）；SAFE_STATE_CHANGED=历史迁移事实。",
+      "constraints": "保护提交、强制故障和驱动分开；取消不等待普通队列。R02 已迁通道/唯一写路径/force/驱动分发（保护门）并 native_sim 验证；审计环形+留痕持久化→R03、控制源仲裁→R04、estop prov 边沿/通用输入后端→后续批次，组级未完成。 2026-11-08 review 缺陷1-3整改（a2fa264）：驱动表模块私有+架构禁旁路；后端失败传播E_IO且影子/golden不更新；PWM u==0=占空0停止；estop窗口全临界区闭合。 二轮review发现1-3整改（c3713db）：slew时钟门（时间不可知整笔E_STATE）；绑定后端未就绪=ENODEV显式失败（未绑定=软件通道，A3）；安全态写失败→SAFE_FAULT撤销输出资格、shadow留最后确认值（A2）。 三轮review发现1-4,7整改（07cfd29）：释放资格按故障来源（写失败仅recover；system_fail终态拒clear）；强停写失败影子留最后确认值；slew严格总预算（锚定确认写，无每笔+1）；SAFE_STATE_CHANGED=历史迁移事实。 强停落驱失败升级①（owner 2026-11-08 定案，本轮提交）：任一estop/system_fail写失败→先安全化其余通道再立即wdt halt（WDT复位收口）；单通道detach失败不升级。",
       "target_paths": [
         "framework/execution/safety/channel.c",
         "framework/execution/safety/commit.c",

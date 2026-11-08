@@ -179,6 +179,7 @@ ZTEST(framework_safety_pwm, test_bound_backend_unready_fails)
 ZTEST(framework_safety_pwm, test_failed_safety_write_revokes_output)
 {
 	entelea_safety_test_reset();
+	entelea_wdt_test_reset();
 	zassert_equal(entelea_drv_pwm_init(), 0);
 	zassert_equal(entelea_safety_register_channel(&bus_ch), ENTELEA_OK);
 	zassert_equal(entelea_safety_poweron_init(), ENTELEA_OK);
@@ -212,6 +213,10 @@ ZTEST(framework_safety_pwm, test_failed_safety_write_revokes_output)
 	zassert_equal(entelea_safety_commit("pwmbus",
 					    (entelea_out_value_t){.u = PACK(1000, 100)}),
 		      ENTELEA_E_STATE, "next request after failed detach write");
+	/* 范围界定：单通道 detach 失败不升级整系统（A2 按通道；升级①仅
+	 * estop/system_fail 强停面）。正向控制：tick 仍可执行。 */
+	zassert_true(entelea_wdt_test_patrol_tick(),
+		     "single-channel detach failure must not halt the system");
 
 	/* 显式恢复闭环。 */
 	zassert_equal(entelea_safety_channel_recover("pwmbus"), ENTELEA_OK);
@@ -284,9 +289,13 @@ ZTEST(framework_safety_pwm, test_force_write_failure_keeps_last_confirmed)
 		      ENTELEA_OK);
 	uint32_t fails = entelea_safety_force_write_failures();
 
+	zassert_true(entelea_wdt_test_patrol_tick(), "正向控制：estop 前未停机");
 	pwm_fail_next = true;
 	entelea_safety_force_all_fault(); /* estop：绑定通道写失败 */
 	zassert_true(entelea_safety_force_write_failures() > fails, "失败留痕");
+	/* 升级①（owner 定案）：强停落驱失败 → 立即全局停机。 */
+	zassert_false(entelea_wdt_test_patrol_tick(),
+		      "failed force-stop must halt the system");
 	entelea_out_value_t rb;
 
 	zassert_equal(entelea_safety_readback("pwmbus", &rb), ENTELEA_OK);

@@ -96,7 +96,10 @@ native_sim（全部经新入口，8 构建目标；每次 configure 均通过
 1 释放资格：写失败通道经 `clear_fault` 不再恢复（同批 estop 面通道照常
 释放、确认 fault 写覆盖未知标记、`system_fail` 后 clear=`E_STATE`）——
 PWM 变体单用例区分三来源。2 强停写失败：影子保留最后确认值（用例断言
-readback=旧确认值而非 fault 值）+状态/计数；**升级策略选项待 owner**。
+readback=旧确认值而非 fault 值）+状态/计数；**升级①（owner 定案）**：
+任一强停落驱失败 → 先安全化其余通道再立即 halt（正向控制：estop 前
+tick=true、失败后 tick=false；单通道 detach 失败 tick 仍=true——范围
+界定用例）。
 3 采样串行化：锁内读+比较+更新（三模块），真回退仍计故障并入 A1 轮数。
 4 slew 严格总预算：同 ms 200 笔提交总变化 0（修复前 200）、下 ms 预算
 = slew×1、溢出饱和、时钟门覆盖基线；**首笔免跳是否收紧待 owner**。
