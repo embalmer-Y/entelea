@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <entelea/result.h>
+#include <entelea/supervision.h>
 #include <entelea/time.h>
 
 #ifdef __cplusplus
@@ -54,6 +55,11 @@ void entelea_wdt_halt(void);
 
 /** [any] 时钟读取失败/回退累计（单调护栏沿用最后有效值期间的观测）。 */
 uint32_t entelea_wdt_clock_faults(void);
+
+/* 时钟失明策略（A1，owner 定案）：连续 ENTELEA_WDT_BLIND_ROUNDS 轮巡检
+ * 时间不可知 → system_fail（载荷 0xFF 非源编号，标识时钟失明）。 */
+#define ENTELEA_WDT_BLIND_ROUNDS 3
+#define ENTELEA_FAIL_WDT_CLOCK_BLIND ENTELEA_FAIL_WDT(0xFFu)
 
 /* 数值出处（R02 编译期常量；D12 板级冻结后随参考板调整）：
  * SYWORK 周期 1000ms、task_wdt 通道 5000ms、硬 WDT 上限 10000ms（DEC-48/22/27），

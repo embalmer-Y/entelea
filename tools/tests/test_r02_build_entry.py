@@ -275,6 +275,60 @@ class PreflightTests(unittest.TestCase):
             self.base["cmake_arg"] = [f"-D{var}=x"]
             self.fails("must not override managed variable " + var)
 
+    def test_cmake_arg_typed_variants_rejected(self):
+        # CMake cache-typed spellings must not bypass the blacklist
+        # (second-review finding 4).
+        for spec in ("-DBOARD:STRING=qemu_x86",
+                     "-DZEPHYR_MODULES:STRING=/tmp/rogue",
+                     "-DCMAKE_C_COMPILER:FILEPATH=/tmp/cc",
+                     "-DBOARD :STRING = x"):
+            self.base["cmake_arg"] = [spec]
+            self.fails("must not override managed variable BOARD|CMAKE_C_COMPILER|ZEPHYR_MODULES")
+
+    def write_cache(self, board="native_sim", zephyr=None, cc=None):
+        target = self.repo / "build" / "r02-native_sim"
+        target.mkdir(parents=True, exist_ok=True)
+        lines = [f"BOARD:STRING={board}"]
+        lines.append(f"ZEPHYR_BASE:INTERNAL={zephyr or self.zephyr}")
+        if cc:
+            lines.append(f"CMAKE_C_COMPILER:FILEPATH={cc}")
+        (target / "CMakeCache.txt").write_text("\n".join(lines) + "\n")
+
+    def test_effective_config_board_mismatch_rejected(self):
+        self.write_cache(board="qemu_x86")
+        with self.assertRaisesRegex(BZ.BuildError, "mismatch for BOARD"):
+            self.check_effective()
+
+    def test_effective_config_compiler_mismatch_rejected(self):
+        self.write_cache(cc="/usr/bin/other-cc")
+        with mock.patch.object(BZ.shutil, "which", return_value="/usr/bin/cc"):
+            with self.assertRaisesRegex(BZ.BuildError, "mismatch for CMAKE_C_COMPILER"):
+                self.check_effective()
+
+    def test_effective_config_module_count_mismatch_rejected(self):
+        self.write_cache(cc="/usr/bin/cc")
+        target = self.repo / "build" / "r02-native_sim"
+        (target / "zephyr_modules.txt").write_text("/rogue/module\n")
+        with mock.patch.object(BZ.shutil, "which", return_value="/usr/bin/cc"):
+            with self.assertRaisesRegex(BZ.BuildError, "module set differs"):
+                self.check_effective()
+
+    def test_effective_config_matching_passes(self):
+        self.write_cache(cc="/usr/bin/cc")
+        with mock.patch.object(BZ.shutil, "which", return_value="/usr/bin/cc"):
+            BZ.verify_effective_config(
+                self.repo / "build" / "r02-native_sim",
+                type("Args", (), self.base)(),
+                [],
+            )
+
+    def check_effective(self):
+        BZ.verify_effective_config(
+            self.repo / "build" / "r02-native_sim",
+            type("Args", (), self.base)(),
+            [],
+        )
+
     def test_cmake_arg_app_options_still_allowed(self):
         self.base["cmake_arg"] = ["-DTEST_WDT_REQUIRED_MISSING=ON"]
         with mock.patch.object(BZ, "run", side_effect=self.ok_run):

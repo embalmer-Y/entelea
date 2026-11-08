@@ -33,22 +33,37 @@ static uint32_t clock_fault_count;
  * ISR 内不可返回，此计数是唯一留痕面）。 */
 static uint32_t driver_write_failures;
 
-uint64_t entelea_safety_now_ms(void)
+/* 受检时钟读取：返回 false = 本次时间不可知（护栏介入，*out 为最后
+ * 有效值）。并发（二轮 review 缺陷 5）：commit/迁移（线程）与
+ * force_all_fault/estop 补发（ISR）并发访问簿记；32 位目标 u64 可撕裂，
+ * 比较/更新/计数入 irq_lock 微临界区（ISR 可嵌套）。 */
+bool entelea_safety_now_ms_checked(uint64_t *out)
 {
 	uint64_t ms = 0;
+	bool ok = entelea_safety_clock != NULL &&
+		  entelea_safety_clock->read_ms != NULL &&
+		  entelea_safety_clock->read_ms(entelea_safety_clock->user, &ms) == ENTELEA_OK;
+	unsigned int key = irq_lock();
 
-	if (entelea_safety_clock == NULL || entelea_safety_clock->read_ms == NULL) {
-		return clock_last_good;
-	}
-	if (entelea_safety_clock->read_ms(entelea_safety_clock->user, &ms) != ENTELEA_OK ||
-	    ms < clock_last_good) {
+	if (!ok || ms < clock_last_good) {
 		/* 读失败或回退：沿用最后有效值，不伪造 0（slew 减法下溢会
 		 * 放宽输出限制）；从未成功过则保持 0（可观测的未配置）。 */
 		clock_fault_count++;
-		return clock_last_good;
+		ms = clock_last_good;
+	} else {
+		clock_last_good = ms;
 	}
-	clock_last_good = ms;
-	return ms;
+	irq_unlock(key);
+	*out = ms;
+	return ok;
+}
+
+uint64_t entelea_safety_now_ms(void)
+{
+	uint64_t v;
+
+	(void)entelea_safety_now_ms_checked(&v);
+	return v;
 }
 
 uint32_t entelea_safety_clock_faults(void)
@@ -148,7 +163,10 @@ static void publish_state_change(size_t i, entelea_ch_state_t next)
 }
 
 /** 写驱动 + 影子/状态迁移，须持 irq_lock（estop 抢入窗口闭合）。
- * 返回 0=完成；1=forced 抢入（保持 SAFE_FAULT）；-1=后端写失败。 */
+ * 返回 0=完成；1=forced 抢入（保持 SAFE_FAULT）；-1=后端写失败。
+ * A2（owner 2026-11-08 定案）：安全态写失败 = 物理效果未知 → 通道进
+ * SAFE_FAULT（撤销输出资格，后续 commit 拒绝；recover 显式恢复）。
+ * 影子保留最后确认值（不伪称安全值已落驱）；恢复须 recover 重新写。 */
 static int write_transition_locked(struct entelea_ch_slot *s,
 		entelea_out_value_t value, entelea_ch_state_t next)
 {
@@ -157,7 +175,9 @@ static int write_transition_locked(struct entelea_ch_slot *s,
 	}
 	if (entelea_drivers[s->desc->kind].write(s->desc, &value) != 0) {
 		driver_write_failures++;
-		return -1; /* 后端失败：不更新影子/状态，不伪造成功 */
+		s->state = ENTELEA_ST_SAFE_FAULT;
+		s->have_last = false;
+		return -1;
 	}
 	s->shadow = value;
 	s->have_last = false;
@@ -249,6 +269,7 @@ void entelea_safety_test_reset(void)
 	clock_last_good = 0;
 	clock_fault_count = 0;
 	driver_write_failures = 0;
+	entelea_drv_test_reset();
 	entelea_safety_estop_announce_reset();
 }
 #endif

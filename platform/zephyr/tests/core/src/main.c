@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* R02 监督机制 L1 测试（迁自旧 firmware/tests/core/src/main.c，oracle 语义
  * 保留；时间源改实例时钟绑定，旧 ts_time_ms 全局面移除）。 */
+#include <zephyr/kernel.h>
 #include <zephyr/irq_offload.h>
 #include <zephyr/ztest.h>
 #include <entelea/events.h>
@@ -251,6 +252,69 @@ ZTEST(framework_core, test_clock_guard_keeps_last_good)
 	zassert_true(entelea_wdt_patrol_once() == ENTELEA_WDT_COUNT,
 		     "regressed clock must not fabricate overdue");
 	zassert_true(entelea_wdt_clock_faults() >= 2, "regression counted");
+	entelea_wdt_test_reset();
+}
+
+/* ---- 时钟失明策略（A1）：连续 ≥3 轮巡检时间不可知 → fail-safe ---- */
+ZTEST(framework_core, test_wdt_blind_clock_fails_safe)
+{
+	entelea_wdt_test_reset();
+	entelea_safety_test_reset();
+	zassert_equal(entelea_wdt_bind_clock(&virt_clock), ENTELEA_OK);
+	virt_now = 5000;
+	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 1000), ENTELEA_OK);
+	entelea_wdt_feed(ENTELEA_WDT_SYWORK);
+
+	/* 单轮/两轮失败：不判逾、不假活、不触发 fail-safe；好读复位轮数。 */
+	for (int round = 0; round < 2; round++) {
+		clock_fail_next = true;
+		zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT);
+	}
+	zassert_equal(entelea_safety_test_fail_reason(), 0, "两轮失明不得提前 fail");
+	virt_now = 5200;
+	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT, "好读恢复判时");
+	clock_fail_next = true;
+	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT);
+	/* 复位后重新累计：1 轮失明不触发。 */
+	virt_now = 5300;
+	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT);
+
+	/* 连续第 3 轮失明 → system_fail（reason 载荷 0xFF=时钟失明）+ 全局停机。 */
+	for (int round = 0; round < 2; round++) {
+		clock_fail_next = true;
+		zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT);
+	}
+	clock_fail_next = true;
+	(void)entelea_wdt_patrol_once();
+	zassert_equal(entelea_safety_test_fail_reason(),
+		      ENTELEA_FAIL_WDT_CLOCK_BLIND, "3 轮失明必须 fail-safe");
+	zassert_false(entelea_wdt_test_patrol_tick(), "fail 后巡检不得执行");
+	entelea_wdt_test_reset();
+	entelea_safety_test_reset();
+}
+
+/* ---- ISR 上下文并发冒烟（R-E）：feed 从 ISR 调用，簿记一致 ---- */
+static void isr_feed_fn(const void *arg)
+{
+	ARG_UNUSED(arg);
+	entelea_wdt_feed(ENTELEA_WDT_SYWORK);
+}
+
+ZTEST(framework_core, test_isr_context_clock_bookkeeping)
+{
+	entelea_wdt_test_reset();
+	zassert_equal(entelea_wdt_bind_clock(&virt_clock), ENTELEA_OK);
+	virt_now = 100;
+	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 1000), ENTELEA_OK);
+	for (int i = 0; i < 30; i++) {
+		virt_now = 100 + (i + 1) * 100;
+		irq_offload(isr_feed_fn, NULL); /* ISR 上下文读时钟（临界区内簿记） */
+	}
+	zassert_equal(entelea_wdt_clock_faults(), 0, "无撕裂/失败计数");
+	/* 末次 feed @3100；+1001 → 精确逾期（证明 ISR 侧时间戳未丢失）。 */
+	virt_now = 4101;
+	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_SYWORK,
+		      "ISR-side feeds must be honored precisely");
 	entelea_wdt_test_reset();
 }
 

@@ -81,10 +81,16 @@ static entelea_result_t commit_impl(const char *uid, entelea_out_value_t v)
 	/* 2) slew：|Δv| ≤ slew_per_ms × Δt；超率拆分到界值并返回
 	 *    ENTELEA_E_RANGE（实际落值经 readback 可观）。now 单调护栏使
 	 *    now < last_t 实际不可达；带式保险显式拒绝，绝不放宽界
-	 *    （缺陷 5：下溢会得到巨大 dt = 无限制）。 */
+	 *    （下溢会得到巨大 dt = 无限制）。
+	 *    时钟门（二轮 review 发现 1）：本次读失败（护栏介入）= 时间不可
+	 *    知 → 速率界不可立 → 整笔拒绝；持续失败期间不可经重复提交逐步
+	 *    改变输出（护栏的 dt=0 只代表“每笔一跳”，不满足限速合同）。 */
 	if (ch->limits.slew_per_ms > 0 && s->have_last) {
-		uint64_t now = entelea_safety_now_ms();
+		uint64_t now;
 
+		if (!entelea_safety_now_ms_checked(&now)) {
+			return ENTELEA_E_STATE; /* 时间不可知：不伪造 slew 界 */
+		}
 		if (now < s->last_t) {
 			return ENTELEA_E_STATE; /* 时基异常：不伪造 slew 界 */
 		}

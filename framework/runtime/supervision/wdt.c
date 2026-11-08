@@ -37,6 +37,7 @@ static const entelea_clock_t *wdt_clock;
 static atomic_t halted = ATOMIC_INIT(0); /* 全局停机（system_fail 置位） */
 static uint64_t clock_last_good;
 static uint32_t clock_fault_count;
+static uint8_t blind_rounds; /* 连续“时间不可知”巡检轮数（A1 策略） */
 
 #ifdef CONFIG_TASK_WDT
 static int twdt_ch = -1;
@@ -59,22 +60,37 @@ entelea_result_t entelea_wdt_bind_clock(const entelea_clock_t *clock)
 
 /* 经绑定实例时钟的原始 read（feed 须可在 ISR 调用：绕过 clock_now 的
  * 非原子回退簿记；ISR 安全性要求随绑定声明，见 wdt.h）。
- * 单调护栏（缺陷 5）：读失败或回退沿用最后有效值并计数——失败伪造 0
- * 会使 elapsed 突变触发伪逾期（fail 误动作）。 */
-static uint32_t now32(void)
+ * 单调护栏：读失败或回退沿用最后有效值并计数——失败伪造 0 会使
+ * elapsed 突变触发伪逾期（fail 误动作）。
+ * 并发（二轮 review 缺陷 5）：last_good/失败计数是 64/32 位 RMW，
+ * 线程（巡检/测试）与 ISR（feed）并发访问；32 位目标上 u64 访问可撕裂。
+ * 全部比较/更新/计数入 irq_lock 微临界区（可在 ISR 嵌套）。
+ * 返回 false = 本次时间不可知（护栏介入），*out 为最后有效值。 */
+static bool now32_checked(uint32_t *out)
 {
 	uint64_t ms = 0;
+	bool ok = wdt_clock != NULL &&
+		  wdt_clock->read_ms(wdt_clock->user, &ms) == ENTELEA_OK;
 
-	if (wdt_clock == NULL) {
-		return (uint32_t)clock_last_good;
-	}
-	if (wdt_clock->read_ms(wdt_clock->user, &ms) != ENTELEA_OK ||
-	    ms < clock_last_good) {
+	unsigned int key = irq_lock();
+
+	if (!ok || ms < clock_last_good) {
 		clock_fault_count++;
-		return (uint32_t)clock_last_good;
+		ms = clock_last_good;
+	} else {
+		clock_last_good = ms;
 	}
-	clock_last_good = ms;
-	return (uint32_t)ms;
+	irq_unlock(key);
+	*out = (uint32_t)ms;
+	return ok;
+}
+
+static uint32_t now32(void)
+{
+	uint32_t v;
+
+	(void)now32_checked(&v);
+	return v;
 }
 
 uint32_t entelea_wdt_clock_faults(void)
@@ -149,10 +165,22 @@ void entelea_wdt_deactivate(entelea_wdt_src_t src)
 	}
 }
 
-/* 巡检：返回首个逾期源；无则 ENTELEA_WDT_COUNT。 */
+/* 巡检：返回首个逾期源；无则 ENTELEA_WDT_COUNT。
+ * 时钟失明策略（A1，owner 2026-11-08 定案）：单轮读失败=本轮时间不可知，
+ * 不判逾期也不假活；连续 ≥ENTELEA_WDT_BLIND_ROUNDS 轮不可知 → 监督无法
+ * 计时 → system_fail（fail reason 载荷 0xFF=时钟失明，非源编号）。 */
 static entelea_wdt_src_t patrol_once_impl(void)
 {
-	uint32_t now = now32();
+	uint32_t now;
+
+	if (!now32_checked(&now)) {
+		if (++blind_rounds >= ENTELEA_WDT_BLIND_ROUNDS) {
+			entelea_safety_system_fail(ENTELEA_FAIL_WDT_CLOCK_BLIND);
+			return ENTELEA_WDT_COUNT;
+		}
+		return ENTELEA_WDT_COUNT; /* 单次瞬态：不判逾（不伪造时间） */
+	}
+	blind_rounds = 0;
 
 	for (int s = 0; s < ENTELEA_WDT_COUNT; s++) {
 		if (!srcs[s].registered || !srcs[s].active) {
@@ -281,7 +309,7 @@ entelea_result_t entelea_wdt_start(void)
 void entelea_wdt_test_reset(void)
 {
 	/* 测试隔离：先同步取消可能仍在调度的巡检项（对已调度 delayable
-	 * 重复 init 是未定义行为），再清源表/启动/halted/时钟护栏。 */
+	 * 重复 init 是未定义行为），再清源表/启动/halted/时钟护栏/失明轮数。 */
 	struct k_work_sync sync;
 
 	(void)k_work_cancel_delayable_sync(&patrol_work, &sync);
@@ -290,6 +318,7 @@ void entelea_wdt_test_reset(void)
 	atomic_set(&halted, 0);
 	clock_last_good = 0;
 	clock_fault_count = 0;
+	blind_rounds = 0;
 }
 
 entelea_wdt_src_t entelea_wdt_patrol_once(void)

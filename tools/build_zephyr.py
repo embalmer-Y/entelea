@@ -184,11 +184,13 @@ def preflight(root, args):
 
     for extra in args.cmake_arg or []:
         name = extra[2:] if extra.startswith("-D") else extra
-        var = name.split("=", 1)[0].strip()
+        # Strip cache-type suffixes too: -DBOARD:STRING=... must not bypass
+        # the managed-variable blacklist (second-review finding 4).
+        var = name.split("=", 1)[0].split(":", 1)[0].strip()
         if var in MANAGED_CMAKE_VARS:
             raise BuildError(
                 f"--cmake-arg must not override managed variable {var} "
-                "(use the dedicated entry options; defect 6)"
+                "(use the dedicated entry options)"
             )
     cmake_args = ["cmake", "-S", str(app), "-B", str(build_dir), "-G", "Ninja",
                   f"-DBOARD={args.board}"]
@@ -205,6 +207,56 @@ def preflight(root, args):
     print(f"[preflight] board={args.board} build={build_dir}")
     print(f"[preflight] zephyr={zephyr_base} modules={env['ZEPHYR_MODULES'] or '(none)'}")
     return env, cmake_args, build_dir
+
+
+def verify_effective_config(build_dir, args, modules):
+    """Check what CMake actually adopted, not just the command we printed.
+
+    A verified command line does not prove an effective configuration
+    (second-review finding 4/6): read back the generated cache and the
+    module list and compare them with the preflight-verified values.
+    """
+    cache = build_dir / "CMakeCache.txt"
+    if not cache.is_file():
+        raise BuildError(f"No CMakeCache.txt after configure: {cache}")
+    text = cache.read_text(errors="replace")
+
+    def cached(var):
+        found = re.search(rf"^{var}:(?:[A-Z]+)=(.*)$", text, re.MULTILINE)
+        return found.group(1).strip() if found else None
+
+    checks = [
+        ("BOARD", cached("BOARD"), args.board),
+        ("ZEPHYR_BASE", cached("ZEPHYR_BASE"), str(Path(args.zephyr_base).resolve())),
+    ]
+    if is_native(args.board):
+        cc = shutil.which(args.host_cc)
+        checks.append(("CMAKE_C_COMPILER", cached("CMAKE_C_COMPILER"), cc))
+    for name, actual, expected in checks:
+        if actual is None:
+            raise BuildError(f"Effective-config check: {name} missing from cache")
+        if Path(actual).resolve() != Path(expected).resolve() and actual != expected:
+            raise BuildError(
+                f"Effective-config mismatch for {name}: "
+                f"cache={actual}, verified={expected}"
+            )
+    # Modules actually consumed by the build (Zephyr writes the resolved
+    # module list here; absent/empty means the explicit empty set).
+    module_file = build_dir / "zephyr_modules.txt"
+    effective = []
+    if module_file.is_file():
+        effective = [
+            line.strip()
+            for line in module_file.read_text().splitlines()
+            if line.strip()
+        ]
+    expected_count = len(modules)
+    if len(effective) != expected_count:
+        raise BuildError(
+            "Effective module set differs from the verified set: "
+            f"build has {len(effective)} module(s), verified {expected_count}"
+        )
+    print("[effective] cache/board/compiler and module count verified")
 
 
 def main():
@@ -241,6 +293,8 @@ def main():
             return 0
         run(cmake_args, env=env)
         print("[configure] " + " ".join(cmake_args))
+        modules_arg = env["ZEPHYR_MODULES"].split(";") if env["ZEPHYR_MODULES"] else []
+        verify_effective_config(build_dir, args, modules_arg)
         if args.build:
             run(["cmake", "--build", str(build_dir)], env=env)
             print(f"[build] {build_dir}")

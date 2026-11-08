@@ -79,13 +79,20 @@ int entelea_drv_gpio_init(void)
 static int gpio_real_write(const entelea_out_channel_t *ch,
 			   const entelea_out_value_t *v)
 {
-	if (real_io_ready && strcmp(ch->uid, real_io_uid) == 0) {
-		int rc = gpio_pin_set_dt(&real_io, v->b); /* 失败传播（缺陷 2） */
+	if (strcmp(ch->uid, real_io_uid) == 0) {
+		/* 绑定通道：后端未就绪（未 init/init 失败/设备不 ready）=
+		 * 配置/设备故障，显式失败——不得静默退化为软件成功
+		 * （二轮 review 发现 2）。 */
+		if (!real_io_ready) {
+			return -ENODEV;
+		}
+		int rc = gpio_pin_set_dt(&real_io, v->b); /* 失败传播 */
 
 		if (rc != 0) {
 			return rc; /* 失败不写 golden 记录（环形=已执行写） */
 		}
 	}
+	/* 未绑定通道 = 纯软件通道（A3，owner 定案）：写成功仅指软件事实。 */
 	sim_record(slot_of(ch), v);
 	return 0;
 }
@@ -156,7 +163,12 @@ static int pwm_decode(uint32_t u, uint32_t *period_ns, uint32_t *pulse_ns)
 static int pwm_real_write(const entelea_out_channel_t *ch,
 			  const entelea_out_value_t *v)
 {
-	if (real_pwm_ready && strcmp(ch->uid, real_pwm_uid) == 0) {
+	if (strcmp(ch->uid, real_pwm_uid) == 0) {
+		/* 绑定通道：后端未就绪 = 显式失败（二轮 review 发现 2）。 */
+		if (!real_pwm_ready) {
+			pwm_err++;
+			return -ENODEV;
+		}
 		uint32_t period_ns;
 		uint32_t pulse_ns;
 
@@ -166,11 +178,12 @@ static int pwm_real_write(const entelea_out_channel_t *ch,
 		}
 		if (pwm_set(real_pwm.dev, real_pwm.channel, period_ns,
 			    pulse_ns, real_pwm.flags) != 0) {
-			pwm_err++; /* 后端失败传播：commit 不因此变 OK（缺陷 2） */
+			pwm_err++; /* 后端失败传播：commit 不因此变 OK */
 			return -EIO; /* 失败不写 golden 记录（环形=已执行写） */
 		}
 	}
-	sim_record(slot_of(ch), v); /* 未绑定通道仅记录（板级只绑一路 PWM） */
+	/* 未绑定通道 = 纯软件通道（A3）：写成功仅指软件事实。 */
+	sim_record(slot_of(ch), v);
 	return 0;
 }
 
@@ -282,3 +295,17 @@ static struct entelea_ch_slot *slot_of(const entelea_out_channel_t *ch)
 	}
 	return NULL;
 }
+
+#ifdef ENTELEA_TEST
+void entelea_drv_test_reset(void)
+{
+	/* 测试隔离：后端就绪位/失败计数复位（配合未就绪负测）。 */
+#if defined(ENTELEA_DRV_GPIO) && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), uid)
+	real_io_ready = false;
+#endif
+#if defined(ENTELEA_DRV_PWM) && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), pwm_uid)
+	real_pwm_ready = false;
+	pwm_err = 0;
+#endif
+}
+#endif

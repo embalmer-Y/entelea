@@ -183,8 +183,10 @@ size_t entelea_driver_sim_writes(const char *uid, entelea_write_rec_t *out,
 #ifdef ENTELEA_TEST
 /** 最近一次 system_fail 的 reason（0 = 未发生）。 */
 uint32_t entelea_safety_test_fail_reason(void);
-/** 通道表/锁存/链路全清（测试隔离；生产不可达）。 */
+/** 通道表/锁存/链路全清（测试隔离；生产不可达；同时复位后端就绪位）。 */
 void entelea_safety_test_reset(void);
+/** 仅复位后端就绪位/失败计数（未就绪负测用）。 */
+void entelea_drv_test_reset(void);
 #endif
 
 /* ---- 失败可观测（后端与时钟失败不静默） ---- */

@@ -32,20 +32,24 @@ entelea_result_t entelea_evt_bind_clock(const entelea_clock_t *clock)
 
 /* 发布时间戳：经绑定时钟的原始 read（绕过 clock_now 的回退簿记——
  * 簿记非原子，ISR 投递与线程分发并发访问同一实例会撕裂 last_ms）。
- * 单调护栏（缺陷 5）：读失败/回退沿用最后有效值，不伪造 0；未绑定或
- * 从未成功 → 0（可观测的未配置）。 */
+ * 单调护栏：读失败/回退沿用最后有效值，不伪造 0；未绑定或从未成功
+ * → 0（可观测的未配置）。
+ * 并发（二轮 review 缺陷 5）：ISR 发布与线程分发并发访问 last_good，
+ * 32 位目标 u64 可撕裂——比较/更新入 irq_lock 微临界区（ISR 可嵌套）。 */
 static uint64_t now_ms(void)
 {
 	static uint64_t last_good;
 	uint64_t ms = 0;
+	bool ok = evt_clock != NULL && evt_clock->read_ms != NULL &&
+		  evt_clock->read_ms(evt_clock->user, &ms) == ENTELEA_OK;
+	unsigned int key = irq_lock();
 
-	if (evt_clock == NULL || evt_clock->read_ms == NULL) {
-		return last_good;
+	if (!ok || ms < last_good) {
+		ms = last_good;
+	} else {
+		last_good = ms;
 	}
-	if (evt_clock->read_ms(evt_clock->user, &ms) != ENTELEA_OK || ms < last_good) {
-		return last_good;
-	}
-	last_good = ms;
+	irq_unlock(key);
 	return ms;
 }
 

@@ -13,13 +13,17 @@
 #include <entelea/safety.h>
 
 static uint64_t virt_now;
-static bool clock_fail_next; /* 一次性读失败注入（缺陷 5 负测） */
+static bool clock_fail_next;   /* 一次性读失败注入 */
+static bool clock_fail_persist; /* 持续失败模式（二轮 review：持续故障类别） */
 
 static entelea_result_t virt_read_ms(void *user, uint64_t *out)
 {
 	ARG_UNUSED(user);
 	if (clock_fail_next) {
 		clock_fail_next = false;
+		return ENTELEA_E_IO;
+	}
+	if (clock_fail_persist) {
 		return ENTELEA_E_IO;
 	}
 	*out = virt_now;
@@ -136,21 +140,26 @@ ZTEST(framework_safety, test_safety_full_scenario)
 	zassert_equal(entelea_safety_readback("slew1", &rb), ENTELEA_OK);
 	zassert_equal(rb.u, 165, "split to bound 155+10");
 
-	/* ---- 2b. slew 时基护栏（缺陷 5）：读失败沿用最后有效值，dt 不下溢。
-	 * 修复前：失败→now=0→dt 巨大→界巨大→本提交会“成功”落 300。 ---- */
+	/* ---- 2b. slew 时钟门（二轮 review 发现 1）：本次读失败=时间不可知
+	 * → 速率界不可立 → 整笔拒绝；持续失败下重复提交不得逐步改变输出
+	 * （修复前：护栏 dt=0 → 每笔一跳，可逐步走满）。 ---- */
 	virt_now = 1011; /* 上一提交基线 last_t = 1011（shadow 165） */
-	clock_fail_next = true;
-	zassert_equal(entelea_safety_commit("slew1", (entelea_out_value_t){.u = 300}),
-		      ENTELEA_E_RANGE, "guard must keep the slew bound (dt=0)");
-	zassert_equal(entelea_safety_readback("slew1", &rb), ENTELEA_OK);
-	zassert_equal(rb.u, 170, "split to bound 165+5 (dt=0 via guard)");
-	zassert_true(entelea_safety_clock_faults() >= 1, "clock failure counted");
-	/* 护栏后正常恢复：重新推进时间正常计量。 */
+	clock_fail_persist = true; /* 持续失败：重复提交不得逐步改变输出 */
+	for (int i = 0; i < 3; i++) {
+		zassert_equal(
+			entelea_safety_commit("slew1", (entelea_out_value_t){.u = 300}),
+			ENTELEA_E_STATE, "unreadable clock must reject slew commits");
+		zassert_equal(entelea_safety_readback("slew1", &rb), ENTELEA_OK);
+		zassert_equal(rb.u, 165, "输出不得在时钟失明期间改变");
+	}
+	clock_fail_persist = false;
+	zassert_true(entelea_safety_clock_faults() >= 3, "failures counted");
+	/* 时钟恢复后正常计量：dt=10 → 界 55 → 拆到 165+55=220。 */
 	virt_now = 1021;
 	v.u = 400;
 	zassert_equal(entelea_safety_commit("slew1", v), ENTELEA_E_RANGE);
 	zassert_equal(entelea_safety_readback("slew1", &rb), ENTELEA_OK);
-	zassert_equal(rb.u, 225, "bound 170+5*11 (dt=10)");
+	zassert_equal(rb.u, 220, "bound 165+5*11 (dt=10 after recovery)");
 
 	/* ---- 3. 限流（POWER）：请求超限整笔拒绝 ---- */
 	v.pwr.en = true;
