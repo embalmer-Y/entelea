@@ -22,6 +22,8 @@ typedef enum {
 	ENTELEA_EVT_ESTOP, /* 事后补发；estop 动作本身不经队列 */
 	ENTELEA_EVT_SAFE_STATE_CHANGED,
 	ENTELEA_EVT_WDT_WARN,
+	ENTELEA_EVT_PERM_DENIED, /* R04：越权留痕（app_id+detail） */
+	ENTELEA_EVT_ARB_CHANGED, /* R04：仲裁席变更（old/owner/t） */
 	ENTELEA_EVT_ID_COUNT,
 } entelea_event_id_t;
 

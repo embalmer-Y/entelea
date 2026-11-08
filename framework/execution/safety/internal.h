@@ -30,6 +30,7 @@ extern atomic_t entelea_forced;    /* estop/fail 锁存标志（clear_fault 释�
 extern atomic_t entelea_system_failed; /* system_fail 已发生（一次性；clear_fault 拒绝） */
 extern atomic_t entelea_forced_at; /* forced 置位时刻（低 32 位，补发事件用） */
 extern atomic_t entelea_link_up;   /* 全局链路标志 */
+extern atomic_t entelea_arb_owner; /* 控制源席位（R04；entelea_arb_owner_t 值） */
 extern const entelea_clock_t *entelea_safety_clock;
 
 /* 模块时钟读取（channel.c 实现）：读失败或回退沿用最后有效值（单调

@@ -25,7 +25,11 @@
     "framework/services/config/prov.c",
     "framework/services/config/prov_maint.c",
     "framework/services/storage/trust.c",
-    "framework/services/storage/kv.c"
+    "framework/services/storage/kv.c",
+    "framework/execution/capability/perm.c",
+    "framework/execution/capability/desc.c",
+    "framework/execution/resource/power.c",
+    "framework/execution/task/task.c"
   ],
   "platform_zephyr": [
     "platform/zephyr/clock.c",
@@ -36,7 +40,8 @@
     "platform/zephyr/tests/wdt_start/src/main.c",
     "platform/zephyr/tests/wdt_hardware/src/main.c",
     "platform/zephyr/tests/safety/src/pwm_real.c",
-    "platform/zephyr/tests/store/src/main.c"
+    "platform/zephyr/tests/store/src/main.c",
+    "platform/zephyr/tests/r04/src/main.c"
   ],
   "diagnostics": {},
   "protected_output_sources": [

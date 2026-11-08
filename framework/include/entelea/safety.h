@@ -218,6 +218,37 @@ uint32_t entelea_safety_clock_faults(void);
 /** [any] 审计落盘节流丢弃累计（风暴 1Hz 采样期间的观测量）。 */
 uint32_t entelea_safety_audit_throttled(void);
 
+/* ---- 控制源仲裁（R04；EN 60204-1 §9.2 同型） ---- */
+
+typedef enum { ENTELEA_ARB_REMOTE = 0, ENTELEA_ARB_LOCAL = 1 } entelea_arb_owner_t;
+
+/* 写路径来源标记：APP=编排意图载体（natives）；REMOTE=远程编排写
+ * （压制门控唯一作用面）；LOCAL=本地交互写（未来本地 UI 面）。 */
+typedef enum {
+	ENTELEA_SRC_APP = 0,
+	ENTELEA_SRC_REMOTE = 1,
+	ENTELEA_SRC_LOCAL = 2,
+} entelea_commit_src_t;
+
+/** [thread] 席位变更：仅改门控位 + 发布 ENTELEA_EVT_ARB_CHANGED——
+ * 零通道写入（输出连续性由 APP 逻辑承载）。幂等（同席位零事件）。 */
+entelea_result_t entelea_safety_set_arb(entelea_arb_owner_t owner);
+
+/** [any] 当前席主。 */
+entelea_arb_owner_t entelea_safety_arb_owner(void);
+
+/** [thread] 带来源的写路径：本地席位激活期拒绝 REMOTE 来源
+ * （ENTELEA_E_STATE 留痕）；APP/LOCAL 不受门控。 */
+entelea_result_t entelea_safety_commit_src(const char *uid,
+					   entelea_out_value_t v,
+					   entelea_commit_src_t src);
+
+/* ARB 事件 payload。 */
+typedef struct {
+	uint8_t owner; /* entelea_arb_owner_t 新席主 */
+	uint8_t old;   /* 原席主（幂等变更不发布） */
+} entelea_arb_evt_t;
+
 /* 容量出处 DEC-27（旧 LLD-ts-safety §2/§7），R02 为编译期常量。 */
 #define ENTELEA_SAFETY_MAX_CHANNELS 32
 /* 每通道写序列环形容量（结构性数值）。 */

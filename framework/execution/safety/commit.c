@@ -49,6 +49,19 @@ entelea_result_t entelea_safety_commit_locked(const char *uid,
 }
 
 /* 内核：一切早退路径经外层统一落审计（异常类）。 */
+static entelea_result_t commit_impl(const char *uid, entelea_out_value_t v);
+
+/* 压制门控（R04）：本地席位激活期拒绝远程编排写（身份级拒绝，
+ * 先于通道态语义；审计留痕）。 */
+static entelea_result_t commit_src_gate(entelea_commit_src_t src)
+{
+	if (src == ENTELEA_SRC_REMOTE &&
+	    (entelea_arb_owner_t)atomic_get(&entelea_arb_owner) == ENTELEA_ARB_LOCAL) {
+		return ENTELEA_E_STATE;
+	}
+	return ENTELEA_OK;
+}
+
 static entelea_result_t commit_run(int i, entelea_ch_kind_t kind,
 				   entelea_out_value_t v)
 {
@@ -147,6 +160,37 @@ static entelea_result_t commit_run(int i, entelea_ch_kind_t kind,
 }
 
 /* 外层：查表 + 异常审计（含 E_NOTFOUND/安全态/时钟门等全部早退）。 */
+entelea_result_t entelea_safety_commit_src(const char *uid,
+					   entelea_out_value_t v,
+					   entelea_commit_src_t src)
+{
+	if ((int)src < 0 || src > ENTELEA_SRC_LOCAL) {
+		return ENTELEA_E_PARAM;
+	}
+	if (k_is_in_isr()) {
+		return ENTELEA_E_PERM; /* [thread] API */
+	}
+	if (commit_src_gate(src) != ENTELEA_OK) {
+		/* 压制留痕（复用异常审计面）。 */
+		int i = entelea_ch_find(uid);
+
+		if (i >= 0) {
+			const entelea_storage_audit_entry_t e = {
+				.t_ms = entelea_safety_now_ms(),
+				.ch_idx = (uint16_t)i,
+				.kind = (uint8_t)entelea_ch_table[i].desc->kind,
+				.res = ENTELEA_E_STATE,
+				.value_u = entelea_value_encode(
+					entelea_ch_table[i].desc->kind, v),
+			};
+
+			entelea_safety_audit_persist(&e, 0);
+		}
+		return ENTELEA_E_STATE;
+	}
+	return commit_impl(uid, v);
+}
+
 static entelea_result_t commit_impl(const char *uid, entelea_out_value_t v)
 {
 	int i = entelea_ch_find(uid);

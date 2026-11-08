@@ -22,6 +22,7 @@ struct entelea_ch_slot entelea_ch_table[ENTELEA_SAFETY_MAX_CHANNELS]; /* 容量 
 size_t entelea_ch_count;
 
 atomic_t entelea_link_up = ATOMIC_INIT(0); /* 初值 down：boot 后链路未确立 */
+atomic_t entelea_arb_owner = ATOMIC_INIT(ENTELEA_ARB_REMOTE); /* 缺省远程（本地席位空缺） */
 atomic_t entelea_forced = ATOMIC_INIT(0);
 atomic_t entelea_forced_at = ATOMIC_INIT(0);
 const entelea_clock_t *entelea_safety_clock;
@@ -292,6 +293,39 @@ entelea_result_t entelea_safety_set_link(bool up)
 	return any_fail ? ENTELEA_E_IO : ENTELEA_OK;
 }
 
+entelea_result_t entelea_safety_set_arb(entelea_arb_owner_t owner)
+{
+	if (owner != ENTELEA_ARB_REMOTE && owner != ENTELEA_ARB_LOCAL) {
+		return ENTELEA_E_PARAM;
+	}
+	if (k_is_in_isr()) {
+		return ENTELEA_E_PERM; /* [thread] API（事件发布经总线） */
+	}
+	entelea_arb_owner_t old = (entelea_arb_owner_t)atomic_get(&entelea_arb_owner);
+
+	if (old == owner) {
+		return ENTELEA_OK; /* 幂等：零事件零输出 */
+	}
+	atomic_set(&entelea_arb_owner, owner);
+	/* 切换零输出（输出连续性由 APP 逻辑承载）；仅门控位+留痕事件。 */
+	const entelea_arb_evt_t payload = {
+		.owner = (uint8_t)owner,
+		.old = (uint8_t)old,
+	};
+	const entelea_event_t evt = {
+		.id = ENTELEA_EVT_ARB_CHANGED,
+		.data = &payload,
+		.len = sizeof(payload),
+	};
+	entelea_evt_publish(&evt);
+	return ENTELEA_OK;
+}
+
+entelea_arb_owner_t entelea_safety_arb_owner(void)
+{
+	return (entelea_arb_owner_t)atomic_get(&entelea_arb_owner);
+}
+
 #ifdef ENTELEA_TEST
 void entelea_safety_test_reset(void)
 {
@@ -300,6 +334,7 @@ void entelea_safety_test_reset(void)
 	atomic_set(&entelea_forced, 0);
 	atomic_set(&entelea_forced_at, 0);
 	atomic_set(&entelea_link_up, 0);
+	atomic_set(&entelea_arb_owner, ENTELEA_ARB_REMOTE);
 	clock_last_good = 0;
 	clock_fault_count = 0;
 	driver_write_failures = 0;
