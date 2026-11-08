@@ -1151,12 +1151,17 @@
       ],
       "first_batch": "R12",
       "migration_action": "adapt",
-      "status": "not_migrated",
-      "constraints": "本地安装确认不是已实现完整用户试用；远端确认是需审批的合同变化。",
-      "target_paths": [],
+      "status": "in_progress",
+      "constraints": "R12固件面试用状态机已交付（单候选/内容绑定确认/fail-closed超时/intake域外拒）；SDK实际接入/命令面/持久试用归获批工厂任务与板级批。",
+      "target_paths": [
+        "framework/services/delivery/delivery.c",
+        "framework/include/entelea/delivery.h"
+      ],
       "verification": {
         "state": "not_run",
-        "evidence_paths": []
+        "evidence_paths": [
+          "docs/r12-validation.md"
+        ]
       },
       "source_file_count": 2
     },
