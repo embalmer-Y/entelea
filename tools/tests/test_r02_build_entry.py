@@ -42,6 +42,7 @@ class PreflightTests(unittest.TestCase):
             toolchain=None,
             gcc_version=None,
             host_cc="cc",
+            python=None,
             board_root=None,
             module=None,
             cmake_arg=None,
@@ -263,6 +264,52 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(
             env["ZEPHYR_MODULES"], f"{hal.resolve()};{hal.resolve()}"
         )
+
+    def test_cmake_arg_cannot_override_board(self):
+        self.base["cmake_arg"] = ["-DBOARD=qemu_x86"]
+        self.fails("must not override managed variable BOARD")
+
+    def test_cmake_arg_cannot_override_managed_vars(self):
+        for var in ("ZEPHYR_BASE", "ZEPHYR_MODULES", "Python3_EXECUTABLE",
+                    "CMAKE_C_COMPILER", "BOARD_ROOT", "ZEPHYR_SDK_INSTALL_DIR"):
+            self.base["cmake_arg"] = [f"-D{var}=x"]
+            self.fails("must not override managed variable " + var)
+
+    def test_cmake_arg_app_options_still_allowed(self):
+        self.base["cmake_arg"] = ["-DTEST_WDT_REQUIRED_MISSING=ON"]
+        with mock.patch.object(BZ, "run", side_effect=self.ok_run):
+            with mock.patch.object(BZ.shutil, "which", return_value="/usr/bin/cc"):
+                env, cmake_args, build_dir = BZ.preflight(
+                    self.repo, type("Args", (), self.base)()
+                )
+        self.assertIn("-DTEST_WDT_REQUIRED_MISSING=ON", cmake_args)
+
+    def test_python_missing_rejected(self):
+        self.base["python"] = str(self.root / "no-python")
+        self.fails("--python interpreter not found")
+
+    def test_python_verified_and_bound(self):
+        fake_py = self.root / "fakepy"
+        fake_py.write_text("#!/bin/sh\necho 'Python 3.12.13'\n")
+        fake_py.chmod(fake_py.stat().st_mode | stat.S_IEXEC)
+        self.base["python"] = str(fake_py)
+        with mock.patch.object(BZ, "run", side_effect=self.ok_run):
+            with mock.patch.object(BZ.shutil, "which", return_value="/usr/bin/cc"):
+                env, cmake_args, build_dir = BZ.preflight(
+                    self.repo, type("Args", (), self.base)()
+                )
+        self.assertIn(f"-DPython3_EXECUTABLE={fake_py.absolute()}", cmake_args)
+
+    def test_native_binds_verified_compiler(self):
+        with mock.patch.object(BZ, "run", side_effect=self.ok_run):
+            with mock.patch.object(BZ.shutil, "which", return_value="/usr/bin/cc"):
+                env, cmake_args, build_dir = BZ.preflight(
+                    self.repo, type("Args", (), self.base)()
+                )
+        self.assertIn("-DCMAKE_C_COMPILER=/usr/bin/cc", cmake_args)
+        board_index = cmake_args.index("-DBOARD=native_sim")
+        cc_index = cmake_args.index("-DCMAKE_C_COMPILER=/usr/bin/cc")
+        self.assertLess(board_index, cc_index, "managed args precede user args")
 
     def test_check_dependencies_invoked_read_only(self):
         seen = []

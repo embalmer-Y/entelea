@@ -8,11 +8,14 @@
  * estop 沿触发入 flash 审计环归 R03。
  */
 #include <entelea/safety.h>
+#include <entelea/wdt.h>
 #include "internal.h"
 
 static uint32_t fail_reason_store;
 
-/* estop ISR 直达：[ISR] 安全——仅原子置位与直写（不经队列/调度）。 */
+/* estop ISR 直达：[ISR] 安全——仅原子置位与直写（不经队列/调度）。
+ * 写失败在 ISR 上下文不可返回：计入失败计数（可观测），状态/影子仍按
+ * 合同迁移（物理未知由 fail-safe/WDT 收口）。 */
 void entelea_safety_force_all_fault(void)
 {
 	atomic_set(&entelea_forced, 1);
@@ -22,7 +25,9 @@ void entelea_safety_force_all_fault(void)
 	for (size_t i = 0; i < entelea_ch_count; i++) {
 		struct entelea_ch_slot *s = &entelea_ch_table[i];
 
-		entelea_drivers[s->desc->kind].write(s->desc, &s->desc->fault);
+		if (entelea_drivers[s->desc->kind].write(s->desc, &s->desc->fault) != 0) {
+			entelea_safety_count_write_failure();
+		}
 		s->shadow = s->desc->fault;
 		s->state = ENTELEA_ST_SAFE_FAULT;
 		s->have_last = false;
@@ -34,6 +39,9 @@ void entelea_safety_force_all_fault(void)
 void entelea_safety_system_fail(uint32_t reason)
 {
 	fail_reason_store = reason;
+	/* 全局停机先行（缺陷 4）：任何线程触发 system_fail，软 WDT 巡检
+	 * 立即停喂停排——停机语义不依赖调用线程自身挂起。 */
+	entelea_wdt_halt();
 	atomic_set(&entelea_forced, 1);
 	atomic_set(&entelea_forced_at,
 		   (atomic_val_t)(uint32_t)entelea_safety_now_ms());
@@ -41,7 +49,9 @@ void entelea_safety_system_fail(uint32_t reason)
 	for (size_t i = 0; i < entelea_ch_count; i++) {
 		struct entelea_ch_slot *s = &entelea_ch_table[i];
 
-		entelea_drivers[s->desc->kind].write(s->desc, &s->desc->fault);
+		if (entelea_drivers[s->desc->kind].write(s->desc, &s->desc->fault) != 0) {
+			entelea_safety_count_write_failure();
+		}
 		s->shadow = s->desc->fault;
 		s->state = ENTELEA_ST_SAFE_FAULT;
 		s->have_last = false;

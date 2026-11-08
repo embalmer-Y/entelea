@@ -13,15 +13,20 @@
 #include <entelea/safety.h>
 
 static uint64_t virt_now;
+static bool clock_fail_next; /* 一次性读失败注入（缺陷 5 负测） */
 
 static entelea_result_t virt_read_ms(void *user, uint64_t *out)
 {
 	ARG_UNUSED(user);
+	if (clock_fail_next) {
+		clock_fail_next = false;
+		return ENTELEA_E_IO;
+	}
 	*out = virt_now;
 	return ENTELEA_OK;
 }
 
-static const entelea_clock_t virt_clock = {
+static entelea_clock_t virt_clock = {
 	.read_ms = virt_read_ms,
 	.user = NULL,
 	.clock_id = 0x5AFE,
@@ -131,6 +136,22 @@ ZTEST(framework_safety, test_safety_full_scenario)
 	zassert_equal(entelea_safety_readback("slew1", &rb), ENTELEA_OK);
 	zassert_equal(rb.u, 165, "split to bound 155+10");
 
+	/* ---- 2b. slew 时基护栏（缺陷 5）：读失败沿用最后有效值，dt 不下溢。
+	 * 修复前：失败→now=0→dt 巨大→界巨大→本提交会“成功”落 300。 ---- */
+	virt_now = 1011; /* 上一提交基线 last_t = 1011（shadow 165） */
+	clock_fail_next = true;
+	zassert_equal(entelea_safety_commit("slew1", (entelea_out_value_t){.u = 300}),
+		      ENTELEA_E_RANGE, "guard must keep the slew bound (dt=0)");
+	zassert_equal(entelea_safety_readback("slew1", &rb), ENTELEA_OK);
+	zassert_equal(rb.u, 170, "split to bound 165+5 (dt=0 via guard)");
+	zassert_true(entelea_safety_clock_faults() >= 1, "clock failure counted");
+	/* 护栏后正常恢复：重新推进时间正常计量。 */
+	virt_now = 1021;
+	v.u = 400;
+	zassert_equal(entelea_safety_commit("slew1", v), ENTELEA_E_RANGE);
+	zassert_equal(entelea_safety_readback("slew1", &rb), ENTELEA_OK);
+	zassert_equal(rb.u, 225, "bound 170+5*11 (dt=10)");
+
 	/* ---- 3. 限流（POWER）：请求超限整笔拒绝 ---- */
 	v.pwr.en = true;
 	v.pwr.ma = 600;
@@ -226,6 +247,43 @@ ZTEST(framework_safety, test_estop_edge_mapping)
 }
 
 /* ---- poweron 值落驱动（注册 → poweron_init：物理写序列第一笔 = 声明值） ---- */
+/* ---- estop 锁存不被 poweron_init 覆盖（缺陷 3 守卫） ---- */
+ZTEST(framework_safety, test_poweron_preserves_estop_latch)
+{
+	entelea_safety_test_reset();
+	zassert_equal(entelea_safety_bind_clock(&virt_clock), ENTELEA_OK);
+	virt_now = 0;
+
+	static const entelea_out_channel_t pc = {
+		.uid = "estop-guard", .kind = ENTELEA_CH_GPIO,
+		.poweron = {.b = true}, .linkloss = {.b = false},
+		.fault = {.b = false},
+	};
+	zassert_equal(entelea_safety_register_channel(&pc), ENTELEA_OK);
+	zassert_equal(entelea_safety_estop_init(), ENTELEA_OK);
+	entelea_safety_force_all_fault();
+	entelea_ch_state_t st;
+	entelea_out_value_t rb;
+
+	zassert_equal(entelea_safety_channel_state("estop-guard", &st), ENTELEA_OK);
+	zassert_equal(st, ENTELEA_ST_SAFE_FAULT);
+
+	entelea_write_rec_t recs[8];
+	size_t before = entelea_driver_sim_writes("estop-guard", recs, 8);
+	zassert_equal(entelea_safety_poweron_init(), ENTELEA_OK);
+	zassert_equal(entelea_safety_channel_state("estop-guard", &st), ENTELEA_OK);
+	zassert_equal(st, ENTELEA_ST_SAFE_FAULT, "poweron 不得覆盖 estop 锁存");
+	zassert_equal(entelea_safety_readback("estop-guard", &rb), ENTELEA_OK);
+	zassert_false(rb.b, "影子保持 fault 值");
+	size_t after = entelea_driver_sim_writes("estop-guard", recs, 8);
+
+	zassert_equal(after, before, "锁存期不产生新的物理写");
+	/* 锁存期 set_link 同样不得改写该通道（SAFE_FAULT 非迁移源态）。 */
+	zassert_equal(entelea_safety_set_link(false), ENTELEA_OK);
+	zassert_equal(entelea_safety_channel_state("estop-guard", &st), ENTELEA_OK);
+	zassert_equal(st, ENTELEA_ST_SAFE_FAULT);
+}
+
 ZTEST(framework_safety, test_poweron_writes_driver)
 {
 	entelea_safety_test_reset();

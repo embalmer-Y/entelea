@@ -16,6 +16,9 @@ PRIVATE_INCLUDE = re.compile(
 DIRECT_CLOCK = re.compile(
     r"\b(?:k_uptime_\w+|clock_gettime|time|localtime|gmtime|srand|rand|random)\s*\("
 )
+# The driver ops table is the safety module's private write path; a public
+# reference outside the module is an output-protection bypass (R02 defect 1).
+DRIVER_TABLE = re.compile(r"\bentelea_drivers\b")
 
 
 def fail(condition, message):
@@ -150,6 +153,11 @@ def validate(root, policy):
                 fail(
                     DIRECT_CLOCK.search(text) is None,
                     f"Direct clock/random source: {path}",
+                )
+            if not path.startswith("framework/execution/safety/"):
+                fail(
+                    DRIVER_TABLE.search(text) is None,
+                    f"Driver table bypass outside safety module: {path}",
                 )
     headers = root / "framework/include/entelea"
     for file in headers.rglob("*.h"):

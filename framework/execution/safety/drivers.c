@@ -33,10 +33,13 @@ static void sim_record(struct entelea_ch_slot *s, const entelea_out_value_t *v)
 	}
 }
 
-static void sim_write(const entelea_out_channel_t *ch, const entelea_out_value_t *v)
+static int sim_write(const entelea_out_channel_t *ch, const entelea_out_value_t *v)
 {
-	/* 桩路径：真机后端同样先记录（golden 连续性）再写寄存器。 */
+	/* 桩路径：真机后端同样先记录（golden 连续性）再写寄存器。
+	 * 桩本身不失败——后端失败语义经真机路径返回值承担（ztest 用
+	 * 假 PWM 设备注入）。 */
 	sim_record(slot_of(ch), v);
+	return 0;
 }
 
 static int sim_read(const entelea_out_channel_t *ch, entelea_out_value_t *out)
@@ -73,13 +76,18 @@ int entelea_drv_gpio_init(void)
 	return 0;
 }
 
-static void gpio_real_write(const entelea_out_channel_t *ch,
-			    const entelea_out_value_t *v)
+static int gpio_real_write(const entelea_out_channel_t *ch,
+			   const entelea_out_value_t *v)
 {
-	sim_record(slot_of(ch), v);
 	if (real_io_ready && strcmp(ch->uid, real_io_uid) == 0) {
-		gpio_pin_set_dt(&real_io, v->b);
+		int rc = gpio_pin_set_dt(&real_io, v->b); /* 失败传播（缺陷 2） */
+
+		if (rc != 0) {
+			return rc; /* 失败不写 golden 记录（环形=已执行写） */
+		}
 	}
+	sim_record(slot_of(ch), v);
+	return 0;
 }
 
 #define ENTELEA_GPIO_WRITE gpio_real_write
@@ -118,27 +126,52 @@ uint32_t entelea_drv_pwm_err_count(void)
 	return pwm_err;
 }
 
-static void pwm_real_write(const entelea_out_channel_t *ch,
-			   const entelea_out_value_t *v)
+/* PWM 打包解码（合同）：u 低 16 = permille [0,1000]、高 16 = hz/100。
+ * u==0（hz==0 且 permille==0）= 停止：占空 0（固定 1s 周期、脉宽 0），
+ * 保证故障/安全态零值物理停止输出（缺陷 2）。hz==0 且 permille>0 或
+ * permille>1000 = 非法编码。 */
+static int pwm_decode(uint32_t u, uint32_t *period_ns, uint32_t *pulse_ns)
 {
-	sim_record(slot_of(ch), v);
-	if (!real_pwm_ready || strcmp(ch->uid, real_pwm_uid) != 0) {
-		return;
-	}
-	uint32_t hz = (v->u >> 16) * 100U;
-	uint32_t permille = v->u & 0xFFFFU;
+	uint32_t hz = (u >> 16) * 100U;
+	uint32_t permille = u & 0xFFFFU;
 
-	if (hz == 0U || permille > 1000U) {
-		pwm_err++; /* 打包域外（上游守卫失效的兜底观测） */
-		return;
+	if (permille > 1000U) {
+		return -EINVAL;
 	}
-	uint32_t period_ns = 1000000000U / hz;
-	uint64_t pulse_ns = (uint64_t)period_ns * permille / 1000U;
+	if (hz == 0U) {
+		if (permille != 0U) {
+			return -EINVAL;
+		}
+		*period_ns = 1000000000U;
+		*pulse_ns = 0U;
+		return 0;
+	}
+	uint32_t period = 1000000000U / hz;
 
-	if (pwm_set(real_pwm.dev, real_pwm.channel, period_ns,
-		    (uint32_t)pulse_ns, real_pwm.flags) != 0) {
-		pwm_err++; /* 后端失败不报告成功：仅计数留痕，commit 不因此变 OK */
+	*period_ns = period;
+	*pulse_ns = (uint32_t)((uint64_t)period * permille / 1000U);
+	return 0;
+}
+
+static int pwm_real_write(const entelea_out_channel_t *ch,
+			  const entelea_out_value_t *v)
+{
+	if (real_pwm_ready && strcmp(ch->uid, real_pwm_uid) == 0) {
+		uint32_t period_ns;
+		uint32_t pulse_ns;
+
+		if (pwm_decode(v->u, &period_ns, &pulse_ns) != 0) {
+			pwm_err++;
+			return -EINVAL; /* 打包域外：显式失败，不静默不写 */
+		}
+		if (pwm_set(real_pwm.dev, real_pwm.channel, period_ns,
+			    pulse_ns, real_pwm.flags) != 0) {
+			pwm_err++; /* 后端失败传播：commit 不因此变 OK（缺陷 2） */
+			return -EIO; /* 失败不写 golden 记录（环形=已执行写） */
+		}
 	}
+	sim_record(slot_of(ch), v); /* 未绑定通道仅记录（板级只绑一路 PWM） */
+	return 0;
 }
 
 #define ENTELEA_PWM_WRITE pwm_real_write

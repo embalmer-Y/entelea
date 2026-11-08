@@ -28,18 +28,21 @@ extern atomic_t entelea_forced_at; /* forced 置位时刻（低 32 位，补发�
 extern atomic_t entelea_link_up;   /* 全局链路标志 */
 extern const entelea_clock_t *entelea_safety_clock;
 
-/** 模块时钟读取（绑定实例的原始 read；未绑定/失败返回 0）。 */
-static inline uint64_t entelea_safety_now_ms(void)
-{
-	uint64_t ms = 0;
+/* 模块时钟读取（channel.c 实现）：读失败或回退沿用最后有效值（单调
+ * 护栏，review 缺陷 5——失败不得伪造 0 导致 slew 减法下溢放宽限制），
+ * 失败计入 clock_faults；从未成功过返回 0。 */
+uint64_t entelea_safety_now_ms(void);
 
-	if (entelea_safety_clock != NULL &&
-	    entelea_safety_clock->read_ms != NULL &&
-	    entelea_safety_clock->read_ms(entelea_safety_clock->user, &ms) == ENTELEA_OK) {
-		return ms;
-	}
-	return 0;
-}
+/* 模块私有驱动 ops 表（drivers.c 定义；模块外引用被架构检查拒绝）。 */
+typedef struct {
+	int (*write)(const entelea_out_channel_t *ch, const entelea_out_value_t *v);
+	int (*read)(const entelea_out_channel_t *ch, entelea_out_value_t *out);
+} entelea_driver_ops_t;
+
+extern const entelea_driver_ops_t entelea_drivers[ENTELEA_CH_KIND_COUNT];
+
+/** 驱动写失败计数（channel.c 持有；commit/force 调用点登记）。 */
+void entelea_safety_count_write_failure(void);
 
 /** estop 补发宣布位复位（clear_fault 调用；二次 estop 可再补发）。 */
 void entelea_safety_estop_announce_reset(void);

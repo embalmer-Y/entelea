@@ -149,6 +149,8 @@ ZTEST(wdt_hardware, test_real_task_wdt_backend_errors_and_recovery)
 	zassert_equal(setup_options, 0);
 	zassert_equal(install_calls, 2, "Retry must reuse the installed hardware timeout");
 
+	/* ---- boot 失败集成（放末段：system_fail 置 halted 为一次性，
+	 * 其后不得再有 wdt_start——缺陷 4 语义与测试顺序的共同要求） ---- */
 	zassert_equal(entelea_safety_register_channel(&probe), ENTELEA_OK);
 	zassert_equal(entelea_evt_subscribe(ENTELEA_EVT_BOOT_STEP, on_boot_step, NULL),
 		      ENTELEA_OK);
@@ -170,25 +172,10 @@ ZTEST(wdt_hardware, test_real_task_wdt_backend_errors_and_recovery)
 	zassert_equal(state, ENTELEA_ST_SAFE_FAULT);
 	zassert_equal(entelea_safety_readback(probe.uid, &value), ENTELEA_OK);
 	zassert_false(value.b, "Failed boot must not retain the power-on output");
+	/* boot 线程内 system_fail 已置全局停机（halted）：此后巡检不喂——
+	 * 停机语义不再依赖调用线程挂起（缺陷 4）。 */
+	zassert_false(entelea_wdt_test_patrol_tick());
 	entelea_safety_test_reset();
-
-	setup_result = 0;
-	zassert_equal(entelea_wdt_start(), ENTELEA_OK);
-	zassert_true(feed_calls > 0, "Successful hardware start must be fed");
-	zassert_equal(entelea_wdt_start(), ENTELEA_E_STATE);
-
-	int extra[CONFIG_TASK_WDT_CHANNELS - 1];
-	int setup_before = setup_calls;
-
-	for (int i = 0; i < ARRAY_SIZE(extra); i++) {
-		extra[i] = task_wdt_add(ENTELEA_WDT_CHANNEL_MS, NULL, NULL);
-		zassert_equal(extra[i], i + 1, "Failed setup must not leak channels");
-	}
-	zassert_equal(task_wdt_add(ENTELEA_WDT_CHANNEL_MS, NULL, NULL), -ENOMEM);
-	zassert_equal(setup_calls, setup_before, "Hardware must start only once");
-	for (int i = 0; i < ARRAY_SIZE(extra); i++) {
-		zassert_equal(task_wdt_delete(extra[i]), 0);
-	}
 }
 #endif
 

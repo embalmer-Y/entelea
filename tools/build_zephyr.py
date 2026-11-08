@@ -26,6 +26,15 @@ from pathlib import Path
 
 NATIVE_BOARDS = ("native_sim", "native_sim/native/64", "native_sim/native/32")
 PINNED_MODULES = {"zephyr", "wamr", "hal_espressif"}
+# Managed CMake variables: set only by this tool after verification. Extra
+# --cmake-arg values must not override them (review defect 6: a later
+# -DBOARD=... silently repointed the build while the SDK stayed verified
+# for the original board).
+MANAGED_CMAKE_VARS = (
+    "BOARD", "BOARD_ROOT", "ZEPHYR_BASE", "ZEPHYR_MODULES",
+    "ZEPHYR_TOOLCHAIN_VARIANT", "ZEPHYR_SDK_INSTALL_DIR",
+    "Python3_EXECUTABLE", "CMAKE_C_COMPILER",
+)
 
 
 class BuildError(Exception):
@@ -84,6 +93,18 @@ def preflight(root, args):
     env["ZEPHYR_BASE"] = str(zephyr_base)
     env["ZEPHYR_MODULES"] = ";".join(modules)  # explicit set; no west workspace
 
+    managed_args = []
+    if args.python:
+        # absolute() (not resolve()): venv pythons are symlinks into an
+        # interpreter store; following the link escapes the venv and loses
+        # its site-packages. Keep the path exactly as provided.
+        python = Path(args.python).absolute()
+        if not python.is_file():
+            raise BuildError(f"--python interpreter not found: {python}")
+        run([str(python), "--version"])
+        managed_args.append(f"-DPython3_EXECUTABLE={python}")
+        print(f"[preflight] python: {run([str(python), '--version'])}")
+
     if is_native(args.board):
         if args.sdk or args.sdk_version or args.toolchain or args.gcc_version:
             raise BuildError(
@@ -95,6 +116,9 @@ def preflight(root, args):
             raise BuildError(f"Host toolchain not found: {args.host_cc}")
         version = run([cc, "--version"]).splitlines()[0]
         env["ZEPHYR_TOOLCHAIN_VARIANT"] = "host"
+        # Bind the verified compiler to the actual build (defect 6: previously
+        # --host-cc was only checked, never passed; Zephyr picked its own).
+        managed_args.append(f"-DCMAKE_C_COMPILER={cc}")
         print(f"[preflight] host toolchain: {cc}: {version}")
     else:
         missing = [
@@ -158,6 +182,14 @@ def preflight(root, args):
                 "pick a per-target directory"
             )
 
+    for extra in args.cmake_arg or []:
+        name = extra[2:] if extra.startswith("-D") else extra
+        var = name.split("=", 1)[0].strip()
+        if var in MANAGED_CMAKE_VARS:
+            raise BuildError(
+                f"--cmake-arg must not override managed variable {var} "
+                "(use the dedicated entry options; defect 6)"
+            )
     cmake_args = ["cmake", "-S", str(app), "-B", str(build_dir), "-G", "Ninja",
                   f"-DBOARD={args.board}"]
     if args.board_root:
@@ -167,6 +199,7 @@ def preflight(root, args):
         if root.resolve() not in board_root.parents:
             raise BuildError(f"Board root outside repository: {board_root}")
         cmake_args.append(f"-DBOARD_ROOT={board_root}")
+    cmake_args += managed_args
     cmake_args += list(args.cmake_arg or [])
     print(f"[preflight] app={app}")
     print(f"[preflight] board={args.board} build={build_dir}")
@@ -185,6 +218,10 @@ def main():
     parser.add_argument("--toolchain", help="e.g. riscv64-zephyr-elf (board targets)")
     parser.add_argument("--gcc-version", help="Expected target gcc version substring")
     parser.add_argument("--host-cc", default="cc", help="Host compiler (native targets)")
+    parser.add_argument(
+        "--python",
+        help="Pinned build interpreter (e.g. the frozen venv python with pyelftools)",
+    )
     parser.add_argument("--board-root", help="Out-of-tree board directory inside the repo")
     parser.add_argument(
         "--module",

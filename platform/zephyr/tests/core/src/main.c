@@ -10,15 +10,20 @@
 #include "boot_steps.h"
 
 static uint64_t virt_now;
+static bool clock_fail_next; /* 一次性读失败注入（缺陷 5 负测） */
 
 static entelea_result_t virt_read_ms(void *user, uint64_t *out)
 {
 	ARG_UNUSED(user);
+	if (clock_fail_next) {
+		clock_fail_next = false;
+		return ENTELEA_E_IO;
+	}
 	*out = virt_now;
 	return ENTELEA_OK;
 }
 
-static const entelea_clock_t virt_clock = {
+static entelea_clock_t virt_clock = {
 	.read_ms = virt_read_ms,
 	.user = NULL,
 	.clock_id = 0x5A5A,
@@ -130,6 +135,8 @@ static void wdt_warn_cb(const entelea_event_t *e, void *u)
 
 ZTEST(framework_core, test_wdt_math_and_failover)
 {
+	/* 用例序不保证：先净基线（源表/halted/护栏）。 */
+	entelea_wdt_test_reset();
 	/* 未绑定不伪造默认时基：register/start 显式拒绝（旧
 	 * test_time_virtual_clock 的实例绑定面）。 */
 	zassert_equal(entelea_wdt_bind_clock(NULL), ENTELEA_OK);
@@ -218,6 +225,33 @@ ZTEST(framework_core, test_wdt_math_and_failover)
 	virt_now = 63501; /* 若 grace 误激活源：deadline 63400 已超 → 逾期可见 */
 	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT,
 		      "grace 不激活未激活源");
+}
+
+/* ---- 时钟单调护栏（缺陷 5）：读失败/回退沿用最后有效值，不伪 0 ---- */
+ZTEST(framework_core, test_clock_guard_keeps_last_good)
+{
+	entelea_wdt_test_reset();
+	zassert_equal(entelea_wdt_bind_clock(&virt_clock), ENTELEA_OK);
+	virt_now = 5000;
+	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 1000), ENTELEA_OK);
+	entelea_wdt_feed(ENTELEA_WDT_SYWORK); /* last_feed = last_good = 5000 */
+	zassert_equal(entelea_wdt_clock_faults(), 0);
+	/* 读失败（时间仅前进到界内 5200）：护栏沿用 5000 → elapsed=0。
+	 * 修复前：失败→0 → elapsed=0-5000 下溢 → 伪逾期。 */
+	virt_now = 5200;
+	clock_fail_next = true;
+	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT,
+		      "clock read failure must not fabricate overdue");
+	zassert_true(entelea_wdt_clock_faults() >= 1, "failure counted");
+	/* 回退（不 feed）：last_feed=5200，时钟读回 100。护栏沿用 5200 →
+	 * elapsed=0；修复前 100-5200 下溢 → 伪逾期。 */
+	virt_now = 5200;
+	entelea_wdt_feed(ENTELEA_WDT_SYWORK);
+	virt_now = 100;
+	zassert_true(entelea_wdt_patrol_once() == ENTELEA_WDT_COUNT,
+		     "regressed clock must not fabricate overdue");
+	zassert_true(entelea_wdt_clock_faults() >= 2, "regression counted");
+	entelea_wdt_test_reset();
 }
 
 ZTEST(framework_core, test_boot_step_order_is_spec)

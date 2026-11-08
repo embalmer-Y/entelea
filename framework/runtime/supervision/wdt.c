@@ -11,6 +11,7 @@
  * noinit 留痕/上次复位读出归 R03。
  */
 #include <errno.h>
+#include <string.h>
 #include <entelea/safety.h>
 #include <entelea/supervision.h>
 #include <entelea/wdt.h>
@@ -33,6 +34,9 @@ struct wdt_src {
 static struct wdt_src srcs[ENTELEA_WDT_COUNT];
 static bool started;
 static const entelea_clock_t *wdt_clock;
+static atomic_t halted = ATOMIC_INIT(0); /* 全局停机（system_fail 置位） */
+static uint64_t clock_last_good;
+static uint32_t clock_fault_count;
 
 #ifdef CONFIG_TASK_WDT
 static int twdt_ch = -1;
@@ -54,18 +58,36 @@ entelea_result_t entelea_wdt_bind_clock(const entelea_clock_t *clock)
 }
 
 /* 经绑定实例时钟的原始 read（feed 须可在 ISR 调用：绕过 clock_now 的
- * 非原子回退簿记；ISR 安全性要求随绑定声明，见 wdt.h）。 */
+ * 非原子回退簿记；ISR 安全性要求随绑定声明，见 wdt.h）。
+ * 单调护栏（缺陷 5）：读失败或回退沿用最后有效值并计数——失败伪造 0
+ * 会使 elapsed 突变触发伪逾期（fail 误动作）。 */
 static uint32_t now32(void)
 {
 	uint64_t ms = 0;
 
 	if (wdt_clock == NULL) {
-		return 0;
+		return (uint32_t)clock_last_good;
 	}
-	if (wdt_clock->read_ms(wdt_clock->user, &ms) != ENTELEA_OK) {
-		return 0;
+	if (wdt_clock->read_ms(wdt_clock->user, &ms) != ENTELEA_OK ||
+	    ms < clock_last_good) {
+		clock_fault_count++;
+		return (uint32_t)clock_last_good;
 	}
+	clock_last_good = ms;
 	return (uint32_t)ms;
+}
+
+uint32_t entelea_wdt_clock_faults(void)
+{
+	return clock_fault_count;
+}
+
+void entelea_wdt_halt(void)
+{
+	/* 全局停机（缺陷 4）：置位后巡检不喂、不重排、不判逾——任何线程
+	 * 触发 system_fail 的停机语义相同，不依赖调用线程自身挂起；
+	 * 停喂后 task_wdt 通道到期 → sys_reboot 兜底。 */
+	atomic_set(&halted, 1);
 }
 
 static uint32_t elapsed_since(const struct wdt_src *s)
@@ -166,6 +188,9 @@ static void patrol_work_cb(struct k_work *work)
 {
 	struct k_work_delayable *d = k_work_delayable_from_work(work);
 
+	if (atomic_get(&halted) != 0) {
+		return; /* 全局停机：不喂、不重排（停喂语义由 halted 保证） */
+	}
 	entelea_wdt_feed(ENTELEA_WDT_SYWORK); /* 巡检自身运行 = sysworkq 活性证明 */
 #ifdef CONFIG_TASK_WDT
 	if (twdt_ch >= 0) {
@@ -178,7 +203,7 @@ static void patrol_work_cb(struct k_work *work)
 
 	if (overdue != ENTELEA_WDT_COUNT) {
 		entelea_safety_system_fail(ENTELEA_FAIL_WDT((uint32_t)overdue));
-		/* 停止重排巡检（停喂语义由 system_fail 停机保证）；
+		/* system_fail 置 halted（先于停机）→ 巡检此后不再喂/重排；
 		 * 停机后 task_wdt 通道无人喂 → sys_reboot 复位闭环。 */
 		return;
 	}
@@ -206,7 +231,7 @@ uint32_t entelea_wdt_patrol_period_ms(void)
 
 entelea_result_t entelea_wdt_start(void)
 {
-	if (started) {
+	if (started || atomic_get(&halted) != 0) {
 		return ENTELEA_E_STATE;
 	}
 	if (wdt_clock == NULL) {
@@ -253,9 +278,33 @@ entelea_result_t entelea_wdt_start(void)
 }
 
 #ifdef ENTELEA_TEST
+void entelea_wdt_test_reset(void)
+{
+	/* 测试隔离：先同步取消可能仍在调度的巡检项（对已调度 delayable
+	 * 重复 init 是未定义行为），再清源表/启动/halted/时钟护栏。 */
+	struct k_work_sync sync;
+
+	(void)k_work_cancel_delayable_sync(&patrol_work, &sync);
+	memset(srcs, 0, sizeof(srcs));
+	started = false;
+	atomic_set(&halted, 0);
+	clock_last_good = 0;
+	clock_fault_count = 0;
+}
+
 entelea_wdt_src_t entelea_wdt_patrol_once(void)
 {
 	return patrol_once_impl();
+}
+
+bool entelea_wdt_test_patrol_tick(void)
+{
+	/* 确定性巡检体驱动（ halted 测试用）：返回是否真正执行。 */
+	if (atomic_get(&halted) != 0) {
+		return false;
+	}
+	patrol_work_cb(&patrol_work.work);
+	return true;
 }
 
 bool entelea_wdt_grace_active(entelea_wdt_src_t src)

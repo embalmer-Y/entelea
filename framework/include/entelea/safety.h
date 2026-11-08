@@ -121,8 +121,9 @@ void entelea_safety_force_all_fault(void);
  * （ENTELEA_TEST 构建置态后返回，由用例断言停机路径）。 */
 void entelea_safety_system_fail(uint32_t reason);
 
-/** [thread] 链路判定迁移（sysworkq 串行化；带滞回归 R06 消费方）。 */
-void entelea_safety_set_link(bool up);
+/** [thread] 链路判定迁移（sysworkq 串行化；带滞回归 R06 消费方）。
+ * 迁移写失败（后端返回错误）→ ENTELEA_E_IO，不更新影子/状态。 */
+entelea_result_t entelea_safety_set_link(bool up);
 
 /* ---- 单通道故障/恢复（detach 语义的机制面） ---- */
 
@@ -162,12 +163,11 @@ typedef struct {
 
 /* ---- 驱动分发（全库唯一驱动调用点；source-policy 保护门） ---- */
 
-typedef struct {
-	void (*write)(const entelea_out_channel_t *ch, const entelea_out_value_t *v);
-	int (*read)(const entelea_out_channel_t *ch, entelea_out_value_t *out);
-} entelea_driver_ops_t;
-
-extern const entelea_driver_ops_t entelea_drivers[ENTELEA_CH_KIND_COUNT];
+/* 驱动 ops 表是 safety 模块私有实现（internal.h），不对外声明：
+ * 公开即产生绕过 commit/限幅/estop 的旁路写入口（review 缺陷 1）。
+ * 外部只读观测经 entelea_driver_sim_writes；板级后端装配套经下方
+ * entelea_drv_*_init。机械检查禁止模块外引用 entelea_drivers。
+ * 写函数返回 0/负 errno：后端失败必须传播到提交结果（缺陷 2）。 */
 
 /* 桩驱动的写序列记录（golden 数据源；真机驱动路径同样记录）。 */
 typedef struct {
@@ -186,6 +186,27 @@ uint32_t entelea_safety_test_fail_reason(void);
 /** 通道表/锁存/链路全清（测试隔离；生产不可达）。 */
 void entelea_safety_test_reset(void);
 #endif
+
+/* ---- 失败可观测（后端与时钟失败不静默） ---- */
+
+/** [any] 驱动写失败累计（force/estop 路径 ISR 内不可返回，失败留痕于此；
+ * commit/poweron 路径失败直接经返回值传播，另计入此计数）。 */
+uint32_t entelea_safety_force_write_failures(void);
+
+/** [boot/board] 真机 PWM 输出后端初始化（板级装配面；driver_dispatch.c）。
+ * 依赖 ENTELEA_DRV_PWM 编译定义 + zephyr,user 节点（pwm-uid + pwms）；
+ * 未启用/缺绑定返回 -ENODEV。 */
+int entelea_drv_pwm_init(void);
+
+/** [any] PWM 后端写失败计数（观测面）。 */
+uint32_t entelea_drv_pwm_err_count(void);
+
+/** [boot/board] 真机 GPIO 输出后端初始化（ENTELEA_DRV_GPIO +
+ * zephyr,user 的 uid + io-gpios）；未启用/缺绑定返回 -ENODEV。 */
+int entelea_drv_gpio_init(void);
+
+/** [any] 模块时钟读取失败累计（护栏生效：失败/回退沿用最后有效值）。 */
+uint32_t entelea_safety_clock_faults(void);
 
 /* 容量出处 DEC-27（旧 LLD-ts-safety §2/§7），R02 为编译期常量。 */
 #define ENTELEA_SAFETY_MAX_CHANNELS 32

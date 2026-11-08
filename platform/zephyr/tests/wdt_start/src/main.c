@@ -2,11 +2,13 @@
 /* R02 WDT 启动失败负测（迁自旧 firmware/tests/core/src/wdt_start.c）：
  * 后端失败不得报告成功、不分配通道、不置 started、重试不重复初始化。 */
 #include <errno.h>
+#include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/task_wdt/task_wdt.h>
 #include <zephyr/ztest.h>
 #include <entelea/events.h>
 #include <entelea/safety.h>
+#include <entelea/supervision.h>
 #include <entelea/wdt.h>
 
 static uint64_t virt_now;
@@ -48,6 +50,14 @@ int __wrap_task_wdt_add(uint32_t reload_period, task_wdt_callback_t callback,
 	return add_result;
 }
 
+static int feed_calls;
+
+void __wrap_task_wdt_feed(int channel_id)
+{
+	ARG_UNUSED(channel_id);
+	feed_calls++;
+}
+
 ZTEST(wdt_start_failures, test_failed_start_never_reports_ready)
 {
 	zassert_equal(entelea_wdt_bind_clock(&virt_clock), ENTELEA_OK);
@@ -75,5 +85,45 @@ ZTEST(wdt_start_failures, test_failed_start_never_reports_ready)
 		      "Retry must not reinitialize a running task watchdog");
 #endif
 }
+
+/* ---- 全局停机（缺陷 4）：halted 后任何线程视角巡检都不再喂狗 ----
+ * （仅默认变体：REQUIRED_MISSING 变体 start 本就 E_IO，无通道可喂） */
+#ifndef TEST_WDT_REQUIRED_MISSING
+ZTEST(wdt_start_failures, test_halt_stops_patrol_from_any_context)
+{
+	entelea_wdt_test_reset();
+	zassert_equal(entelea_wdt_bind_clock(&virt_clock), ENTELEA_OK);
+	virt_now = 0;
+	init_result = 0;
+	add_result = 0;
+	zassert_equal(entelea_wdt_start(), ENTELEA_OK);
+	zassert_true(entelea_wdt_test_patrol_tick(), "halt 前巡检体应执行");
+	entelea_wdt_halt();
+	int snap = feed_calls;
+
+	zassert_false(entelea_wdt_test_patrol_tick(), "halt 后巡检体不得执行");
+	k_sleep(K_MSEC(200)); /* 已排程的后台巡检也不得喂 */
+	zassert_equal(feed_calls, snap, "halted: no further task_wdt feeds");
+	zassert_equal(entelea_wdt_start(), ENTELEA_E_STATE);
+}
+
+ZTEST(wdt_start_failures, test_system_fail_halts_globally)
+{
+	entelea_wdt_test_reset();
+	zassert_equal(entelea_wdt_bind_clock(&virt_clock), ENTELEA_OK);
+	virt_now = 0;
+	init_result = 0;
+	add_result = 0;
+	zassert_equal(entelea_wdt_start(), ENTELEA_OK);
+	/* 测试线程（非巡检上下文）触发 system_fail：测试构建置态后返回，
+	 * 但停机语义必须是全局的——巡检立即停喂（缺陷 4 负测）。 */
+	entelea_safety_system_fail(ENTELEA_FAIL_WDT(0));
+	int snap = feed_calls;
+
+	k_sleep(K_MSEC(200));
+	zassert_equal(feed_calls, snap, "system_fail 后任何路径不得再喂狗");
+	zassert_false(entelea_wdt_test_patrol_tick());
+}
+#endif /* !TEST_WDT_REQUIRED_MISSING */
 
 ZTEST_SUITE(wdt_start_failures, NULL, NULL, NULL, NULL, NULL);

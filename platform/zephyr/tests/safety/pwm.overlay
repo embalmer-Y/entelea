@@ -1,0 +1,18 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* PWM 真后端路径测试绑定（缺陷 2 负测）：zephyr,user 绑定 pwmbus 通道 +
+ * 假 PWM 设备（捕获 period/pulse，可注入失败）。cycles_per_sec=1 使
+ * 捕获的 cycles 值即 ns 值，断言直接对照合同解码。 */
+/ {
+	fake_pwm: fake-pwm {
+		status = "okay";
+		compatible = "entelea,fake-pwm";
+		#pwm-cells = <3>;
+	};
+};
+
+/ {
+	zephyr,user {
+		pwms = <&fake_pwm 0 1000000 0>;
+		pwm-uid = "pwmbus";
+	};
+};

@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+description: Entelea test fake PWM controller (captures ns, injects failures)
+
+compatible: "entelea,fake-pwm"
+
+include: base.yaml
+
+properties:
+  "#pwm-cells":
+    type: int
+    required: true
+    const: 3
+
+pwm-cells:
+  - channel
+  - period
+  - flags

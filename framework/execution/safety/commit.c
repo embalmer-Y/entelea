@@ -79,9 +79,16 @@ static entelea_result_t commit_impl(const char *uid, entelea_out_value_t v)
 	}
 
 	/* 2) slew：|Δv| ≤ slew_per_ms × Δt；超率拆分到界值并返回
-	 *    ENTELEA_E_RANGE（实际落值经 readback 可观）。 */
+	 *    ENTELEA_E_RANGE（实际落值经 readback 可观）。now 单调护栏使
+	 *    now < last_t 实际不可达；带式保险显式拒绝，绝不放宽界
+	 *    （缺陷 5：下溢会得到巨大 dt = 无限制）。 */
 	if (ch->limits.slew_per_ms > 0 && s->have_last) {
-		uint64_t dt = entelea_safety_now_ms() - s->last_t;
+		uint64_t now = entelea_safety_now_ms();
+
+		if (now < s->last_t) {
+			return ENTELEA_E_STATE; /* 时基异常：不伪造 slew 界 */
+		}
+		uint64_t dt = now - s->last_t;
 		uint32_t last_u = entelea_value_encode(ch->kind, s->shadow);
 		uint32_t req_u = entelea_value_encode(ch->kind, v);
 		uint64_t bound = (uint64_t)ch->limits.slew_per_ms * (dt + 1);
@@ -102,21 +109,25 @@ static entelea_result_t commit_impl(const char *uid, entelea_out_value_t v)
 	}
 
 	/* 4) 末段临界区：防 estop ISR 与本线程竞争末笔。pre-check 与此处
-	 *    之间 forced 可能被置位——未写回时返回 ENTELEA_E_STATE
-	 *    （不得记录/报告一次从未落驱动的“成功”提交）。 */
+	 *    之间 forced 可能被置位——未写回时返回 ENTELEA_E_STATE；
+	 *    后端写失败返回 ENTELEA_E_IO（缺陷 2：后端失败绝不更新影子
+	 *    或报告成功）。两种情况都不保留 slew 基线。 */
 	unsigned int key = irq_lock();
 	bool written = false;
 
 	if (atomic_get(&entelea_forced) == 0) {
-		entelea_drivers[ch->kind].write(ch, &v);
-		s->shadow = v;
-		s->last_t = entelea_safety_now_ms();
-		s->have_last = true;
-		written = true;
+		if (entelea_drivers[ch->kind].write(ch, &v) == 0) {
+			s->shadow = v;
+			s->last_t = entelea_safety_now_ms();
+			s->have_last = true;
+			written = true;
+		}
 	}
 	irq_unlock(key);
 	if (!written) {
-		res = ENTELEA_E_STATE;
+		entelea_safety_count_write_failure();
+		res = (atomic_get(&entelea_forced) != 0) ? ENTELEA_E_STATE
+							 : ENTELEA_E_IO;
 	}
 	return res;
 }

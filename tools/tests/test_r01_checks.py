@@ -53,7 +53,7 @@ class ArchitectureTests(unittest.TestCase):
             ARCH.validate(self.root, self.policy)
 
     def test_current_sources(self):
-        self.assertEqual(ARCH.validate(ROOT, POLICY), 19)
+        self.assertEqual(ARCH.validate(ROOT, POLICY), 20)
 
     def test_unclassified_source(self):
         self.write("framework/common/extra.c", "")
@@ -95,6 +95,23 @@ class ArchitectureTests(unittest.TestCase):
         self.write("platform/zephyr/pf.c", "k_uptime_get();\n")
         self.write("framework/runtime/supervision/fw.c", "k_uptime_get();\n")
         self.rejected("Direct clock")
+
+    def test_driver_table_bypass_rejected(self):
+        self.write(
+            "platform/zephyr/pf.c",
+            "extern char entelea_drivers; char f(void) { return entelea_drivers; }\n",
+        )
+        self.rejected("Driver table bypass")
+
+    def test_driver_table_inside_safety_allowed(self):
+        self.policy["zephyr_framework"].append(
+            "framework/execution/safety/extra.c"
+        )
+        self.write(
+            "framework/execution/safety/extra.c",
+            "extern const char entelea_drivers;\n",
+        )
+        self.assertEqual(ARCH.validate(self.root, self.policy), 5)
 
     def test_platform_clock_adapter_allowed(self):
         self.write("platform/zephyr/pf.c", "k_uptime_get();\n")

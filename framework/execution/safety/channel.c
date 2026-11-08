@@ -3,8 +3,15 @@
  * 通道注册表 + 三安全态状态机（迁自旧 safety/channel.c，R02 合同
  * framework/execution/safety/contract.md）。
  * 三安全态声明缺一不予注册；安全参数运行时只读（desc 指向注册期冻结数据）。
- * 相对旧实现调整：控制源仲裁（set_arb/commit_src/ARB 事件）延至 R04；
- * 审计环形延至 R03。
+ * 相对旧实现调整（含 review 整改）：
+ * - 控制源仲裁（set_arb/commit_src/ARB 事件）延至 R04；审计环形延至 R03。
+ * - 写驱动 + 影子/状态迁移全部在 irq_lock 临界区内完成，estop ISR 抢入
+ *   不再被临界区后的更新覆盖（缺陷 3）；SAFE_STATE_CHANGED 在解锁后发布
+ *   且发布前复查 forced（estop 强制迁移不发逐通道事件，权威态以
+ *   channel_state/summary 查询为准）。
+ * - 驱动写返回值传播：poweron/断链/恢复写失败显式 E_IO，不更新成功
+ *   状态（缺陷 2）。激活迁移（→ACTIVE）不落驱动（恢复不回写，DR-04）。
+ * - 模块时钟单调护栏：读失败/回退沿用最后有效值并计数（缺陷 5）。
  */
 #include <string.h>
 #include <entelea/safety.h>
@@ -17,6 +24,48 @@ atomic_t entelea_link_up = ATOMIC_INIT(0); /* 初值 down：boot 后链路未确
 atomic_t entelea_forced = ATOMIC_INIT(0);
 atomic_t entelea_forced_at = ATOMIC_INIT(0);
 const entelea_clock_t *entelea_safety_clock;
+
+/* 单调护栏状态：最后有效时钟值与失败计数（review 缺陷 5）。 */
+static uint64_t clock_last_good;
+static uint32_t clock_fault_count;
+
+/* 驱动写失败累计（commit/poweron/迁移失败另经返回值传播；force 路径
+ * ISR 内不可返回，此计数是唯一留痕面）。 */
+static uint32_t driver_write_failures;
+
+uint64_t entelea_safety_now_ms(void)
+{
+	uint64_t ms = 0;
+
+	if (entelea_safety_clock == NULL || entelea_safety_clock->read_ms == NULL) {
+		return clock_last_good;
+	}
+	if (entelea_safety_clock->read_ms(entelea_safety_clock->user, &ms) != ENTELEA_OK ||
+	    ms < clock_last_good) {
+		/* 读失败或回退：沿用最后有效值，不伪造 0（slew 减法下溢会
+		 * 放宽输出限制）；从未成功过则保持 0（可观测的未配置）。 */
+		clock_fault_count++;
+		return clock_last_good;
+	}
+	clock_last_good = ms;
+	return ms;
+}
+
+uint32_t entelea_safety_clock_faults(void)
+{
+	return clock_fault_count;
+}
+
+uint32_t entelea_safety_force_write_failures(void)
+{
+	return driver_write_failures;
+}
+
+/** 模块内调用点（commit/force 路径）登记驱动写失败。 */
+void entelea_safety_count_write_failure(void)
+{
+	driver_write_failures++;
+}
 
 static bool value_within_limits(const entelea_out_channel_t *ch,
 		entelea_out_value_t v)
@@ -80,14 +129,11 @@ entelea_result_t entelea_safety_bind_clock(const entelea_clock_t *clock)
 	return ENTELEA_OK;
 }
 
-static void set_state(size_t i, entelea_ch_state_t next)
+/* 发布运行订阅者回调：只能在临界区外、且复查未 forced 时调用
+ * （forced 窗口内不发布过期迁移事件）。 */
+static void publish_state_change(size_t i, entelea_ch_state_t next)
 {
-	struct entelea_ch_slot *s = &entelea_ch_table[i];
-
-	if (s->state == next) {
-		return;
-	}
-	s->state = next;
+	const struct entelea_ch_slot *s = &entelea_ch_table[i];
 	const entelea_safe_state_evt_t payload = {
 		.uid = s->desc->uid,
 		.new_state = (int32_t)next,
@@ -97,30 +143,68 @@ static void set_state(size_t i, entelea_ch_state_t next)
 		.data = &payload,
 		.len = sizeof(payload),
 	};
+
 	entelea_evt_publish(&evt);
+}
+
+/** 写驱动 + 影子/状态迁移，须持 irq_lock（estop 抢入窗口闭合）。
+ * 返回 0=完成；1=forced 抢入（保持 SAFE_FAULT）；-1=后端写失败。 */
+static int write_transition_locked(struct entelea_ch_slot *s,
+		entelea_out_value_t value, entelea_ch_state_t next)
+{
+	if (atomic_get(&entelea_forced) != 0) {
+		return 1;
+	}
+	if (entelea_drivers[s->desc->kind].write(s->desc, &value) != 0) {
+		driver_write_failures++;
+		return -1; /* 后端失败：不更新影子/状态，不伪造成功 */
+	}
+	s->shadow = value;
+	s->have_last = false;
+	s->state = next;
+	return 0;
+}
+
+/** 仅状态迁移（激活面：不落驱动——恢复不回写，DR-04），须持 irq_lock。
+ * 返回 0=完成；1=forced 抢入。 */
+static int activate_locked(struct entelea_ch_slot *s)
+{
+	if (atomic_get(&entelea_forced) != 0) {
+		return 1;
+	}
+	s->have_last = false;
+	s->state = ENTELEA_ST_ACTIVE;
+	return 0;
 }
 
 entelea_result_t entelea_safety_poweron_init(void)
 {
+	bool any_fail = false;
+
 	for (size_t i = 0; i < entelea_ch_count; i++) {
 		struct entelea_ch_slot *s = &entelea_ch_table[i];
 
-		s->state = ENTELEA_ST_SAFE_POWERON;
 		/* 注册期 poweron 值落驱动：boot 步骤 2 时物理输出即达声明的
-		 * 上电安全态（声明≠驱动复位缺省即漂移）。单线程 boot 上下文
-		 * （无锁竞争）；直写不经 commit——三态落驱动的 poweron 面。 */
-		if (s->desc != NULL) {
-			entelea_drivers[s->desc->kind].write(s->desc, &s->desc->poweron);
-			s->shadow = s->desc->poweron;
+		 * 上电安全态。estop 可在 estop_init（步骤 1）之后任意时刻抢入：
+		 * forced 则跳过，保持 ISR 置的 SAFE_FAULT（缺陷 3）；写失败
+		 * 聚合上报 → boot fail-safe（缺陷 2；物理未知由 fail-safe 收口）。 */
+		unsigned int key = irq_lock();
+		int rc = write_transition_locked(s, s->desc->poweron,
+						 ENTELEA_ST_SAFE_POWERON);
+
+		irq_unlock(key);
+		if (rc < 0) {
+			any_fail = true;
 		}
 	}
-	return ENTELEA_OK;
+	return any_fail ? ENTELEA_E_IO : ENTELEA_OK;
 }
 
-void entelea_safety_set_link(bool up)
+entelea_result_t entelea_safety_set_link(bool up)
 {
-	/* 锁收口：迁移路径与 commit/单通道迁移互斥（set_state 发布事件在锁内
-	 * ——锁序 write_lock → 事件发布，单向）。线程上下文（sysworkq）。 */
+	bool any_fail = false;
+
+	/* 锁收口：迁移路径与 commit/单通道迁移互斥（线程上下文）。 */
 	entelea_safety_write_lock();
 	atomic_set(&entelea_link_up, up ? 1 : 0);
 	for (size_t i = 0; i < entelea_ch_count; i++) {
@@ -128,31 +212,46 @@ void entelea_safety_set_link(bool up)
 
 		if (up && (s->state == ENTELEA_ST_SAFE_POWERON ||
 			   s->state == ENTELEA_ST_SAFE_LINKLOSS)) {
-			/* 链路确立：SAFE_POWERON/SAFE_LINKLOSS → ACTIVE。
-			 * 恢复不自动回写断链前的值——须显式 commit。 */
-			set_state(i, ENTELEA_ST_ACTIVE);
-		} else if (!up && s->state == ENTELEA_ST_ACTIVE) {
-			/* 断链：ACTIVE → SAFE_LINKLOSS。声明值落驱动；
-			 * shadow 改写 + 恢复不回写。estop ISR 可在持锁检查与写
-			 * 驱动之间抢入——irq_lock 末段复查 forced；抢入后本通道
-			 * 保持 SAFE_FAULT（fault 语义不丢失）。 */
-			if (atomic_get(&entelea_forced) != 0) {
-				continue;
-			}
+			/* 激活：不落驱动（恢复不自动回写断链前的值）。 */
 			unsigned int key = irq_lock();
+			int rc = activate_locked(s);
 
-			if (atomic_get(&entelea_forced) == 0) {
-				entelea_drivers[s->desc->kind].write(s->desc,
-								     &s->desc->linkloss);
-			}
 			irq_unlock(key);
-			s->shadow = s->desc->linkloss;
-			s->have_last = false;
-			set_state(i, ENTELEA_ST_SAFE_LINKLOSS);
+			if (rc == 0 && atomic_get(&entelea_forced) == 0) {
+				publish_state_change(i, ENTELEA_ST_ACTIVE);
+			}
+		} else if (!up && s->state == ENTELEA_ST_ACTIVE) {
+			/* 断链：声明值落驱动 + 迁移，全部在临界区内（缺陷 3）。 */
+			unsigned int key = irq_lock();
+			int rc = write_transition_locked(s, s->desc->linkloss,
+							 ENTELEA_ST_SAFE_LINKLOSS);
+
+			irq_unlock(key);
+			if (rc < 0) {
+				any_fail = true;
+			} else if (rc == 0 && atomic_get(&entelea_forced) == 0) {
+				publish_state_change(i, ENTELEA_ST_SAFE_LINKLOSS);
+			}
 		}
 	}
 	entelea_safety_write_unlock();
+	return any_fail ? ENTELEA_E_IO : ENTELEA_OK;
 }
+
+#ifdef ENTELEA_TEST
+void entelea_safety_test_reset(void)
+{
+	memset(entelea_ch_table, 0, sizeof(entelea_ch_table));
+	entelea_ch_count = 0;
+	atomic_set(&entelea_forced, 0);
+	atomic_set(&entelea_forced_at, 0);
+	atomic_set(&entelea_link_up, 0);
+	clock_last_good = 0;
+	clock_fault_count = 0;
+	driver_write_failures = 0;
+	entelea_safety_estop_announce_reset();
+}
+#endif
 
 entelea_result_t entelea_safety_force_channel_fault(const char *uid)
 {
@@ -164,13 +263,19 @@ entelea_result_t entelea_safety_force_channel_fault(const char *uid)
 	/* 锁收口：与 commit/迁移互斥 */
 	entelea_safety_write_lock();
 	struct entelea_ch_slot *s = &entelea_ch_table[i];
+	entelea_ch_state_t prev = s->state;
+	unsigned int key = irq_lock();
+	int rc = write_transition_locked(s, s->desc->fault, ENTELEA_ST_SAFE_FAULT);
 
-	/* 与 force_all_fault 同语义但单通道；不置全局 forced（estop 专用锁存）。 */
-	entelea_drivers[s->desc->kind].write(s->desc, &s->desc->fault);
-	s->shadow = s->desc->fault;
-	s->have_last = false;
-	set_state(i, ENTELEA_ST_SAFE_FAULT);
+	irq_unlock(key);
 	entelea_safety_write_unlock();
+	if (rc < 0) {
+		return ENTELEA_E_IO; /* 后端失败：状态未迁移，不伪造 detach 成功 */
+	}
+	if (rc == 0 && prev != ENTELEA_ST_SAFE_FAULT &&
+	    atomic_get(&entelea_forced) == 0) {
+		publish_state_change(i, ENTELEA_ST_SAFE_FAULT);
+	}
 	return ENTELEA_OK;
 }
 
@@ -188,29 +293,24 @@ entelea_result_t entelea_safety_channel_recover(const char *uid)
 	entelea_safety_write_lock();
 	if (atomic_get(&entelea_forced) != 0) {
 		entelea_safety_write_unlock();
-		return ENTELEA_E_STATE; /* 双检：持锁后复核（estop 可在两检之间置位） */
+		return ENTELEA_E_STATE; /* 双检：持锁后复核 */
 	}
 	struct entelea_ch_slot *s = &entelea_ch_table[i];
+	entelea_ch_state_t next =
+		atomic_get(&entelea_link_up) ? ENTELEA_ST_ACTIVE : ENTELEA_ST_SAFE_POWERON;
 
-	/* 物理重附 = 重新上电语义：回 poweron 值；链路已立 → ACTIVE。
-	 * estop ISR 可在第二次检查与写驱动之间抢入——irq_lock 末段复查
-	 * forced；抢入则放弃迁移（通道保持 SAFE_FAULT）。 */
+	/* 物理重附 = 重新上电语义：回 poweron 值（写+迁移在临界区内，缺陷 3）。 */
 	unsigned int key = irq_lock();
-	bool forced_now = atomic_get(&entelea_forced) != 0;
+	int rc = write_transition_locked(s, s->desc->poweron, next);
 
-	if (!forced_now) {
-		entelea_drivers[s->desc->kind].write(s->desc, &s->desc->poweron);
-	}
 	irq_unlock(key);
-	if (forced_now) {
-		entelea_safety_write_unlock();
-		return ENTELEA_E_STATE;
-	}
-	s->shadow = s->desc->poweron;
-	s->have_last = false;
-	set_state(i, atomic_get(&entelea_link_up) ? ENTELEA_ST_ACTIVE
-						  : ENTELEA_ST_SAFE_POWERON);
 	entelea_safety_write_unlock();
+	if (rc < 0) {
+		return ENTELEA_E_IO;
+	}
+	if (rc == 0 && atomic_get(&entelea_forced) == 0) {
+		publish_state_change(i, next);
+	}
 	return ENTELEA_OK;
 }
 
@@ -219,17 +319,30 @@ entelea_result_t entelea_safety_clear_fault(void)
 	/* estop 锁存的唯一释放路径（运行期可达性归后续命令面；R02 直调仅供
 	 * 测试）。释放语义：状态条件恢复（link up → ACTIVE，否则
 	 * SAFE_LINKLOSS）+ 输出值不回写——物理输出保持 fault 安全值直至
-	 * 下一次显式 commit。 */
+	 * 下一次显式 commit。estop 可在释放后任意时刻再抢入：逐通道在
+	 * 临界区内复查 forced（缺陷 3）。 */
 	atomic_set(&entelea_forced, 0);
 	entelea_safety_estop_announce_reset();
 	/* 锁收口：状态批量迁移与 commit/单通道迁移互斥 */
 	entelea_safety_write_lock();
 	for (size_t i = 0; i < entelea_ch_count; i++) {
-		if (entelea_ch_table[i].state == ENTELEA_ST_SAFE_FAULT) {
-			set_state(i, atomic_get(&entelea_link_up)
-					     ? ENTELEA_ST_ACTIVE
-					     : ENTELEA_ST_SAFE_LINKLOSS);
-			entelea_ch_table[i].have_last = false;
+		struct entelea_ch_slot *s = &entelea_ch_table[i];
+
+		if (s->state != ENTELEA_ST_SAFE_FAULT) {
+			continue;
+		}
+		entelea_ch_state_t next = atomic_get(&entelea_link_up)
+						  ? ENTELEA_ST_ACTIVE
+						  : ENTELEA_ST_SAFE_LINKLOSS;
+		unsigned int key = irq_lock();
+
+		if (atomic_get(&entelea_forced) == 0) {
+			s->have_last = false;
+			s->state = next;
+		}
+		irq_unlock(key);
+		if (atomic_get(&entelea_forced) == 0) {
+			publish_state_change(i, next);
 		}
 	}
 	entelea_safety_write_unlock();
@@ -266,15 +379,3 @@ entelea_result_t entelea_safety_summary(entelea_safety_summary_t *out)
 	out->channels = (uint16_t)entelea_ch_count;
 	return ENTELEA_OK;
 }
-
-#ifdef ENTELEA_TEST
-void entelea_safety_test_reset(void)
-{
-	memset(entelea_ch_table, 0, sizeof(entelea_ch_table));
-	entelea_ch_count = 0;
-	atomic_set(&entelea_forced, 0);
-	atomic_set(&entelea_forced_at, 0);
-	atomic_set(&entelea_link_up, 0);
-	entelea_safety_estop_announce_reset();
-}
-#endif

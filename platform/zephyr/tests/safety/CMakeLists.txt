@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 cmake_minimum_required(VERSION 3.20.0)
+if(TEST_PWM_REAL)
+  set(DTC_OVERLAY_FILE ${CMAKE_CURRENT_SOURCE_DIR}/pwm.overlay)
+endif()
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(entelea_tests_safety)
 
@@ -20,3 +23,7 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/execution/safety/drivers.c
 )
 target_compile_definitions(app PRIVATE ENTELEA_TEST=1)
+if(TEST_PWM_REAL)
+  target_sources(app PRIVATE src/pwm_real.c)
+  target_compile_definitions(app PRIVATE ENTELEA_DRV_PWM=1)
+endif()
