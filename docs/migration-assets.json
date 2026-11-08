@@ -943,7 +943,7 @@
       "first_batch": "R01",
       "migration_action": "extract",
       "status": "in_progress",
-      "constraints": "传输缝可复用；linkmon 与 model 可用分开；cmd 不是完整 Task service。 R01仅迁上述源项/声明或核验子集；组级验证未完成。",
+      "constraints": "传输缝可复用；linkmon 与 model 可用分开；cmd 不是完整 Task service。 R01仅迁上述源项/声明或核验子集；组级验证未完成。 R06机制面已迁（心跳滞回+模式守卫/租约惰性过期+席位视图/幂等LRU+unknown不缓存）+新依赖状态机（恢复防抖2连/独立判定）；真实传输/云/会话重连归真机批。",
       "target_paths": [],
       "verification": {
         "state": "not_run",
@@ -1000,8 +1000,8 @@
       ],
       "first_batch": "R06",
       "migration_action": "adapt",
-      "status": "not_migrated",
-      "constraints": "静态表/单调用回执与私有 store.h；恢复期未知非幂等行为重审。",
+      "status": "in_progress",
+      "constraints": "静态表/单调用回执与私有 store.h；恢复期未知非幂等行为重审。 R06幂等缓存面已迁（LRU回放/unknown非幂等不自动重试）；命令分发全表归真机命令面批次。",
       "target_paths": [],
       "verification": {
         "state": "not_run",
@@ -3058,13 +3058,19 @@
       ],
       "first_batch": "R06",
       "migration_action": "new",
-      "status": "not_migrated",
-      "constraints": "没有旧完整实现；先冻结窄合同和验收，不从目录/日志推断完成。",
-      "target_paths": [],
+      "status": "migrated",
+      "constraints": "四类依赖可观测态；恢复防抖2连good（D08建议值）；DOWN立即（保守）；独立App判各自依赖不被全局绑死。",
+      "target_paths": [
+        "framework/services/net/netmon.c",
+        "framework/include/entelea/netmon.h"
+      ],
       "verification": {
-        "state": "not_run",
-        "evidence_paths": []
-      }
+        "state": "passed",
+        "evidence_paths": [
+          "docs/r06-validation.md"
+        ]
+      },
+      "implementation_commit": "44b4131209d9f5c51556dac5235c9d958852a7fc"
     },
     {
       "id": "N-PLATFORM-LINUX",
@@ -4557,9 +4563,12 @@
       "sha256": "fc6fa8dd0ed4afe4b0aab97318f3d91421f77097c6e592d4a2778ff4a6be579d",
       "id": "S-legacy-212edb77208178752f8d",
       "asset_id": "A-CMD",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/net/netmon.c",
+        "framework/include/entelea/netmon.h"
+      ],
+      "migration_commit": "44b4131209d9f5c51556dac5235c9d958852a7fc"
     },
     {
       "repository": "legacy",
@@ -4613,9 +4622,13 @@
       "sha256": "505a419f90f72f4e575fc5f1209c4fbf4125c2d5793b1d176f449cfb186207f6",
       "id": "S-legacy-b52ae544c3b3a7a94f65",
       "asset_id": "A-LEASE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/net/netmon.c",
+        "framework/include/entelea/netmon.h",
+        "platform/zephyr/tests/net/src/main.c"
+      ],
+      "migration_commit": "44b4131209d9f5c51556dac5235c9d958852a7fc"
     },
     {
       "repository": "legacy",
@@ -4626,9 +4639,13 @@
       "sha256": "caa60febd5f4482f0859e891dfe9bda39a8c51ad30659d75e2182e1196508295",
       "id": "S-legacy-16fb5b3631e97b785c17",
       "asset_id": "A-NET",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/net/netmon.c",
+        "framework/include/entelea/netmon.h",
+        "platform/zephyr/tests/net/src/main.c"
+      ],
+      "migration_commit": "44b4131209d9f5c51556dac5235c9d958852a7fc"
     },
     {
       "repository": "legacy",
