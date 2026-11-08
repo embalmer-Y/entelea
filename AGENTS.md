@@ -1,6 +1,8 @@
 # Entelea agent entry
 
-This tree has R01 common primitives, not an implemented device runtime or product.
+This tree has R01 common primitives plus the R02 supervision/output-protection
+software loop (in progress; board bring-up and the hardware gate are blocked on
+the owner's D12 freeze). It is not an implemented device runtime or product.
 
 - Read README and the current batch in `docs/rebuild-plan.md` first.
 - Use `docs/migration-assets.json` as the sole migration/status ledger. Query only
