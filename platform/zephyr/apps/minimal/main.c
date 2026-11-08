@@ -6,6 +6,7 @@
 #include <zephyr/sys/printk.h>
 #include <entelea/events.h>
 #include <entelea/safety.h>
+#include <entelea/storage.h>
 #include <entelea/supervision.h>
 #include <entelea/wdt.h>
 #include "boot_steps.h"
@@ -28,6 +29,16 @@ int main(void)
 	printk("[entelea] minimal supervision image: outputs held at safe poweron\n");
 	entelea_supervision_boot(entelea_platform_boot_steps,
 				 ENTELEA_PLATFORM_BOOT_STEP_COUNT);
+	{
+		uint32_t reason = 0;
+		bool present = false;
+
+		entelea_storage_last_reset(&reason, &present);
+		if (present) {
+			printk("[entelea] last abnormal reset reason=0x%08x (noinit)\n",
+			       reason);
+		}
+	}
 	for (;;) {
 		k_sleep(K_FOREVER); /* main 转常驻监督空闲 */
 	}

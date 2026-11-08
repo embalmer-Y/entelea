@@ -11,6 +11,9 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/platform/zephyr/boot_steps.c
   ${ENTELEA_ROOT}/platform/zephyr/clock.c
   ${ENTELEA_ROOT}/framework/common/time.c
+  ${ENTELEA_ROOT}/framework/services/storage/part.c
+  ${ENTELEA_ROOT}/framework/services/storage/meta.c
+  ${ENTELEA_ROOT}/framework/services/storage/noinit.c
   ${ENTELEA_ROOT}/framework/runtime/supervision/events.c
   ${ENTELEA_ROOT}/framework/runtime/supervision/wdt.c
   ${ENTELEA_ROOT}/framework/runtime/supervision/boot.c

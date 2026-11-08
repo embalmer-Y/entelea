@@ -91,13 +91,14 @@ def validate(root, policy):
                 if group == "compat"
                 else "framework/common/"
                 if group == "common"
-                else "framework/runtime/ or framework/execution/"
+                else "framework/runtime|execution|services/"
                 if group == "zephyr_framework"
                 else "platform/zephyr/"
             )
             ok = (
                 path.startswith("framework/runtime/")
                 or path.startswith("framework/execution/")
+                or path.startswith("framework/services/")
                 if group == "zephyr_framework"
                 else path.startswith(expected)
             )

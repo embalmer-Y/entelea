@@ -14,6 +14,13 @@
 static uint32_t fail_reason_store;
 atomic_t entelea_system_failed = ATOMIC_INIT(0);
 
+/* 复位原因留痕钩：存储模块（R03）强实现落 noinit；无存储构建为弱桩
+ * （留痕缺失如实呈现，不伪造）。 */
+__weak void entelea_safety_record_fail_reason(uint32_t reason)
+{
+	(void)reason;
+}
+
 #ifdef ENTELEA_TEST
 void entelea_safety_test_reset_system_failed(void)
 {
@@ -89,7 +96,8 @@ void entelea_safety_system_fail(uint32_t reason)
 		s->have_last = true;
 		s->state = ENTELEA_ST_SAFE_FAULT;
 	}
-	/* noinit 留痕（复位后归因）归 R03 存储批次。 */
+	/* 复位原因留痕（R03 接线：存储强实现落 noinit；弱桩 = 无存储构建）。 */
+	entelea_safety_record_fail_reason(reason);
 
 #ifdef ENTELEA_TEST
 	return; /* 测试构建：置态后返回，由用例断言停机路径 */

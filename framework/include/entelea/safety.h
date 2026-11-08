@@ -118,8 +118,13 @@ entelea_result_t entelea_safety_summary(entelea_safety_summary_t *out);
 void entelea_safety_force_all_fault(void);
 
 /** [thread] WDT/BOOT/子系统故障：全通道进 SAFE_FAULT 并停机编排
- * （ENTELEA_TEST 构建置态后返回，由用例断言停机路径）。 */
+ * （ENTELEA_TEST 构建置态后返回，由用例断言停机路径）。
+ * 停机前经 entelea_safety_record_fail_reason 留痕（存储模块强实现
+ * 落 noinit；无存储构建为弱桩——留痕缺失如实呈现）。 */
 void entelea_safety_system_fail(uint32_t reason);
+
+/** system_fail 复位原因留痕钩（force.c 弱桩；存储模块 R03 强实现）。 */
+void entelea_safety_record_fail_reason(uint32_t reason);
 
 /** [thread] 链路判定迁移（sysworkq 串行化；带滞回归 R06 消费方）。
  * 迁移写失败（后端返回错误）→ ENTELEA_E_IO，不更新影子/状态。 */

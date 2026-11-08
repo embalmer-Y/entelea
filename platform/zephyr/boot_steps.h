@@ -11,7 +11,7 @@
 #include <stddef.h>
 #include <entelea/supervision.h>
 
-#define ENTELEA_PLATFORM_BOOT_STEP_COUNT 4
+#define ENTELEA_PLATFORM_BOOT_STEP_COUNT 5
 
 extern const entelea_boot_step_t entelea_platform_boot_steps[ENTELEA_PLATFORM_BOOT_STEP_COUNT];
 

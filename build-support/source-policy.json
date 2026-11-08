@@ -17,7 +17,10 @@
     "framework/execution/safety/channel.c",
     "framework/execution/safety/commit.c",
     "framework/execution/safety/force.c",
-    "framework/execution/safety/drivers.c"
+    "framework/execution/safety/drivers.c",
+    "framework/services/storage/part.c",
+    "framework/services/storage/meta.c",
+    "framework/services/storage/noinit.c"
   ],
   "platform_zephyr": [
     "platform/zephyr/clock.c",
@@ -27,7 +30,8 @@
     "platform/zephyr/tests/safety/src/main.c",
     "platform/zephyr/tests/wdt_start/src/main.c",
     "platform/zephyr/tests/wdt_hardware/src/main.c",
-    "platform/zephyr/tests/safety/src/pwm_real.c"
+    "platform/zephyr/tests/safety/src/pwm_real.c",
+    "platform/zephyr/tests/store/src/main.c"
   ],
   "diagnostics": {},
   "protected_output_sources": [

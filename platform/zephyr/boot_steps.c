@@ -2,6 +2,7 @@
 /* R02 平台装配启动表：estop GPIO → 全通道安全起始态 → WDT 启动 →
  * 监督就绪（占位锚定顺序）。后续业务批次只在尾部追加步骤。 */
 #include <entelea/safety.h>
+#include <entelea/storage.h>
 #include <entelea/wdt.h>
 #include "boot_steps.h"
 
@@ -27,9 +28,17 @@ static entelea_result_t step_supervision_ready(void)
 	return ENTELEA_OK;
 }
 
+static entelea_result_t step_storage_init(void)
+{
+	/* R03 尾部追加：存储初始化 + noinit 消费；上次异常复位留痕经
+	 * entelea_storage_last_reset 由装配/观测面上报（打印留在平台层）。 */
+	return entelea_storage_init();
+}
+
 const entelea_boot_step_t entelea_platform_boot_steps[ENTELEA_PLATFORM_BOOT_STEP_COUNT] = {
 	{"estop_gpio", step_estop_gpio},
 	{"safety_poweron", step_safety_poweron},
 	{"wdt_start", step_wdt_start},
 	{"supervision_ready", step_supervision_ready},
+	{"storage_init", step_storage_init},
 };
