@@ -38,7 +38,8 @@
     "framework/services/net/netmon.c",
     "framework/services/assistant/assistant.c",
     "framework/services/media/media.c",
-    "framework/services/memory/memory.c"
+    "framework/services/memory/memory.c",
+    "framework/services/affect/affect.c"
   ],
   "platform_zephyr": [
     "platform/zephyr/clock.c",
@@ -60,7 +61,8 @@
     "platform/linux/zephyr_shim.c",
     "platform/zephyr/tests/assist/src/main.c",
     "platform/zephyr/tests/media/src/main.c",
-    "platform/zephyr/tests/memory/src/main.c"
+    "platform/zephyr/tests/memory/src/main.c",
+    "platform/zephyr/tests/affect/src/main.c"
   ],
   "diagnostics": {},
   "protected_output_sources": [
