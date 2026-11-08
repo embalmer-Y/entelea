@@ -234,7 +234,12 @@
       "depends_on": [
         "R01"
       ],
-      "status": "in_progress"
+      "status": "done",
+      "evidence_paths": [
+        "docs/r02-validation.md"
+      ],
+      "implementation_commit": "94da27e",
+      "note": "软件面三轮整改+native_sim 全绿；D12 硬件闸 2026-11-08 owner 授权实测：烧录/上电/复位一致性+两相物理故障停止闭环（system_fail→SW复位≤4.2s；内核楔死→MWDT0 SoC 硬复位≤8.8s）。未测残留如实：真实断电/estop 物理边沿（DT 未冻结）/输出电平测量（无仪器）——见验证记录。"
     },
     {
       "id": "R03",
