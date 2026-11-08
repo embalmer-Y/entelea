@@ -1,0 +1,16 @@
+identifier: esp32p4c5_core_board/esp32p4/hpcore
+name: Osptek ESP32-P4C5 Core Board HP Core
+type: mcu
+arch: riscv
+toolchain:
+  - zephyr
+testing:
+  ignore_tags:
+    - heap
+supported:
+  - entropy
+  - gpio
+  - hwinfo
+  - uart
+  - watchdog
+vendor: osptek

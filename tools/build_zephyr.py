@@ -89,7 +89,28 @@ def preflight(root, args):
              "--checkout", str(module_path)])
         modules.append(str(module_path))
 
+    # Managed esptool shim: the frozen venv's console script carries a stale
+    # pre-relocation shebang; do not modify the venv. Instead verify the given
+    # interpreter can import esptool, generate a shim in the build dir and
+    # prepend it to PATH for configure+build (explicit, no auto-install).
+    if args.esptool_python:
+        esppy = Path(args.esptool_python).absolute()
+        if not esppy.is_file():
+            raise BuildError(f"--esptool-python not found: {esppy}")
+        run([str(esppy), "-c", "import esptool"], env=dict(os.environ))
+        toolbin = root / "build" / ".toolbin"
+        toolbin.mkdir(parents=True, exist_ok=True)
+        shim = toolbin / "esptool"
+        shim.write_text(f"#!/bin/sh\nexec {esppy} -m esptool \"$@\"\n")
+        shim.chmod(0o755)
+        env_path = str(toolbin) + os.pathsep + os.environ.get("PATH", "")
+        print(f"[preflight] esptool shim: {shim} -> {esppy} -m esptool")
+    else:
+        env_path = None
+
     env = dict(os.environ)
+    if env_path is not None:
+        env["PATH"] = env_path
     env["ZEPHYR_BASE"] = str(zephyr_base)
     env["ZEPHYR_MODULES"] = ";".join(modules)  # explicit set; no west workspace
 
@@ -263,6 +284,7 @@ def verify_effective_config(build_dir, args, modules):
                 f"cache={actual}, verified={expected}"
             )
     # Modules actually consumed by the build: identity, not just count.
+    # Format per line: "name":"<module-root>":"<module-root>/zephyr"
     module_file = build_dir / "zephyr_modules.txt"
     effective = []
     if module_file.is_file():
@@ -274,9 +296,9 @@ def verify_effective_config(build_dir, args, modules):
     expected_roots = {str(Path(m).resolve()) for m in modules}
     effective_roots = set()
     for entry in effective:
-        # Entries are <module-root>/zephyr/module.yml style paths.
-        root = str(Path(entry).resolve().parents[1])
-        effective_roots.add(root)
+        parts = [seg.strip('"') for seg in entry.split('":')]
+        root = parts[1] if len(parts) > 1 else parts[0]
+        effective_roots.add(str(Path(root).resolve()))
     if effective_roots != expected_roots:
         raise BuildError(
             "Effective module set differs from the verified set: "
@@ -299,6 +321,11 @@ def main():
     parser.add_argument(
         "--python",
         help="Pinned build interpreter (e.g. the frozen venv python with pyelftools)",
+    )
+    parser.add_argument(
+        "--esptool-python",
+        help="Interpreter providing the esptool module (espressif targets); "
+        "a managed shim is generated - the source venv is never modified",
     )
     parser.add_argument("--board-root", help="Out-of-tree board directory inside the repo")
     parser.add_argument(

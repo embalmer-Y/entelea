@@ -1,0 +1,10 @@
+# Osptek ESP32-P4C5 Core Board configuration
+#
+# Copyright (c) 2026 Tessera Project
+#
+# SPDX-License-Identifier: Apache-2.0
+
+config BOARD_ESP32P4C5_CORE_BOARD
+	select SOC_ESP32P4_HPCORE if BOARD_ESP32P4C5_CORE_BOARD_ESP32P4_HPCORE
+	select SOC_ESP32P4_LPCORE if BOARD_ESP32P4C5_CORE_BOARD_ESP32P4_LPCORE
+	select SOC_ESP32P4_REV_3_1

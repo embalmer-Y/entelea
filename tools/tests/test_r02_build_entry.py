@@ -1,6 +1,7 @@
 """R02 build-entry preflight: explicit failures, no silent fallback."""
 
 import importlib.util
+import os
 import stat
 import subprocess
 import tempfile
@@ -43,6 +44,7 @@ class PreflightTests(unittest.TestCase):
             gcc_version=None,
             host_cc="cc",
             python=None,
+            esptool_python=None,
             board_root=None,
             module=None,
             cmake_arg=None,
@@ -311,7 +313,7 @@ class PreflightTests(unittest.TestCase):
         target = self.repo / "build" / "r02-native_sim"
         rogue = self.root / "rogue"
         rogue.mkdir()
-        (target / "zephyr_modules.txt").write_text(f"{rogue}/zephyr/module.yml\n")
+        (target / "zephyr_modules.txt").write_text(f'"rogue":"{rogue}":"{rogue}/zephyr"\n')
         with mock.patch.object(BZ.shutil, "which", return_value="/usr/bin/cc"):
             with self.assertRaisesRegex(BZ.BuildError, "module set differs"):
                 self.check_effective([])
@@ -320,7 +322,7 @@ class PreflightTests(unittest.TestCase):
         self.write_cache(cc="/usr/bin/cc")
         target = self.repo / "build" / "r02-native_sim"
         hal = self.root / "hal"
-        (target / "zephyr_modules.txt").write_text(f"{hal}/zephyr/module.yml\n")
+        (target / "zephyr_modules.txt").write_text(f'"hal_espressif":"{hal}":"{hal}/zephyr"\n')
         with mock.patch.object(BZ.shutil, "which", return_value="/usr/bin/cc"):
             BZ.verify_effective_config(
                 target, type("Args", (), self.base)(), [str(hal)]
@@ -402,6 +404,40 @@ class PreflightTests(unittest.TestCase):
         board_index = cmake_args.index("-DBOARD=native_sim")
         cc_index = cmake_args.index("-DCMAKE_C_COMPILER=/usr/bin/cc")
         self.assertLess(board_index, cc_index, "managed args precede user args")
+
+    def test_esptool_python_missing_rejected(self):
+        self.base["esptool_python"] = str(self.root / "no-esppy")
+        self.fails("--esptool-python not found")
+
+    def test_esptool_python_import_fail_rejected(self):
+        esppy = self.root / "fakepy2"
+        esppy.write_text("#!/bin/sh\nexit 0\n")
+        esppy.chmod(esppy.stat().st_mode | stat.S_IEXEC)
+        self.base["esptool_python"] = str(esppy)
+
+        def reject(command, env=None, cwd=None):
+            cmd = [str(part) for part in command]
+            if "import esptool" in " ".join(cmd):
+                raise BZ.BuildError("import esptool failed")
+            return self.ok_run(command, env, cwd)
+
+        with mock.patch.object(BZ, "run", side_effect=reject):
+            with self.assertRaisesRegex(BZ.BuildError, "import esptool"):
+                BZ.preflight(self.repo, type("Args", (), self.base)())
+
+    def test_esptool_shim_generated_and_path_prepended(self):
+        esppy = self.root / "fakepy3"
+        esppy.write_text("#!/bin/sh\nexit 0\n")
+        esppy.chmod(esppy.stat().st_mode | stat.S_IEXEC)
+        self.base["esptool_python"] = str(esppy)
+        with mock.patch.object(BZ, "run", side_effect=self.ok_run):
+            with mock.patch.object(BZ.shutil, "which", return_value="/usr/bin/cc"):
+                env, cmake_args, build_dir = BZ.preflight(
+                    self.repo, type("Args", (), self.base)()
+                )
+        shim = self.repo / "build" / ".toolbin" / "esptool"
+        self.assertTrue(shim.is_file())
+        self.assertIn(str(self.repo / "build" / ".toolbin"), env["PATH"].split(os.pathsep)[0])
 
     def test_check_dependencies_invoked_read_only(self):
         seen = []
