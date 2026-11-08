@@ -3112,13 +3112,19 @@
       ],
       "first_batch": "R08",
       "migration_action": "new",
-      "status": "not_migrated",
-      "constraints": "没有旧完整实现；先冻结窄合同和验收，不从目录/日志推断完成。",
-      "target_paths": [],
+      "status": "migrated",
+      "constraints": "有界窗16（建议值）弃最旧+计数；快照只读。",
+      "target_paths": [
+        "framework/services/assistant/assistant.c",
+        "framework/include/entelea/assistant.h"
+      ],
       "verification": {
-        "state": "not_run",
-        "evidence_paths": []
-      }
+        "state": "passed",
+        "evidence_paths": [
+          "docs/r08-validation.md"
+        ]
+      },
+      "implementation_commit": "fc5d2562a911f3c7dfa0685663f234331eccb76e"
     },
     {
       "id": "N-DELIBERATION",
@@ -3131,13 +3137,19 @@
       ],
       "first_batch": "R08",
       "migration_action": "new",
-      "status": "not_migrated",
-      "constraints": "没有旧完整实现；先冻结窄合同和验收，不从目录/日志推断完成。",
-      "target_paths": [],
+      "status": "migrated",
+      "constraints": "窗满/显式触发（无定时器）；候选=建议载荷经R04权限+R02保护层；云依赖=model∩net（独立App不绑死）。",
+      "target_paths": [
+        "framework/services/assistant/assistant.c",
+        "framework/include/entelea/assistant.h"
+      ],
       "verification": {
-        "state": "not_run",
-        "evidence_paths": []
-      }
+        "state": "passed",
+        "evidence_paths": [
+          "docs/r08-validation.md"
+        ]
+      },
+      "implementation_commit": "fc5d2562a911f3c7dfa0685663f234331eccb76e"
     },
     {
       "id": "N-MEMORY",
