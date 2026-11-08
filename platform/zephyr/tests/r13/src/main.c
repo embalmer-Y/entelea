@@ -79,7 +79,7 @@ ZTEST(framework_r13, test_cross_mechanism_contract_representative)
 	zassert_equal(entelea_principal_bind(&ctx, 1, &t), ENTELEA_OK);
 	entelea_task_id_t id = 0;
 
-	zassert_equal(entelea_task_submit(ctx, "x", 1, &id), ENTELEA_OK);
+	zassert_equal(entelea_task_submit(ctx, "x", 1, 0, &id), ENTELEA_OK);
 	zassert_equal(entelea_task_start(ctx, id), ENTELEA_OK);
 	zassert_equal(entelea_task_cancel(ctx, id), ENTELEA_OK);
 	entelea_task_t out;

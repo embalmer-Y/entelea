@@ -42,7 +42,7 @@ flash/宿主文件持久性、真实掉电半写、system_fail 语境 flash 可�
   estop 沿 evt=1（补发面直调，正向控制）。
 - 回归：minimal/core/safety×2/wdt_start/wdt_hardware 全部 SUCCESSFUL
   零失败；主机 94 项 + CTest 6/6 + 架构 25 源。
-- 自行决策（建议值，待追认）：审计节流窗沿用旧 1Hz（DEC-52① 出处）；
+- 自行决策（建议值——已追认 owner 2026-11-09，计划 §10.3）：审计节流窗沿用旧 1Hz（DEC-52① 出处）；
   boot 打印留平台层（存储模块 printk-free）。
 
 ## 子闭环 3（prov 配置面）
@@ -53,7 +53,7 @@ flash/宿主文件持久性、真实掉电半写、system_fail 语境 flash 可�
   （本轮新增收紧：定长 schema 精确消费，walk 末 rem!=0=E_IO）；CRC 破坏
   →E_IO；lconf/TLS 15 对长度镜像（装载态 ca_len 等）；维护窗（非法零
   写入→分区仍空 load E_IO、合法装载、一次性窗 E_STATE、复位模拟再写）。
-- 自行决策（建议值，待追认）：① TLS 三元组常驻装载态（旧
+- 自行决策（建议值——已追认 owner 2026-11-09，计划 §10.3）：① TLS 三元组常驻装载态（旧
   CONFIG_TS_NET_TLS 门控待 R06 消费方复核足迹）；② 尾部余量收紧为拒
   绝（旧 prov 未显式测，trust 面已有同语义——统一采纳）；③ estop 边沿
   消费 prov 仍固定缺省上升（随 D12-⑤ 决策落地）。
@@ -67,9 +67,14 @@ flash/宿主文件持久性、真实掉电半写、system_fail 语境 flash 可�
   - kv：未存 NOTFOUND/参数负测；3 app 往返+隔离；覆盖写取最新；
     容量不足 E_RANGE；14 轮双 app 写触发压实翻页；复位重扫描后
     最新保留与 app 存活。
-- 自行决策（建议值，待追认）：trust/kv 直迁旧机制（A-STORE 五子闭环
+- 自行决策（建议值——已追认 owner 2026-11-09，计划 §10.3）：trust/kv 直迁旧机制（A-STORE 五子闭环
   全部落地，组级 migrated；验证面按整组 oracle 判——store 套件为组级
   验收证据，状态 not_run 保持与 R01 先例一致直至板级持久化复验）。
+
+## 板级复核标记（计划符合性审查 P3，flash 批必查）
+
+audit/kv 槽体无 CRC（撕裂探测仅 magic+seq 断尾——与旧机制一致）；
+RAM 后端无损语义下不可达，**flash 后端接入时须复核槽内尾损可检性**。
 
 ## 复现
 

@@ -155,7 +155,7 @@ tick=true、失败后 tick=false；单通道 detach 失败 tick 仍=true——�
 **物理故障停止（两相闭环，新验收镜像 `apps/hw_fault_stop`）**：
 只走生产 API（supervision_boot/system_fail/hwinfo，无 ENTELEA_TEST
 钩子）；MWDT0 经 app.overlay 启用（soc dtsi 默认 disabled）。建议值
-（待追认）：MIN_TIMEOUT=3000/HW_FALLBACK_DELAY=2000/通道 5000ms/
+（已追认 owner 2026-11-09，计划 §10.2-C3）：MIN_TIMEOUT=3000/HW_FALLBACK_DELAY=2000/通道 5000ms/
 巡检 500ms。连续时间戳捕获（gate-run.log）：
 
 - **P1**（POWERON 进入）：健康窗 6s 存活（MWDT 窗 5s——活着=确在喂狗，

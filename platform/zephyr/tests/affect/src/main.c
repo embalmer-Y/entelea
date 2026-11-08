@@ -141,4 +141,61 @@ ZTEST(framework_affect, test_emotion_off_independent)
 	zassert_equal(p.weight[0], 5, "适应独立于情感状态");
 }
 
+/* ---- 角色连续性（计划 L406 正测项，owner A7 决议补机制面） ----
+ * 语义：适应参数版本化更迭/回滚不打断情感轨迹——纯净重放与穿插
+ * 参数更迭的重放得到同一角色状态（参数与角色分离=连续性机制面；
+ * "经历驱动适应来源"接线归 R10 消费方组装——本面证明角色不因参数
+ * 面动作丢失/分叉）。 */
+ZTEST(framework_affect, test_role_continuity_across_adapt_rollback)
+{
+	int8_t up[ENTELEA_AFFECT_LEVELS] = {20, -10, 5, 0};
+	int8_t zero[ENTELEA_AFFECT_LEVELS] = {0};
+
+	/* 纯净重放：锚点（4 tick）→ 2 tick → run_a。 */
+	entelea_affect_test_reset();
+	tick_n(1000, up, 4);
+	tick_n(1000, up, 2);
+	entelea_affect_state_t run_a;
+
+	entelea_affect_get(&run_a);
+
+	/* 穿刺重放：同序列中段穿插适应 v1→v2→回滚 v1 与情感关闭窗。 */
+	entelea_affect_test_reset();
+	tick_n(1000, up, 4);
+	uint8_t w[ENTELEA_AFFECT_LEVELS] = {1, 2, 3, 4};
+	entelea_adapt_params_t p;
+
+	zassert_equal(entelea_adapt_commit(w, &p), ENTELEA_OK);
+	w[0] = 9;
+	zassert_equal(entelea_adapt_commit(w, &p), ENTELEA_OK);
+	/* 回滚零触碰当前情感状态（隔离断言）。 */
+	entelea_affect_state_t before_rb;
+
+	entelea_affect_get(&before_rb);
+	zassert_equal(entelea_adapt_rollback(&p), ENTELEA_OK);
+	entelea_affect_state_t after_rb;
+
+	entelea_affect_get(&after_rb);
+	zassert_ok(memcmp(&before_rb, &after_rb, sizeof(before_rb)),
+		   "参数回滚零触碰角色状态");
+	tick_n(1000, up, 2);
+	entelea_affect_state_t run_b;
+
+	entelea_affect_get(&run_b);
+	zassert_ok(memcmp(&run_a, &run_b, sizeof(run_a)),
+		   "参数更迭/回滚穿插=同一角色轨迹（连续性）");
+
+	/* 情感关闭（零刺激）回中后，适应版本史保持回滚态（参数连续）。 */
+	tick_n(100000, zero, 5);
+	entelea_affect_state_t mid;
+
+	entelea_affect_get(&mid);
+	for (int i = 0; i < ENTELEA_AFFECT_LEVELS; i++) {
+		zassert_equal(mid.level[i], 50, "零刺激回中位");
+	}
+	entelea_adapt_current(&p);
+	zassert_equal(p.version, 1,
+		      "情感回中不动适应版本史（回滚态保持）");
+}
+
 ZTEST_SUITE(framework_affect, NULL, affect_setup, NULL, NULL, NULL);

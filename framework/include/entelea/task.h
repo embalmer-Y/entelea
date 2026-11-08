@@ -12,6 +12,7 @@
 #include <entelea/app.h>  /* receipt effect 语义 */
 #include <entelea/principal.h>
 #include <entelea/result.h>
+#include <entelea/time.h> /* deadline 时基（实例时钟注入） */
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,13 +40,25 @@ typedef struct {
 	entelea_effect_t effect;
 	entelea_principal_t owner;    /* 受理时的 principal（副本） */
 	uint16_t seq;                /* 受理序（重复请求可检测） */
+	uint64_t deadline_ms;        /* 截止（实例时钟绝对毫秒；0=无截止） */
 	char name[ENTELEA_TASK_NAME_MAX];
 } entelea_task_t;
 
+/** [boot] 绑定实例时钟（deadline 判定与受理门时基；deadline=0 路径
+ * 不依赖）。deadline 语义（计划步骤"截止时间"条目，owner A1 决议补
+ * 交付）：受理时已过期=E_RANGE；时钟未绑/读失败且带 deadline=
+ * E_STATE（时间不可知不受理——fail-closed）；ACCEPTED 期过期=惰性
+ * 自动 CANCELLED（效果 NONE——未开始无副作用；无定时器，线程入口
+ * 检查——确定性纪律同 R06）；RUNNING 期过期**不**自动迁移（效果
+ * 未知不代决——调用方经 task_get 观察 deadline 后显式 cancel）。 */
+entelea_result_t entelea_task_bind_clock(const entelea_clock_t *clock);
+
 /** [thread] 受理（idempotency：同一 principal+同 seq 未终态 = E_BUSY——
- * 重复受理拒绝，不静默合并）。槽满 = E_NOMEM。 */
+ * 重复受理拒绝，不静默合并）。槽满 = E_NOMEM。deadline_ms：绝对
+ * 毫秒截止（0=无截止）。 */
 entelea_result_t entelea_task_submit(entelea_principal_t ctx, const char *name,
-				     uint16_t seq, entelea_task_id_t *out);
+				     uint16_t seq, uint64_t deadline_ms,
+				     entelea_task_id_t *out);
 
 /** [thread] 开始执行（ACCEPTED→RUNNING；他者/终态/不存在 = E_STATE）。 */
 entelea_result_t entelea_task_start(entelea_principal_t ctx, entelea_task_id_t id);

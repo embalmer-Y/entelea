@@ -10,6 +10,34 @@
 #include <entelea/safety.h>
 #include <entelea/task.h>
 
+/* 虚时钟（deadline 判定注入面：virt_now 前进/回退，fail_next 注入
+ * 读失败——时间不可知路径）。 */
+static uint64_t virt_now;
+static bool clock_fail_next;
+static bool clock_dead;
+
+static entelea_result_t virt_read_ms(void *user, uint64_t *out)
+{
+	ARG_UNUSED(user);
+	if (clock_dead) {
+		return ENTELEA_E_IO;
+	}
+	if (clock_fail_next) {
+		clock_fail_next = false;
+		return ENTELEA_E_IO;
+	}
+	*out = virt_now;
+	return ENTELEA_OK;
+}
+
+static const entelea_clock_t virt_clock = {
+	.read_ms = virt_read_ms,
+	.user = NULL,
+	.clock_id = 0x7A4B,
+	.last_ms = 0,
+	.sampled = false,
+};
+
 static void *r04_setup(void)
 {
 	entelea_safety_test_reset();
@@ -166,10 +194,10 @@ ZTEST(framework_r04, test_task_lifecycle_and_race_edges)
 	zassert_equal(entelea_principal_bind(&ctx, 5, &t), ENTELEA_OK);
 	entelea_task_id_t id = 0;
 
-	zassert_equal(entelea_task_submit(ctx, "demo", 100, &id), ENTELEA_OK);
+	zassert_equal(entelea_task_submit(ctx, "demo", 100, 0, &id), ENTELEA_OK);
 	zassert_equal(id, 1);
 	/* 重复受理（同 seq 非终态）= E_BUSY。 */
-	zassert_equal(entelea_task_submit(ctx, "demo", 100, &id), ENTELEA_E_BUSY);
+	zassert_equal(entelea_task_submit(ctx, "demo", 100, 0, &id), ENTELEA_E_BUSY);
 	zassert_equal(entelea_task_start(ctx, id), ENTELEA_OK);
 	zassert_equal(entelea_task_start(ctx, id), ENTELEA_E_STATE, "重复 start 拒");
 
@@ -189,7 +217,7 @@ ZTEST(framework_r04, test_task_lifecycle_and_race_edges)
 	/* ACCEPTED 期取消 → NONE；他者操作拒。 */
 	entelea_task_id_t a = 0, b = 0;
 
-	zassert_equal(entelea_task_submit(ctx, "t2", 101, &a), ENTELEA_OK);
+	zassert_equal(entelea_task_submit(ctx, "t2", 101, 0, &a), ENTELEA_OK);
 	entelea_principal_t other;
 
 	zassert_equal(entelea_principal_bind(&other, 6, &t), ENTELEA_OK);
@@ -199,7 +227,7 @@ ZTEST(framework_r04, test_task_lifecycle_and_race_edges)
 	zassert_equal(out.effect, ENTELEA_EFFECT_NONE);
 
 	/* 成功回执 effect 域由调用方给出；失败 unknown 如实呈现。 */
-	zassert_equal(entelea_task_submit(ctx, "t3", 102, &b), ENTELEA_OK);
+	zassert_equal(entelea_task_submit(ctx, "t3", 102, 0, &b), ENTELEA_OK);
 	zassert_equal(entelea_task_start(ctx, b), ENTELEA_OK);
 	zassert_equal(entelea_task_fail(ctx, b, true), ENTELEA_OK);
 	zassert_equal(entelea_task_get(b, &out), ENTELEA_OK);
@@ -212,10 +240,10 @@ ZTEST(framework_r04, test_task_lifecycle_and_race_edges)
 
 	for (int i = 0; i < 4; i++) {
 		zassert_equal(entelea_task_submit(ctx, "fill", (uint16_t)(200 + i),
-						  &ids[i]),
+						  0, &ids[i]),
 			      ENTELEA_OK);
 	}
-	zassert_equal(entelea_task_submit(ctx, "over", 999, &id), ENTELEA_E_NOMEM);
+	zassert_equal(entelea_task_submit(ctx, "over", 999, 0, &id), ENTELEA_E_NOMEM);
 	entelea_principal_unbind(&ctx);
 	entelea_principal_unbind(&other);
 }
@@ -334,6 +362,90 @@ ZTEST(framework_r04, test_arbiter_suppression)
 		      ENTELEA_OK, "释放后远程恢复");
 	zassert_equal(entelea_safety_set_arb((entelea_arb_owner_t)5),
 		      ENTELEA_E_PARAM);
+}
+
+/* ---- 截止时间（计划步骤条目，owner A1 决议补交付） ---- */
+ZTEST(framework_r04, test_task_deadline)
+{
+	entelea_task_test_reset();
+	entelea_perm_test_reset();
+	virt_now = 10000;
+	clock_fail_next = false;
+	clock_dead = false;
+	entelea_perm_table_t t;
+
+	entelea_perm_table_init(&t);
+	zassert_equal(entelea_perm_parse("gpio:read:0", &t), ENTELEA_OK);
+	entelea_principal_t ctx;
+
+	zassert_equal(entelea_principal_bind(&ctx, 11, &t), ENTELEA_OK);
+	entelea_task_id_t id = 0;
+
+	/* 带 deadline 而未绑时钟 = E_STATE（时间不可知不受理）。 */
+	zassert_equal(entelea_task_submit(ctx, "dl0", 1, 10500, &id),
+		      ENTELEA_E_STATE);
+	zassert_equal(entelea_task_bind_clock(&virt_clock), ENTELEA_OK);
+	/* 时钟读失败（单次注入）同面。 */
+	clock_fail_next = true;
+	zassert_equal(entelea_task_submit(ctx, "dl0", 1, 10500, &id),
+		      ENTELEA_E_STATE);
+	/* 受理即过期（now=10000 >= deadline=9999）= E_RANGE。 */
+	zassert_equal(entelea_task_submit(ctx, "dl0", 1, 9999, &id),
+		      ENTELEA_E_RANGE);
+	/* deadline=0 无截止路径：不依赖时钟（reset 连绑定一并隔离）。 */
+	zassert_equal(entelea_task_bind_clock(&(entelea_clock_t){0}), ENTELEA_E_PARAM,
+		      "非法时钟拒绝（read_ms=NULL）");
+	entelea_task_test_reset();
+	zassert_equal(entelea_task_submit(ctx, "dl0", 1, 0, &id), ENTELEA_OK,
+		      "无截止不依赖时钟");
+	entelea_task_t view;
+
+	zassert_equal(entelea_task_get(id, &view), ENTELEA_OK);
+	zassert_equal(view.deadline_ms, 0, "0=无截止可观测");
+	zassert_equal(entelea_task_cancel(ctx, id), ENTELEA_OK);
+	zassert_equal(entelea_task_release(ctx, id), ENTELEA_OK);
+	zassert_equal(entelea_task_bind_clock(&virt_clock), ENTELEA_OK, "重绑后续用例");
+
+	/* 受理→未到期惰性不过期；到期后线程入口惰性 CANCELLED（效果
+	 * NONE）；task_get（[any] 观测）不迁移。 */
+	zassert_equal(entelea_task_submit(ctx, "dl1", 2, 10500, &id), ENTELEA_OK);
+	virt_now = 10499;
+	zassert_equal(entelea_task_start(ctx, id), ENTELEA_OK, "未到期正常开跑");
+	virt_now = 10600; /* RUNNING 过期：不自动迁移（效果未知不代决） */
+	zassert_equal(entelea_task_get(id, &view), ENTELEA_OK);
+	zassert_equal(view.state, ENTELEA_TASK_RUNNING, "RUNNING 过期不代决");
+	zassert_equal(view.deadline_ms, 10500, "deadline 可观测");
+	zassert_equal(entelea_task_cancel(ctx, id), ENTELEA_OK, "显式取消可用");
+	zassert_equal(entelea_task_get(id, &view), ENTELEA_OK);
+	zassert_equal(view.state, ENTELEA_TASK_CANCELLED);
+	zassert_equal(view.effect, ENTELEA_EFFECT_UNKNOWN, "RUNNING 取消=UNKNOWN");
+	zassert_equal(entelea_task_release(ctx, id), ENTELEA_OK);
+
+	/* ACCEPTED 过期：start 惰性转 CANCELLED（NONE）→ 后续动作 E_STATE；
+	 * 过期任务不再占受理去重位（同 seq 可重新受理）。 */
+	zassert_equal(entelea_task_submit(ctx, "dl2", 3, 11000, &id), ENTELEA_OK);
+	virt_now = 12000;
+	zassert_equal(entelea_task_start(ctx, id), ENTELEA_E_STATE,
+		      "过期 ACCEPTED 惰性取消（start 拒）");
+	zassert_equal(entelea_task_get(id, &view), ENTELEA_OK);
+	zassert_equal(view.state, ENTELEA_TASK_CANCELLED, "自动取消");
+	zassert_equal(view.effect, ENTELEA_EFFECT_NONE, "未开始=无效果");
+	zassert_equal(entelea_task_succeed(ctx, id, true), ENTELEA_E_STATE);
+	zassert_equal(entelea_task_release(ctx, id), ENTELEA_OK, "过期终态可回收");
+	entelea_task_id_t id2 = 0;
+
+	zassert_equal(entelea_task_submit(ctx, "dl2", 3, 0, &id2), ENTELEA_OK,
+		      "同 seq 过期终态后可重新受理");
+	/* 去重位惰性释放：未过期同 seq 仍去重；过期瞬间即让位。 */
+	zassert_equal(entelea_task_submit(ctx, "dl3", 4, 15000, &id), ENTELEA_OK);
+	virt_now = 14000;
+	zassert_equal(entelea_task_submit(ctx, "dl3", 4, 16000, &id2),
+		      ENTELEA_E_BUSY, "未过期同 seq 仍去重");
+	virt_now = 15000;
+	zassert_equal(entelea_task_submit(ctx, "dl3", 4, 16000, &id2), ENTELEA_OK,
+		      "过期即让位（受理扫描内惰性取消）");
+	entelea_task_test_reset();
+	entelea_perm_test_reset();
 }
 
 ZTEST_SUITE(framework_r04, NULL, r04_setup, NULL, NULL, NULL);

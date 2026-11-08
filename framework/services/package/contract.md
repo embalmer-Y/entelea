@@ -43,6 +43,13 @@
 - **错误/回执**：超限=E_TIMEOUT（与 Wasm 同错误面）；超配额=VM OOM
   路径（计数可观）。
 - **数据隔离**：实例间内存不共享（配额独立+无共享池旁路）。
+- **宿主调用与可信身份**（D03 首期七项之一，owner 2026-11-09 A3
+  决议补条款）：Lua 侧宿主调用与 Wasm natives 同一纪律——**仅信
+  宿主注入的 principal 裁决**（R04 `entelea_perm_check` 面）；
+  脚本传入值不可构造/转呈身份，未授权=E_PERM（不崩溃）；授权
+  判定与内存/执行预算闸同序先行。机制面由 Wasm 代表 native
+  （`entelea_wasm_test_probe_decide`）佐证；Lua 侧同一形状随正式
+  运行支持批（D03 后续）落地实测。
 - **工厂产物描述**：合同结构体确定性编码（map{version,mem_kb,steps,
   fmt}；域外=PARAM）——R12 Forge 对拍面。
 - **如实边界**：无解释器依赖（未批准新依赖）；真 Lua VM 停止延迟

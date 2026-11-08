@@ -3,6 +3,11 @@
 ## tweetnacl.c / tweetnacl.h
 
 - 出处：TweetNaCl（tweetnacl.cr.yp.to/20140427/tweetnacl.c，20140427 快照，逐字节未改）。
+- 上游独立核验（2026-11-09，owner D 部分授权后经公开网络拉取对拍）：
+  tweetnacl.c sha256=02e65bc3013ff2168983365e55906bc783c4c7e0a60d8100f17bb303a17175c4
+  （16637B）；tweetnacl.h sha256=43f29ad721d9927b747b0100ab4160c119e7bb180c7c98a66e4bf79d31244287
+  ——两文件均与上游逐字节一致。此登记
+  取代"继承旧树主张"——新树对上游的 byte-identity 现有独立证据。
 - 许可：Public Domain（作者声明 https://tweetnacl.cr.yp.to/）。
 - 用途（DEC-49①B）：**仅 crypto_sign_open（ed25519 验签）**——安装/激活期一次性
   调用（非热路径）；keypair/sign 等函数不引用（链接期 gc 丢弃）。

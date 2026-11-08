@@ -41,7 +41,7 @@
 | 仲裁压制/幂等 | LOCAL 激活期 REMOTE=E_STATE、APP/LOCAL 放行、同席位幂等零事件、释放后恢复、域外席位 E_PARAM | test_arbiter_suppression |
 | 回归 | safety/store 套件 SUCCESSFUL；主机 97 项+CTest 6/6+架构 34 源恰分类 | 本轮实跑 |
 
-## 自行决策（建议值，待追认）
+## 自行决策（建议值——已追认：owner 2026-11-09 整体追认，计划 §10.3）
 
 ① 任务表上限 4（借用旧 DEC-27 #15 语义面——正式值随多任务真实接入
 评审）；② 受理幂等键=（principal, seq），重启重试=新 seq（幂等缓存归
@@ -73,3 +73,12 @@ python3 tools/build_zephyr.py --app platform/zephyr/tests/r04 \
   （类型已备于 app.h/time.h）；A-LEASE 输入唯一源 lease.c 处置指向
   R06（net/netmon.c），本批未显式记录租约面去向。
 - review P1 修复分支（预算锁内原子性/效果域锁内写）复核在位。
+
+## Owner 决议执行（2026-11-09）
+
+- **A1"截止时间"补交付**：submit 携带 deadline_ms（0=无截止）；
+  受理门（未绑时钟/读失败=E_STATE、受理即过期=E_RANGE）；ACCEPTED
+  惰性过期自动 CANCELLED（效果 NONE）并即时让出受理去重位；RUNNING
+  过期不代决（task_get 观察+显式 cancel）。新用例
+  test_task_deadline（受理门/无截止路径/两态过期语义/去重让位）。
+  合同见 capability/contract.md"截止时间"节。
