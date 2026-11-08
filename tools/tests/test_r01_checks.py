@@ -33,11 +33,15 @@ class ArchitectureTests(unittest.TestCase):
             "common": ["framework/common/a.c"],
             "compat": [],
             "contract_tests": ["tests/contracts/a.c"],
+            "zephyr_framework": ["framework/runtime/supervision/fw.c"],
+            "platform_zephyr": ["platform/zephyr/pf.c"],
             "diagnostics": {},
             "protected_output_sources": [],
         }
         self.write("framework/common/a.c", "int a(void) { return 0; }\n")
         self.write("tests/contracts/a.c", "int main(void) { return 0; }\n")
+        self.write("framework/runtime/supervision/fw.c", "int fw(void) { return 0; }\n")
+        self.write("platform/zephyr/pf.c", "int pf(void) { return 0; }\n")
 
     def write(self, path, text):
         file = self.root / path
@@ -49,7 +53,7 @@ class ArchitectureTests(unittest.TestCase):
             ARCH.validate(self.root, self.policy)
 
     def test_current_sources(self):
-        self.assertEqual(ARCH.validate(ROOT, POLICY), 5)
+        self.assertEqual(ARCH.validate(ROOT, POLICY), 19)
 
     def test_unclassified_source(self):
         self.write("framework/common/extra.c", "")
@@ -63,9 +67,38 @@ class ArchitectureTests(unittest.TestCase):
         self.write("framework/common/a.c", "gpio_pin_set(0, 1);")
         self.rejected("Output bypass")
 
-    def test_no_r01_gate_exception(self):
+    def test_gate_cannot_cover_host_sources(self):
         self.policy["protected_output_sources"] = ["framework/common/a.c"]
-        self.rejected("no approved protection")
+        self.rejected("Protection gate outside reviewed Zephyr sources")
+
+    def test_gate_must_be_classified(self):
+        self.policy["protected_output_sources"] = ["platform/zephyr/unlisted.c"]
+        self.rejected("Protection gate outside reviewed Zephyr sources")
+
+    def test_gate_allows_reviewed_driver_output(self):
+        self.write(
+            "framework/runtime/supervision/fw.c", "gpio_pin_set_dt(&s, 1);\n"
+        )
+        self.policy["protected_output_sources"] = [
+            "framework/runtime/supervision/fw.c"
+        ]
+        self.assertEqual(ARCH.validate(self.root, self.policy), 4)
+
+    def test_zephyr_framework_output_bypass(self):
+        self.write(
+            "framework/execution/safety/bad.c", "pwm_set(dev, 1, 2, 3, 0);\n"
+        )
+        self.policy["zephyr_framework"].append("framework/execution/safety/bad.c")
+        self.rejected("Output bypass")
+
+    def test_zephyr_framework_direct_clock(self):
+        self.write("platform/zephyr/pf.c", "k_uptime_get();\n")
+        self.write("framework/runtime/supervision/fw.c", "k_uptime_get();\n")
+        self.rejected("Direct clock")
+
+    def test_platform_clock_adapter_allowed(self):
+        self.write("platform/zephyr/pf.c", "k_uptime_get();\n")
+        self.assertEqual(ARCH.validate(self.root, self.policy), 4)
 
     def test_public_header_os_dependency(self):
         self.write("framework/include/entelea/a.h", "#include <zephyr/kernel.h>")
@@ -86,7 +119,7 @@ class ArchitectureTests(unittest.TestCase):
     def test_explicit_diagnostic(self):
         self.write("tests/diagnostics/probe.c", "gpio_pin_set(0, 1);")
         self.policy["diagnostics"] = {"probe": ["tests/diagnostics/probe.c"]}
-        self.assertEqual(ARCH.validate(self.root, self.policy), 3)
+        self.assertEqual(ARCH.validate(self.root, self.policy), 5)
 
     def test_diagnostic_cannot_enter_product(self):
         self.write("tests/diagnostics/probe.c", "gpio_pin_set(0, 1);")

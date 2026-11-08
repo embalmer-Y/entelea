@@ -1,0 +1,10 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/ {
+	chosen {
+		zephyr,watchdog = &test_watchdog;
+	};
+
+	test_watchdog: test-watchdog {
+		status = "okay";
+	};
+};

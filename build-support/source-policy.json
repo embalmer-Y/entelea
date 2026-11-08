@@ -6,6 +6,24 @@
   ],
   "compat": ["framework/compat/common.c"],
   "contract_tests": ["tests/contracts/main.c"],
+  "zephyr_framework": [
+    "framework/runtime/supervision/events.c",
+    "framework/runtime/supervision/wdt.c",
+    "framework/runtime/supervision/boot.c",
+    "framework/execution/safety/channel.c",
+    "framework/execution/safety/commit.c",
+    "framework/execution/safety/force.c",
+    "framework/execution/safety/drivers.c"
+  ],
+  "platform_zephyr": [
+    "platform/zephyr/clock.c",
+    "platform/zephyr/boot_steps.c",
+    "platform/zephyr/apps/minimal/main.c",
+    "platform/zephyr/tests/core/src/main.c",
+    "platform/zephyr/tests/safety/src/main.c",
+    "platform/zephyr/tests/wdt_start/src/main.c",
+    "platform/zephyr/tests/wdt_hardware/src/main.c"
+  ],
   "diagnostics": {},
-  "protected_output_sources": []
+  "protected_output_sources": ["framework/execution/safety/drivers.c"]
 }

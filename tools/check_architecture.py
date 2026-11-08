@@ -45,12 +45,18 @@ def validate(root, policy):
             "common",
             "compat",
             "contract_tests",
+            "zephyr_framework",
+            "platform_zephyr",
             "diagnostics",
             "protected_output_sources",
         },
         "Unknown/missing source classification",
     )
-    groups = {name: policy[name] for name in ("common", "compat", "contract_tests")}
+    groups = {
+        name: policy[name]
+        for name in ("common", "compat", "contract_tests", "zephyr_framework",
+                     "platform_zephyr")
+    }
     fail(isinstance(policy["diagnostics"], dict), "Diagnostics must name exact targets")
     for name, paths in policy["diagnostics"].items():
         fail(
@@ -59,13 +65,18 @@ def validate(root, policy):
         )
         groups["diagnostic:" + name] = paths
     seen = set()
+    group_of = {}
     for group, paths in groups.items():
         fail(isinstance(paths, list), f"Source group is not a list: {group}")
-        if group in {"common", "contract_tests"} or group.startswith("diagnostic:"):
+        if (
+            group in {"common", "contract_tests", "zephyr_framework", "platform_zephyr"}
+            or group.startswith("diagnostic:")
+        ):
             fail(paths, f"Empty required source group: {group}")
         for path in paths:
             fail(path not in seen, f"Source classified twice: {path}")
             seen.add(path)
+            group_of[path] = group
             file = checked_path(root, path)
             fail(file.suffix == ".c", f"Non-C build source: {path}")
             expected = (
@@ -76,8 +87,18 @@ def validate(root, policy):
                 else "framework/compat/"
                 if group == "compat"
                 else "framework/common/"
+                if group == "common"
+                else "framework/runtime/ or framework/execution/"
+                if group == "zephyr_framework"
+                else "platform/zephyr/"
             )
-            fail(path.startswith(expected), f"Source crosses target boundary: {path}")
+            ok = (
+                path.startswith("framework/runtime/")
+                or path.startswith("framework/execution/")
+                if group == "zephyr_framework"
+                else path.startswith(expected)
+            )
+            fail(ok, f"Source crosses target boundary: {path}")
     tracked_sources = set()
     for directory in ("framework", "platform", "products", "tests"):
         base = root / directory
@@ -93,12 +114,18 @@ def validate(root, policy):
         isinstance(gates, list) and len(gates) == len(set(gates)),
         "Invalid protection source list",
     )
-    # R01 has no output backend. R02 must review the gate before enabling writes.
-    fail(not gates, "R01 has no approved protection implementation")
+    # R02: the only approved write path is the reviewed driver dispatch in the
+    # Zephyr-built safety group. Gates must never cover host-built sources.
+    for gate in gates:
+        fail(
+            gate in group_of
+            and group_of[gate] in {"zephyr_framework", "platform_zephyr"},
+            f"Protection gate outside reviewed Zephyr sources: {gate}",
+        )
     for group, paths in groups.items():
         for path in paths:
             text = checked_path(root, path).read_text()
-            if not group.startswith("diagnostic:"):
+            if not group.startswith("diagnostic:") and path not in set(gates):
                 fail(
                     OUTPUT.search(text) is None,
                     f"Output bypass outside protection: {path}",
@@ -113,6 +140,13 @@ def validate(root, policy):
                         or include.startswith("entelea/"),
                         f"Unapproved common dependency: {path}:{include}",
                     )
+                fail(
+                    DIRECT_CLOCK.search(text) is None,
+                    f"Direct clock/random source: {path}",
+                )
+            if group == "zephyr_framework":
+                # Framework mechanisms consume the injected instance clock;
+                # only the platform adapter may read the Zephyr uptime.
                 fail(
                     DIRECT_CLOCK.search(text) is None,
                     f"Direct clock/random source: {path}",
@@ -145,7 +179,8 @@ def main():
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1
     print(
-        f"PASS: {count} exactly classified C sources; R01 constraints only, not physical safety"
+        f"PASS: {count} exactly classified C sources; mechanical classification "
+        "and output-gate constraints only, not physical safety"
     )
     return 0
 
