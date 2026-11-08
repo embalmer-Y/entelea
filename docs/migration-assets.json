@@ -1047,8 +1047,8 @@
       ],
       "first_batch": "R05",
       "migration_action": "extract",
-      "status": "not_migrated",
-      "constraints": "安装事实和运行状态分离；activate 不能充当用户试用；boot 摘要与全验签分开。",
+      "status": "in_progress",
+      "constraints": "安装事实和运行状态分离；activate 不能充当用户试用；boot 摘要与全验签分开。 R05已迁TSAP+验签+安装链（字节格式不变）；Wasm闭环经pinned WAMR（sample.wasm夹具）；Forge对拍归R12",
       "target_paths": [],
       "verification": {
         "state": "not_run",
@@ -1070,8 +1070,8 @@
       ],
       "first_batch": "R05",
       "migration_action": "adapt",
-      "status": "not_migrated",
-      "constraints": "模块缓存/每实例线程/join 超时保留证据；群组喂狗不证明每实例健康。",
+      "status": "in_progress",
+      "constraints": "模块缓存/每实例线程/join 超时保留证据；群组喂狗不证明每实例健康。 R05最小闭环已迁（load/call/步预算停止/模块保留）；多实例/线程归后续",
       "target_paths": [],
       "verification": {
         "state": "not_run",
@@ -1093,8 +1093,8 @@
       ],
       "first_batch": "R05",
       "migration_action": "extract",
-      "status": "not_migrated",
-      "constraints": "exec_env 注入身份、范围检查；旧窄整型截断必须按新参数合同审查。",
+      "status": "in_progress",
+      "constraints": "exec_env 注入身份、范围检查；旧窄整型截断必须按新参数合同审查。 R05代表native（principal注入裁决）已迁；全符号集随R06+消费面",
       "target_paths": [],
       "verification": {
         "state": "not_run",
@@ -1115,8 +1115,8 @@
       ],
       "first_batch": "R05",
       "migration_action": "reuse",
-      "status": "not_migrated",
-      "constraints": "保留第三方格式与许可，不把来源说明/测试钥变生产信任。",
+      "status": "in_progress",
+      "constraints": "保留第三方格式与许可，不把来源说明/测试钥变生产信任。 tweetnacl逐字节未改+PROVENANCE已迁；测试根公开材料",
       "target_paths": [],
       "verification": {
         "state": "not_run",
@@ -4121,9 +4121,12 @@
       "sha256": "dc5145874b59e8f3a391394b9146f5b2c041232731a9d00f6faff59b73addb4c",
       "id": "S-legacy-891a169183c77bbba544",
       "asset_id": "A-HEADERS",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/include/entelea/package.h",
+        "platform/zephyr/tests/pkg/src/main.c"
+      ],
+      "migration_commit": "9ac735e3ca107595ea8728a3fa50c1e7e7c0d892"
     },
     {
       "repository": "legacy",
@@ -4134,9 +4137,11 @@
       "sha256": "7f4476c75495c0e7f315b974841b79a539446770cf76c1e8e007a5891aa692b8",
       "id": "S-legacy-21e25c907d2ded3a2716",
       "asset_id": "A-CRYPTO",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/package/crypto/PROVENANCE.md"
+      ],
+      "migration_commit": "9ac735e3ca107595ea8728a3fa50c1e7e7c0d892"
     },
     {
       "repository": "legacy",
@@ -4147,9 +4152,11 @@
       "sha256": "ab554016a65b2d4696e56a66ca9d49fd1192d3c15323ec0a1ca6932ae97c1ee3",
       "id": "S-legacy-5a9b9a7f585d967079d6",
       "asset_id": "A-CRYPTO",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/package/crypto/tnacl_self_pk.inc"
+      ],
+      "migration_commit": "9ac735e3ca107595ea8728a3fa50c1e7e7c0d892"
     },
     {
       "repository": "legacy",
@@ -4160,9 +4167,11 @@
       "sha256": "9c4d193a786245cd3c54f74b65fefe4ebf79e526ed29d93506c0c785e86786b9",
       "id": "S-legacy-ca9642c4b315702b9854",
       "asset_id": "A-CRYPTO",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/package/crypto/tnacl_self_sm.inc"
+      ],
+      "migration_commit": "9ac735e3ca107595ea8728a3fa50c1e7e7c0d892"
     },
     {
       "repository": "legacy",
@@ -4173,9 +4182,11 @@
       "sha256": "46fda3521b9c9456868c4e547df77d900d82aab2c1fe61f9d970b7f093f610be",
       "id": "S-legacy-308304675eb23f4feadb",
       "asset_id": "A-CRYPTO",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/package/crypto/tnacl_selftest.c"
+      ],
+      "migration_commit": "9ac735e3ca107595ea8728a3fa50c1e7e7c0d892"
     },
     {
       "repository": "legacy",
@@ -4186,9 +4197,11 @@
       "sha256": "02e65bc3013ff2168983365e55906bc783c4c7e0a60d8100f17bb303a17175c4",
       "id": "S-legacy-0b552c812a157806cd43",
       "asset_id": "A-CRYPTO",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/package/crypto/tweetnacl.c"
+      ],
+      "migration_commit": "9ac735e3ca107595ea8728a3fa50c1e7e7c0d892"
     },
     {
       "repository": "legacy",
@@ -4199,9 +4212,11 @@
       "sha256": "43f29ad721d9927b747b0100ab4160c119e7bb180c7c98a66e4bf79d31244287",
       "id": "S-legacy-5fe5636a490e5bb6a2dc",
       "asset_id": "A-CRYPTO",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/package/crypto/tweetnacl.h"
+      ],
+      "migration_commit": "9ac735e3ca107595ea8728a3fa50c1e7e7c0d892"
     },
     {
       "repository": "legacy",
@@ -4225,9 +4240,11 @@
       "sha256": "6d7e74a47d7fc8c67607b862c08c6a935de4784a55ab6ad52a3f47f999cf227e",
       "id": "S-legacy-04d602c2989d135c57d4",
       "asset_id": "A-NATIVES",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/package/wasm_host.c"
+      ],
+      "migration_commit": "9ac735e3ca107595ea8728a3fa50c1e7e7c0d892"
     },
     {
       "repository": "legacy",
@@ -4238,9 +4255,12 @@
       "sha256": "368f4784f483d775d6af1ef94043416805262b68f2c7f77649f8974e0b0bb089",
       "id": "S-legacy-3b28e952985ba503b0e5",
       "asset_id": "A-PACKAGE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/package/store.c",
+        "framework/include/entelea/appstore.h"
+      ],
+      "migration_commit": "9ac735e3ca107595ea8728a3fa50c1e7e7c0d892"
     },
     {
       "repository": "legacy",
@@ -4251,9 +4271,12 @@
       "sha256": "64545e4c671376caccaa7091dfba7bf40a9b7d2118af3921c35dfd6f1b5cae6a",
       "id": "S-legacy-0070e7655252271973cc",
       "asset_id": "A-WAMR",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/package/wasm_host.c",
+        "framework/include/entelea/wasm_host.h"
+      ],
+      "migration_commit": "9ac735e3ca107595ea8728a3fa50c1e7e7c0d892"
     },
     {
       "repository": "legacy",
@@ -4264,9 +4287,11 @@
       "sha256": "13600e53bd6c41f0bb561c8cc66fced446c4b3b2ad3e16530eb73acad3afb978",
       "id": "S-legacy-4d9082280536136a17e2",
       "asset_id": "A-PACKAGE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/package/store.c"
+      ],
+      "migration_commit": "9ac735e3ca107595ea8728a3fa50c1e7e7c0d892"
     },
     {
       "repository": "legacy",
@@ -4277,9 +4302,12 @@
       "sha256": "b2edf51788dfac388427588c322013de814e85ed99c07138585d737db410fdcc",
       "id": "S-legacy-0960a00e0750422f478e",
       "asset_id": "A-PACKAGE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/package/store.c",
+        "platform/zephyr/tests/pkg/src/main.c"
+      ],
+      "migration_commit": "9ac735e3ca107595ea8728a3fa50c1e7e7c0d892"
     },
     {
       "repository": "legacy",
@@ -4290,9 +4318,12 @@
       "sha256": "a3f7aae538e371bb23547ebbeb6b1436f152bcf46939f3d613301ba09fe8a356",
       "id": "S-legacy-55f9a706242dcb464199",
       "asset_id": "A-PACKAGE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/tests/wasm/src/wamr_compat.c",
+        "platform/zephyr/tests/wasm/CMakeLists.txt"
+      ],
+      "migration_commit": "9ac735e3ca107595ea8728a3fa50c1e7e7c0d892"
     },
     {
       "repository": "legacy",
