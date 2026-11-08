@@ -246,15 +246,16 @@
       "depends_on": [
         "R01"
       ],
-      "status": "in_progress"
+      "status": "in_progress",
+      "note": "软件面已交付（docs/r03-validation.md；store 套件 12/12）。保持 in_progress：flash/宿主文件后端与板级持久化/断电恢复随板级批（计划闸+合同+验证三重显式）。"
     },
     {
       "id": "R04",
       "depends_on": [
         "R02"
       ],
-      "status": "pending",
-      "note": "软件面已交付（docs/r04-validation.md；N-CAPABILITY/N-RESOURCE/N-TASK migrated/passed，hal/perm.c 已迁）；正式 in_progress 受 R02 硬件闸（owner blocked）阻塞——机制依赖（保护端口）已就绪，台账状态机如实保持 pending。"
+      "status": "in_progress",
+      "note": "软件面已交付（docs/r04-validation.md；r04 套件 5/5）。R02 硬件闸 2026-11-08 已实测关闭——阻塞解除转 in_progress；剩余：计划步骤『截止时间』条目零落点（处置归计划修订/轨道 2）。"
     },
     {
       "id": "R05",
@@ -262,7 +263,8 @@
         "R03",
         "R04"
       ],
-      "status": "pending"
+      "status": "pending",
+      "note": "软件面已交付（docs/r05-validation.md；pkg 8/8+wasm 5/5）。保持 pending：依赖 R03/R04 未 done；设备/Forge 字节对拍归 R12（计划文本未修订）；D03『宿主调用与可信身份』条款缺位（轨道 2）。"
     },
     {
       "id": "R06",
@@ -270,7 +272,8 @@
         "R04",
         "R05"
       ],
-      "status": "pending"
+      "status": "pending",
+      "note": "软件面已交付（docs/r06-validation.md；net 4/4）。保持 pending：依赖 R04/R05 未 done；真网/真云未接（授权边界）；L338 授权有界日志读取/幂等分块未交付（轨道 2）。"
     },
     {
       "id": "R07",
@@ -279,7 +282,8 @@
         "R04",
         "R05"
       ],
-      "status": "pending"
+      "status": "pending",
+      "note": "软件面已交付（docs/r07-validation.md；linux host PASS）。保持 pending：依赖 R04/R05 未 done；『仅合同测试』路线待计划文本修订（L350-351，轨道 2）；ARM64 实跑随 D02 环境冻结。"
     },
     {
       "id": "R08",
@@ -289,7 +293,8 @@
         "R05",
         "R06"
       ],
-      "status": "pending"
+      "status": "pending",
+      "note": "软件面已交付（docs/r08-validation.md；assist 4/4+域门用例）。保持 pending：依赖 R03/R04/R05/R06 未 done；模型适配层随云授权；TASK 执行面未实现（轨道 2 点名）。"
     },
     {
       "id": "R09",
@@ -299,7 +304,8 @@
         "R05",
         "R06"
       ],
-      "status": "pending"
+      "status": "pending",
+      "note": "软件面已交付（docs/r09-validation.md；media 3/3 含按类独立）。保持 pending：依赖 R03/R04/R05/R06 未 done；播放/显示/多消费者/预算/avq 外发未交付（轨道 2 点名）；真后端板级批。"
     },
     {
       "id": "R10",
@@ -307,7 +313,8 @@
         "R03",
         "R08"
       ],
-      "status": "pending"
+      "status": "pending",
+      "note": "软件面已交付（docs/r10-validation.md；memory 4/4 含墓碑容量边界）。保持 pending：依赖 R03/R08 未 done；持久化/巩固随板级批；D06/D07 真机决策。"
     },
     {
       "id": "R11",
@@ -315,7 +322,8 @@
         "R08",
         "R10"
       ],
-      "status": "pending"
+      "status": "pending",
+      "note": "软件面已交付（docs/r11-validation.md；affect 3/3）。保持 pending：依赖 R08/R10 未 done；A-AFFECT/A-REFERENCE 输入未迁（轨道 2 点名）；长期轨迹真机批。"
     },
     {
       "id": "R12",
@@ -324,7 +332,8 @@
         "R05",
         "R06"
       ],
-      "status": "pending"
+      "status": "pending",
+      "note": "软件面已交付（docs/r12-validation.md；delivery 3/3）。保持 pending：依赖 R03/R05/R06 未 done；SDK 接入随获批工厂任务（7.1）；跨重启试用随 D05/板级批。"
     },
     {
       "id": "R13",
@@ -786,11 +795,9 @@
       ],
       "first_batch": "R09",
       "migration_action": "reference",
-      "status": "in_progress",
-      "constraints": "S3/MP34DT05 历史后端，不把引脚、GDMA reset 和频率照搬 P4。 R09接口面覆盖（采集语义/取消）；PDM真后端板级批。",
-      "target_paths": [
-        "framework/services/media/media.c"
-      ],
+      "status": "not_migrated",
+      "constraints": "S3/MP34DT05 历史后端，不把引脚、GDMA reset 和频率照搬 P4。 R09接口面覆盖（采集语义/取消）；PDM真后端板级批。 reference=只读参考不设迁移目标（计划符合性审查 P3 修正：原误填 target_paths/in_progress）。",
+      "target_paths": [],
       "verification": {
         "state": "not_run",
         "evidence_paths": [
@@ -813,11 +820,9 @@
       ],
       "first_batch": "R09",
       "migration_action": "reference",
-      "status": "in_progress",
-      "constraints": "ATK S3 GPIO/XL9555/环 DMA 假设；当前 P4 正式后端需单独设计和实测。 R09接口面覆盖；es8311真后端板级批。",
-      "target_paths": [
-        "framework/services/media/media.c"
-      ],
+      "status": "not_migrated",
+      "constraints": "ATK S3 GPIO/XL9555/环 DMA 假设；当前 P4 正式后端需单独设计和实测。 R09接口面覆盖；es8311真后端板级批。 reference=只读参考不设迁移目标（计划符合性审查 P3 修正：原误填 target_paths/in_progress）。",
+      "target_paths": [],
       "verification": {
         "state": "not_run",
         "evidence_paths": [
@@ -4765,9 +4770,11 @@
       "sha256": "6c1748d3cf7d792fb6763f6e62d0397f1747696fbf2e13bd07e014dbe05f42ba",
       "id": "S-legacy-3b13b7b2cb364376d680",
       "asset_id": "A-PERIPH",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/execution/capability/desc.c"
+      ],
+      "migration_commit": "4bc4a1da4d57df545fc353a054e987a8dfb4296b"
     },
     {
       "repository": "legacy",
@@ -4804,9 +4811,11 @@
       "sha256": "29f53a266d510c240f2f3542e366c1557b226e6c881e942aaffb95f2fa8d2d1b",
       "id": "S-legacy-6b32b17eb86e85bab0c9",
       "asset_id": "A-POWER",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/execution/resource/power.c"
+      ],
+      "migration_commit": "4bc4a1da4d57df545fc353a054e987a8dfb4296b"
     },
     {
       "repository": "legacy",
@@ -4830,9 +4839,11 @@
       "sha256": "bdb34ab9d009a58a9782c40a1df27f0217ef62d97d57b1b28d7065724d68ce20",
       "id": "S-legacy-7667ff2755b5a13b58f6",
       "asset_id": "A-POWER",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/execution/resource/power.c"
+      ],
+      "migration_commit": "4bc4a1da4d57df545fc353a054e987a8dfb4296b"
     },
     {
       "repository": "legacy",
