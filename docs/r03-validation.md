@@ -45,6 +45,19 @@ flash/宿主文件持久性、真实掉电半写、system_fail 语境 flash 可�
 - 自行决策（建议值，待追认）：审计节流窗沿用旧 1Hz（DEC-52① 出处）；
   boot 打印留平台层（存储模块 printk-free）。
 
+## 子闭环 3（prov 配置面）
+
+- store 套件 10/10 SUCCESSFUL：v1 全字段+缺省（routers 余位清零/orch
+  estrated/远程清除开放/lconf 0/TLS off）；v2 部署模式显式值；域外值
+  三面 fail-closed（mode/clear/lconf=2）；v/pairs 错配；**尾部余量拒**
+  （本轮新增收紧：定长 schema 精确消费，walk 末 rem!=0=E_IO）；CRC 破坏
+  →E_IO；lconf/TLS 15 对长度镜像（装载态 ca_len 等）；维护窗（非法零
+  写入→分区仍空 load E_IO、合法装载、一次性窗 E_STATE、复位模拟再写）。
+- 自行决策（建议值，待追认）：① TLS 三元组常驻装载态（旧
+  CONFIG_TS_NET_TLS 门控待 R06 消费方复核足迹）；② 尾部余量收紧为拒
+  绝（旧 prov 未显式测，trust 面已有同语义——统一采纳）；③ estop 边沿
+  消费 prov 仍固定缺省上升（随 D12-⑤ 决策落地）。
+
 ## 复现
 
 ```sh

@@ -75,7 +75,7 @@
       "title": "配置/身份/凭据",
       "planned_root": "framework/services/config",
       "first_batch": "R03",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "id": "M-OBSERVABILITY",
@@ -855,14 +855,16 @@
       "first_batch": "R01",
       "migration_action": "extract",
       "status": "in_progress",
-      "constraints": "meta 双副本、audit/KV 各有不同恢复能力；250B KV 不能当经历库或试用隔离。 R03子闭环1已迁端口(RAM)/meta/noinit+R02留痕接线并 native_sim 验证；slot.c→R05包事实批次(defer)，prov/kv/trust 待后续子闭环（audit 已迁子闭环2：两页乒乓环+safety异常/estop落盘，节流1Hz），组级未完成。",
+      "constraints": "meta 双副本、audit/KV 各有不同恢复能力；250B KV 不能当经历库或试用隔离。 R03子闭环1已迁端口(RAM)/meta/noinit+R02留痕接线并 native_sim 验证；slot.c→R05包事实批次(defer)，kv/trust 待后续子闭环（audit 子闭环2已迁；prov v1/v2+维护窗+烧录通道子闭环3已迁并 oracle 全绿），组级未完成。",
       "target_paths": [
         "framework/services/storage/part.c",
         "framework/services/storage/meta.c",
         "framework/services/storage/noinit.c",
         "framework/services/storage/internal.h",
         "framework/include/entelea/storage.h",
-        "framework/services/storage/audit.c"
+        "framework/services/storage/audit.c",
+        "framework/services/config/prov.c",
+        "framework/services/config/prov_maint.c"
       ],
       "verification": {
         "state": "not_run",
@@ -4843,9 +4845,13 @@
       "sha256": "977dbcc64f613dd9214b382503e2c5382b2472acd8b403ca3b6aa3ddbd7fc842",
       "id": "S-legacy-6503b51174936f3c6bc6",
       "asset_id": "A-STORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/config/prov.c",
+        "framework/include/entelea/prov.h",
+        "platform/zephyr/tests/store/src/main.c"
+      ],
+      "migration_commit": "f3fb78c3cce51ea180f0d4537c97f12a6b849bab"
     },
     {
       "repository": "legacy",
@@ -4856,9 +4862,12 @@
       "sha256": "46115ed550d86c5595d9016d3d5ebbd8dda6a73f1862558b9b4fb988d6beae5a",
       "id": "S-legacy-91ccff81a109830fa853",
       "asset_id": "A-STORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/config/prov_maint.c",
+        "framework/include/entelea/prov.h"
+      ],
+      "migration_commit": "f3fb78c3cce51ea180f0d4537c97f12a6b849bab"
     },
     {
       "repository": "legacy",
@@ -4869,9 +4878,11 @@
       "sha256": "e3fead01b20789806e066ee01f6d883fd3bbb1700b7084311a6c4b1fd6d36bef",
       "id": "S-legacy-8a51811ec2d538012474",
       "asset_id": "A-STORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/config/prov_maint.c"
+      ],
+      "migration_commit": "f3fb78c3cce51ea180f0d4537c97f12a6b849bab"
     },
     {
       "repository": "legacy",
