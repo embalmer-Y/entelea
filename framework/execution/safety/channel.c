@@ -179,24 +179,27 @@ static int write_transition_locked(struct entelea_ch_slot *s,
 		driver_write_failures++;
 		s->state = ENTELEA_ST_SAFE_FAULT;
 		s->fault_by_write_failure = true; /* 仅 channel_recover 可恢复 */
-		s->have_last = false;
+		/* 基线保留：失败=无确认写，锚点仍是最后一次确认值+时刻。 */
 		return -1;
 	}
 	s->shadow = value;
 	s->fault_by_write_failure = false;
-	s->have_last = false;
+	/* 确认写刷新 slew 锚点（决定 C）：安全迁移不再重置基线——输出
+	 * 永远从最后确认值受控爬升；estop-clear 循环不再产生免跳。
+	 * now_ms 内部 irq_lock 可嵌套。 */
+	s->last_t = entelea_safety_now_ms();
+	s->have_last = true;
 	s->state = next;
 	return 0;
 }
 
 /** 仅状态迁移（激活面：不落驱动——恢复不回写，DR-04），须持 irq_lock。
- * 返回 0=完成；1=forced 抢入。 */
+ * 基线不动（激活无物理写，最后确认值仍有效）。返回 0=完成；1=forced。 */
 static int activate_locked(struct entelea_ch_slot *s)
 {
 	if (atomic_get(&entelea_forced) != 0) {
 		return 1;
 	}
-	s->have_last = false;
 	s->state = ENTELEA_ST_ACTIVE;
 	return 0;
 }
@@ -369,8 +372,7 @@ entelea_result_t entelea_safety_clear_fault(void)
 		unsigned int key = irq_lock();
 
 		if (atomic_get(&entelea_forced) == 0) {
-			s->have_last = false;
-			s->state = next;
+			s->state = next; /* 无物理写：基线保留（决定 C） */
 		}
 		irq_unlock(key);
 		if (atomic_get(&entelea_forced) == 0) {

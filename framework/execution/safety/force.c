@@ -42,14 +42,15 @@ void entelea_safety_force_all_fault(void)
 			entelea_safety_count_write_failure();
 			s->state = ENTELEA_ST_SAFE_FAULT;
 			s->fault_by_write_failure = true;
-			s->have_last = false;
+			/* 基线保留：失败=无确认写（决定 C）。 */
 			any_write_failed = true;
 			continue;
 		}
 		s->shadow = s->desc->fault; /* 确认写：覆盖早期“物理未知”标记 */
 		s->fault_by_write_failure = false;
+		s->last_t = entelea_safety_now_ms(); /* 确认写刷新锚点 */
+		s->have_last = true;
 		s->state = ENTELEA_ST_SAFE_FAULT;
-		s->have_last = false;
 	}
 	if (any_write_failed) {
 		/* 强停升级（owner 2026-11-08 定案①）：estop 强停落驱失败 =
@@ -79,13 +80,14 @@ void entelea_safety_system_fail(uint32_t reason)
 			entelea_safety_count_write_failure();
 			s->state = ENTELEA_ST_SAFE_FAULT;
 			s->fault_by_write_failure = true;
-			s->have_last = false;
+			/* 基线保留：失败=无确认写（决定 C）。 */
 			continue;
 		}
 		s->shadow = s->desc->fault; /* 确认写：覆盖早期“物理未知”标记 */
 		s->fault_by_write_failure = false;
+		s->last_t = entelea_safety_now_ms(); /* 确认写刷新锚点 */
+		s->have_last = true;
 		s->state = ENTELEA_ST_SAFE_FAULT;
-		s->have_last = false;
 	}
 	/* noinit 留痕（复位后归因）归 R03 存储批次。 */
 

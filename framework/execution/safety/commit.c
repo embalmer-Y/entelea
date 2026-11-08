@@ -113,8 +113,9 @@ static entelea_result_t commit_impl(const char *uid, entelea_out_value_t v)
 				res = ENTELEA_E_RANGE;
 			}
 		}
-		/* !have_last：首笔/恢复后建立基线（min/max/限幅仍生效；基线
-		 * 时刻 = now）。首笔幅度是否也按 slew 收紧 → owner 选项。 */
+		/* !have_last：该通道自注册后从未有过确认写（真实启动流中
+		 * poweron_init 已建立基线，此分支仅无锚点场景）——首笔仅受
+		 * min/max/限幅；写入即成为确认写并刷新锚点。 */
 	}
 
 	/* 3) 限流（POWER）：请求电流超限 → 整笔拒绝。 */

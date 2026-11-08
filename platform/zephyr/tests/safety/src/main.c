@@ -292,6 +292,54 @@ ZTEST(framework_safety, test_slew_total_budget_per_ms)
 	zassert_equal(rb.u, 1, "next-ms budget = slew*1");
 }
 
+/* ---- 基线跨迁移持续（决定 C）：任何确认写刷新锚点，免跳面关闭 ---- */
+ZTEST(framework_safety, test_slew_baseline_persists_across_transitions)
+{
+	entelea_safety_test_reset();
+	zassert_equal(entelea_safety_bind_clock(&virt_clock), ENTELEA_OK);
+	static const entelea_out_channel_t ramp = {
+		.uid = "ramp", .kind = ENTELEA_CH_PWM,
+		.poweron = {.u = 0}, .linkloss = {.u = 0}, .fault = {.u = 0},
+		.limits = {.min = 0, .max = 1000, .slew_per_ms = 5},
+	};
+	zassert_equal(entelea_safety_register_channel(&ramp), ENTELEA_OK);
+
+	/* poweron_init = 确认写（0@t0）：首笔提交即受 slew 限。 */
+	virt_now = 0;
+	zassert_equal(entelea_safety_poweron_init(), ENTELEA_OK);
+	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
+	virt_now = 10; /* 界 = 5×10 = 50 */
+	zassert_equal(entelea_safety_commit("ramp", (entelea_out_value_t){.u = 1000}),
+		      ENTELEA_E_RANGE, "首笔从确认基线爬升（决定 C）");
+	entelea_out_value_t rb;
+
+	zassert_equal(entelea_safety_readback("ramp", &rb), ENTELEA_OK);
+	zassert_equal(rb.u, 50, "split to 0+50");
+
+	/* estop→clear 循环不再产生免跳：fault 写=确认写刷新锚点，
+	 * clear 无物理写保留基线，随后同毫秒提交界=0。 */
+	virt_now = 100;
+	zassert_equal(entelea_safety_commit("ramp", (entelea_out_value_t){.u = 100}),
+		      ENTELEA_OK); /* 界 5×90=450 ≥ 100−50：整笔通过 */
+	entelea_safety_force_all_fault(); /* fault=0 确认写 @t=100 */
+	zassert_equal(entelea_safety_clear_fault(), ENTELEA_OK);
+	zassert_equal(entelea_safety_commit("ramp", (entelea_out_value_t){.u = 1000}),
+		      ENTELEA_E_RANGE, "estop-clear 循环不得免跳");
+	zassert_equal(entelea_safety_readback("ramp", &rb), ENTELEA_OK);
+	zassert_equal(rb.u, 0, "循环后同毫秒界=0（修复前可免跳至 1000）");
+
+	/* recover=确认写（poweron 值@t2）：其后提交从该值爬升。 */
+	virt_now = 200;
+	zassert_equal(entelea_safety_force_channel_fault("ramp"), ENTELEA_OK);
+	virt_now = 210;
+	zassert_equal(entelea_safety_channel_recover("ramp"), ENTELEA_OK); /* 0@210 */
+	virt_now = 211; /* 界 = 5×1 = 5 */
+	zassert_equal(entelea_safety_commit("ramp", (entelea_out_value_t){.u = 100}),
+		      ENTELEA_E_RANGE);
+	zassert_equal(entelea_safety_readback("ramp", &rb), ENTELEA_OK);
+	zassert_equal(rb.u, 5, "recover 后从确认值爬升");
+}
+
 /* ---- estop 锁存不被 poweron_init 覆盖（缺陷 3 守卫） ---- */
 ZTEST(framework_safety, test_poweron_preserves_estop_latch)
 {
