@@ -71,7 +71,14 @@ checkout（六补丁完整核验通过）；Zephyr 构建解释器显式使用�
 
 - `tools/build_zephyr.py` 新增通用 `--board-root`（仓库内 out-of-tree 板目录，
   显式 `-DBOARD_ROOT` 传递；仓库外/缺失显式拒绝）——任何板选择都需要的
-  入口能力，不预判 D12-①。负测 3 项新增（20/20 通过）。
+  入口能力，不预判 D12-①。负测 3 项新增。
+- `tools/build_zephyr.py` 新增显式模块选择 `--module name=path`（可重复）：
+  仅允许固定 pin 集合 {zephyr, wamr, hal_espressif}，每个模块经只读核验器
+  验固定提交/补丁后进入 `ZEPHYR_MODULES`（分号连接显式集，仍不经 west）。
+  未知模块名/坏规格/核验失败显式拒绝；负测 4 项新增。实演：真实固定
+  hal_espressif checkout 核验通过并进入 dry-run 计划；未固定名
+  `zephyrproject` 显式拒绝。板级构建（esp32p4 DTS 依赖 espressif HAL）
+  的模块前置由此就绪，仍待 D12-① 冻结后执行。
 - `platform/zephyr/apps/minimal/taskwdt.conf`：CONFIG_TASK_WDT=y 的板形
   预演片段（EXTRA_CONF_FILE 叠加）。native_sim 运行 10.03s：单次启动、
   无 task_wdt 通道误复位（10s = 2× 5000ms 通道超时）；通道挂载/喂狗由

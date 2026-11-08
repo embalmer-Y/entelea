@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 
 NATIVE_BOARDS = ("native_sim", "native_sim/native/64", "native_sim/native/32")
+PINNED_MODULES = {"zephyr", "wamr", "hal_espressif"}
 
 
 class BuildError(Exception):
@@ -57,16 +58,31 @@ def preflight(root, args):
         raise BuildError(f"Not a Zephyr base (no VERSION): {zephyr_base}")
 
     # 1. Pinned source verification (read-only; reuses the R01 checker).
-    run([
-        sys.executable,
-        str(root / "tools" / "check_dependencies.py"),
-        "--dependency", "zephyr",
-        "--checkout", str(zephyr_base),
-    ])
+    checker = str(root / "tools" / "check_dependencies.py")
+
+    run([sys.executable, checker, "--dependency", "zephyr",
+         "--checkout", str(zephyr_base)])
+
+    # Explicit module selection: only pinned dependency ids, each verified
+    # read-only at its pinned commit/patch state. No implicit workspace.
+    modules = []
+    for spec in args.module or []:
+        name, sep, path = spec.partition("=")
+        if not sep or not name or not path:
+            raise BuildError(f"Invalid --module spec (expected name=path): {spec}")
+        if name not in PINNED_MODULES:
+            raise BuildError(
+                f"Unpinned module not allowed: {name} "
+                f"(allowed: {', '.join(sorted(PINNED_MODULES))})"
+            )
+        module_path = Path(path).resolve()
+        run([sys.executable, checker, "--dependency", name,
+             "--checkout", str(module_path)])
+        modules.append(str(module_path))
 
     env = dict(os.environ)
     env["ZEPHYR_BASE"] = str(zephyr_base)
-    env["ZEPHYR_MODULES"] = ""  # explicit empty module set; no west workspace
+    env["ZEPHYR_MODULES"] = ";".join(modules)  # explicit set; no west workspace
 
     if is_native(args.board):
         if args.sdk or args.sdk_version or args.toolchain or args.gcc_version:
@@ -154,7 +170,7 @@ def preflight(root, args):
     cmake_args += list(args.cmake_arg or [])
     print(f"[preflight] app={app}")
     print(f"[preflight] board={args.board} build={build_dir}")
-    print(f"[preflight] zephyr={zephyr_base} modules= (explicit empty)")
+    print(f"[preflight] zephyr={zephyr_base} modules={env['ZEPHYR_MODULES'] or '(none)'}")
     return env, cmake_args, build_dir
 
 
@@ -170,6 +186,11 @@ def main():
     parser.add_argument("--gcc-version", help="Expected target gcc version substring")
     parser.add_argument("--host-cc", default="cc", help="Host compiler (native targets)")
     parser.add_argument("--board-root", help="Out-of-tree board directory inside the repo")
+    parser.add_argument(
+        "--module",
+        action="append",
+        help="Explicit pinned module as name=path (repeatable; verified read-only)",
+    )
     parser.add_argument("--cmake-arg", action="append", help="Extra -D args (repeatable)")
     parser.add_argument("--build", action="store_true", help="Also compile after configure")
     parser.add_argument("--dry-run", action="store_true", help="Preflight only")

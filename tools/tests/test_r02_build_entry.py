@@ -43,6 +43,7 @@ class PreflightTests(unittest.TestCase):
             gcc_version=None,
             host_cc="cc",
             board_root=None,
+            module=None,
             cmake_arg=None,
         )
 
@@ -214,6 +215,54 @@ class PreflightTests(unittest.TestCase):
                 self.repo, type("Args", (), base)()
             )
         self.assertIn(f"-DBOARD_ROOT={boards.resolve()}", cmake_args)
+
+    def test_module_bad_spec_rejected(self):
+        self.base["module"] = ["hal_espressif"]
+        self.fails("Invalid --module spec")
+
+    def test_module_unpinned_name_rejected(self):
+        self.base["module"] = ["something=/tmp/x"]
+        self.fails("Unpinned module not allowed")
+
+    def test_module_verification_failure_propagates(self):
+        hal = self.root / "hal"
+        hal.mkdir()
+        self.base["module"] = [f"hal_espressif={hal}"]
+
+        def reject(command, env=None, cwd=None):
+            cmd = [str(part) for part in command]
+            if "hal_espressif" in cmd:
+                raise BZ.BuildError("Dependency revision mismatch")
+            return self.ok_run(command, env, cwd)
+
+        with mock.patch.object(BZ, "run", side_effect=reject):
+            with self.assertRaisesRegex(BZ.BuildError, "revision mismatch"):
+                BZ.preflight(self.repo, type("Args", (), self.base)())
+
+    def test_modules_explicit_and_verified(self):
+        hal = self.root / "hal"
+        hal.mkdir()
+        self.base["module"] = [f"hal_espressif={hal}", f"wamr={hal}"]
+        seen = []
+
+        def spy(command, env=None, cwd=None):
+            cmd = [str(part) for part in command]
+            seen.append(cmd)
+            return self.ok_run(command, env, cwd)
+
+        with mock.patch.object(BZ, "run", side_effect=spy):
+            with mock.patch.object(BZ.shutil, "which", return_value="/usr/bin/cc"):
+                env, cmake_args, build_dir = BZ.preflight(
+                    self.repo, type("Args", (), self.base)()
+                )
+        checks = [c for c in seen if "--checkout" in c]
+        self.assertEqual(len(checks), 3)  # zephyr + hal + wamr
+        self.assertIn("hal_espressif", checks[1])
+        self.assertIn(str(hal.resolve()), checks[1])
+        self.assertIn("wamr", checks[2])
+        self.assertEqual(
+            env["ZEPHYR_MODULES"], f"{hal.resolve()};{hal.resolve()}"
+        )
 
     def test_check_dependencies_invoked_read_only(self):
         seen = []
