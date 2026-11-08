@@ -15,6 +15,9 @@
 
 已认可 D01–D12 的建议方向，D03 调整为首期设计覆盖 Lua；
 具体未决边界仍按[评审记录](docs/rebuild-plan.md#7-设计确认清单与不得擅定的阈值)逐批冻结。
+Forge 保留独立工程仓库，编程引擎已确定采用 **OpenHands Software Agent SDK**，
+不继续自研通用创作循环；版本/适配待验证，尚未安装或接入。
+职责与迁移边界见[工厂引擎决策](docs/rebuild-plan.md#71-工厂编程引擎已确认决策)。
 默认只读取当前批次所需上下文；公共机制通过不意味着设备/产品验收通过。
 公共机制的边界见[合同](framework/common/contract.md)，
 构建/依赖/诊断检查见[构建说明](build-support/README.md)。

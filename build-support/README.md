@@ -63,6 +63,12 @@ Zephyr、WAMR、HAL，不宣称完整SDK/所有可选模块可重现。
 其他模块在需要时从固定旧 `docs/provenance.md` / 锁文件选择并重新核验。
 主机公共库不消费这三个依赖；元数据通过不表示固件构建通过。
 
+Forge 的编程引擎已选 OpenHands Software Agent SDK，但版本/接入尚未验证。
+它是独立工厂的 Python/工程依赖，不是 Zephyr SDK 或 MCU 公共库依赖，
+不加入此固件三项 pin；实际接入时在获批的新 Forge 工程中固定来源、许可
+及独立锁文件，不借本次文档决策自动安装。边界见
+[工厂引擎决策](../docs/rebuild-plan.md#71-工厂编程引擎已确认决策)。
+
 ```sh
 python3 tools/check_dependencies.py
 python3 tools/check_dependencies.py --dependency zephyr --checkout ../entelea-legacy/.deps/zephyr

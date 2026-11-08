@@ -402,8 +402,11 @@
       "id": "D09",
       "status": "direction_approved",
       "record_path": "docs/rebuild-plan.md",
+      "approved_engine": "OpenHands Software Agent SDK",
       "pending_details": [
-        "连接入口、自动工程闭环和适用验证要求"
+        "SDK版本/来源、Python和工具依赖、独立Forge工作区及薄适配",
+        "隔离、权限/外发、费用/轮次预算、取消/恢复/停止和工程验证要求",
+        "连接入口及与设备任务/候选合同的版本关系"
       ]
     },
     {
@@ -2709,7 +2712,7 @@
       "first_batch": "R12",
       "migration_action": "reference",
       "status": "not_migrated",
-      "constraints": "独立版本与文档按需；demos/web/skills 不默认复制进框架。",
+      "constraints": "独立Forge采用OpenHands Software Agent SDK；版本/依赖/许可在获批接入时固定，归档只读；demos/web/skills不默认复制进框架。",
       "target_paths": [],
       "verification": {
         "state": "not_run",
@@ -2729,9 +2732,9 @@
         "M-FACTORY"
       ],
       "first_batch": "R12",
-      "migration_action": "reuse_external",
+      "migration_action": "adapt_external",
       "status": "not_migrated",
-      "constraints": "通过独立契约复用，不导入设备业务状态；预算/证据失败明确。",
+      "constraints": "通用创作循环由OpenHands Software Agent SDK替换，不整迁旧循环；仅按需审查工作区/预算/任务合同/测试，逐源项决定reference/defer/discard；来源不变、归档不删、接入尚未实现。",
       "target_paths": [],
       "verification": {
         "state": "not_run",
@@ -2754,7 +2757,7 @@
       "first_batch": "R12",
       "migration_action": "adapt_external",
       "status": "not_migrated",
-      "constraints": "规格/权限/仿真适用性核验；主调用链是否调用 simulate 需逐路径测试。",
+      "constraints": "适配OpenHands驱动的Forge领域工具，可信验证/签名/交付与模型循环分离；规格/权限/仿真适用性核验，主链必需simulate实际执行需测试，不复用旧编排冒充闭环。",
       "target_paths": [],
       "verification": {
         "state": "not_run",

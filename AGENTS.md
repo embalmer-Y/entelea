@@ -8,6 +8,9 @@ This tree has R01 common primitives, not an implemented device runtime or produc
 - D01-D12 have owner-approved directions, not fully frozen details. Read section 7
   of the plan before implementing unresolved boundaries. D03 requires first-phase
   Lua contracts and feasibility validation, not first-phase production support.
+- Forge uses owner-approved OpenHands Software Agent SDK, not the legacy generic
+  creation loop. Section 7.1 of the plan fixes the engine choice; version,
+  isolation and integration remain to be verified in an approved factory scope.
 - Distinguish framework contracts from product requirements. Use auxiliary
   intelligence / simulated intelligence at framework level; companion only in
   the companion product context.
