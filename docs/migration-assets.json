@@ -3083,13 +3083,23 @@
       ],
       "first_batch": "R07",
       "migration_action": "new",
-      "status": "not_migrated",
-      "constraints": "没有旧完整实现；先冻结窄合同和验收，不从目录/日志推断完成。",
-      "target_paths": [],
+      "status": "migrated",
+      "constraints": "最小宿主：同源framework经POSIX垫片编译运行（时钟/事件/安全机制矩阵）；Wasm/完整伴侣/ARM64实跑为后续；ISR/工作线程语义降级如实登记。",
+      "target_paths": [
+        "platform/linux/clock.c",
+        "platform/linux/clock.h",
+        "platform/linux/host_main.c",
+        "platform/linux/zephyr_shim.c",
+        "platform/linux/zephyr_shim.h",
+        "build-support/build-linux-host.sh"
+      ],
       "verification": {
-        "state": "not_run",
-        "evidence_paths": []
-      }
+        "state": "passed",
+        "evidence_paths": [
+          "docs/r07-validation.md"
+        ]
+      },
+      "implementation_commit": "cada3d8e28b4bb83c18b4d3cf4ec33b4420ef73b"
     },
     {
       "id": "N-CONTEXT",
