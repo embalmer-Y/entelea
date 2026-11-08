@@ -31,14 +31,16 @@
       "title": "构建和依赖隔离",
       "planned_root": "build-support",
       "first_batch": "R01",
-      "status": "planned"
+      "status": "implemented",
+      "implemented_scope": "R01公共底座；不含设备后端/运行时/产品"
     },
     {
       "id": "M-CONTRACT",
       "title": "公共类型/时间/来源",
       "planned_root": "framework/include/entelea",
       "first_batch": "R01",
-      "status": "planned"
+      "status": "implemented",
+      "implemented_scope": "R01公共底座；不含设备后端/运行时/产品"
     },
     {
       "id": "M-SUPERVISION",
@@ -206,7 +208,8 @@
       "title": "合同/平台/产品验证",
       "planned_root": "tests",
       "first_batch": "R01",
-      "status": "planned"
+      "status": "in_progress",
+      "implemented_scope": "R01主机合同/机械负测；后续模块/硬件验证未迁"
     }
   ],
   "batches": [
@@ -220,7 +223,11 @@
       "depends_on": [
         "R00"
       ],
-      "status": "pending"
+      "status": "done",
+      "evidence_paths": [
+        "docs/r01-validation.md"
+      ],
+      "implementation_commit": "f9fcba53d89a0e7f76ceeb6bdf2c8d6616e3ded7"
     },
     {
       "id": "R02",
@@ -330,74 +337,98 @@
       "id": "D01",
       "status": "direction_approved",
       "record_path": "docs/rebuild-plan.md",
-      "pending_details": ["后续模块接口、跨平台旧ABI适配；R01公共合同与命名已落实"]
+      "pending_details": [
+        "后续模块接口、跨平台旧ABI适配；R01公共合同与命名已落实"
+      ]
     },
     {
       "id": "D02",
       "status": "direction_approved",
       "record_path": "docs/rebuild-plan.md",
-      "pending_details": ["适用后端、ARM64/x86验证环境与具体预算"]
+      "pending_details": [
+        "适用后端、ARM64/x86验证环境与具体预算"
+      ]
     },
     {
       "id": "D03",
       "status": "direction_approved",
       "record_path": "docs/rebuild-plan.md",
       "scope": "首期设计覆盖Lua接入合同及关键可行性验证；正式运行支持可后续交付",
-      "pending_details": ["Lua依赖/版本、适用平台、预算/停止方案及正式交付批次"]
+      "pending_details": [
+        "Lua依赖/版本、适用平台、预算/停止方案及正式交付批次"
+      ]
     },
     {
       "id": "D04",
       "status": "direction_approved",
       "record_path": "docs/rebuild-plan.md",
-      "pending_details": ["重启体验、旧ABI/持久格式兼容与恢复策略"]
+      "pending_details": [
+        "重启体验、旧ABI/持久格式兼容与恢复策略"
+      ]
     },
     {
       "id": "D05",
       "status": "direction_approved",
       "record_path": "docs/rebuild-plan.md",
-      "pending_details": ["槽布局、数据晋升/迁移、跨重启试用状态"]
+      "pending_details": [
+        "槽布局、数据晋升/迁移、跨重启试用状态"
+      ]
     },
     {
       "id": "D06",
       "status": "direction_approved",
       "record_path": "docs/rebuild-plan.md",
-      "pending_details": ["最低特性、删除/不记住/纠正、只读/满盘产品处置"]
+      "pending_details": [
+        "最低特性、删除/不记住/纠正、只读/满盘产品处置"
+      ]
     },
     {
       "id": "D07",
       "status": "direction_approved",
       "record_path": "docs/rebuild-plan.md",
-      "pending_details": ["成本/恢复比较、后端与新依赖选择"]
+      "pending_details": [
+        "成本/恢复比较、后端与新依赖选择"
+      ]
     },
     {
       "id": "D08",
       "status": "direction_approved",
       "record_path": "docs/rebuild-plan.md",
-      "pending_details": ["失效/恢复阈值、防抖、日志容量/保留"]
+      "pending_details": [
+        "失效/恢复阈值、防抖、日志容量/保留"
+      ]
     },
     {
       "id": "D09",
       "status": "direction_approved",
       "record_path": "docs/rebuild-plan.md",
-      "pending_details": ["连接入口、自动工程闭环和适用验证要求"]
+      "pending_details": [
+        "连接入口、自动工程闭环和适用验证要求"
+      ]
     },
     {
       "id": "D10",
       "status": "direction_approved",
       "record_path": "docs/rebuild-plan.md",
-      "pending_details": ["撤销/解绑、保留/删除、备份与物理擦除合同"]
+      "pending_details": [
+        "撤销/解绑、保留/删除、备份与物理擦除合同"
+      ]
     },
     {
       "id": "D11",
       "status": "direction_approved",
       "record_path": "docs/rebuild-plan.md",
-      "pending_details": ["单帧视觉、打断/AEC、代表任务/App及固定功能"]
+      "pending_details": [
+        "单帧视觉、打断/AEC、代表任务/App及固定功能"
+      ]
     },
     {
       "id": "D12",
       "status": "direction_approved",
       "record_path": "docs/rebuild-plan.md",
-      "pending_details": ["参考板、停止/唤醒/并发/长期阈值、外发/云服务"]
+      "pending_details": [
+        "参考板、停止/唤醒/并发/长期阈值、外发/云服务"
+      ]
     }
   ],
   "read_depth": {
@@ -565,12 +596,14 @@
       ],
       "first_batch": "R01",
       "migration_action": "adapt",
-      "status": "not_migrated",
-      "constraints": "分模块端口，不复制含 Zephyr 类型的 core.h 为公共头；逐个旧符号兼容评估。",
+      "status": "in_progress",
+      "constraints": "分模块端口，不复制含 Zephyr 类型的 core.h 为公共头；逐个旧符号兼容评估。 R01仅迁上述源项/声明或核验子集；组级验证未完成。",
       "target_paths": [],
       "verification": {
         "state": "not_run",
-        "evidence_paths": []
+        "evidence_paths": [
+          "docs/r01-validation.md"
+        ]
       },
       "source_file_count": 10
     },
@@ -795,16 +828,19 @@
       "target_modules": [
         "M-STORAGE",
         "M-CONFIG",
-        "M-OBSERVABILITY"
+        "M-OBSERVABILITY",
+        "M-CONTRACT"
       ],
-      "first_batch": "R03",
+      "first_batch": "R01",
       "migration_action": "extract",
-      "status": "not_migrated",
-      "constraints": "meta 双副本、audit/KV 各有不同恢复能力；250B KV 不能当经历库或试用隔离。",
+      "status": "in_progress",
+      "constraints": "meta 双副本、audit/KV 各有不同恢复能力；250B KV 不能当经历库或试用隔离。 R01仅迁上述源项/声明或核验子集；组级验证未完成。",
       "target_paths": [],
       "verification": {
         "state": "not_run",
-        "evidence_paths": []
+        "evidence_paths": [
+          "docs/r01-validation.md"
+        ]
       },
       "source_file_count": 11
     },
@@ -822,12 +858,21 @@
       ],
       "first_batch": "R01",
       "migration_action": "extract",
-      "status": "not_migrated",
+      "status": "migrated",
       "constraints": "移动共享算法不复制两个实现；签名消费者对拍。",
-      "target_paths": [],
+      "target_paths": [
+        "framework/common/sha256.c",
+        "framework/compat/common.c",
+        "framework/compat/include/ts/common.h",
+        "framework/include/entelea/sha256.h",
+        "tests/contracts/main.c",
+        "tools/test_legacy_equivalence.py"
+      ],
       "verification": {
-        "state": "not_run",
-        "evidence_paths": []
+        "state": "passed",
+        "evidence_paths": [
+          "docs/r01-validation.md"
+        ]
       },
       "source_file_count": 1
     },
@@ -841,16 +886,19 @@
       },
       "target_modules": [
         "M-NETWORK",
-        "M-DEPENDENCY"
+        "M-DEPENDENCY",
+        "M-CONTRACT"
       ],
-      "first_batch": "R06",
+      "first_batch": "R01",
       "migration_action": "extract",
-      "status": "not_migrated",
-      "constraints": "传输缝可复用；linkmon 与 model 可用分开；cmd 不是完整 Task service。",
+      "status": "in_progress",
+      "constraints": "传输缝可复用；linkmon 与 model 可用分开；cmd 不是完整 Task service。 R01仅迁上述源项/声明或核验子集；组级验证未完成。",
       "target_paths": [],
       "verification": {
         "state": "not_run",
-        "evidence_paths": []
+        "evidence_paths": [
+          "docs/r01-validation.md"
+        ]
       },
       "source_file_count": 9
     },
@@ -868,12 +916,21 @@
       ],
       "first_batch": "R01",
       "migration_action": "extract",
-      "status": "not_migrated",
+      "status": "migrated",
       "constraints": "实际上无条件编译并被 appmgr 使用，不能随网络裁掉。",
-      "target_paths": [],
+      "target_paths": [
+        "framework/common/cbor.c",
+        "framework/compat/common.c",
+        "framework/compat/include/ts/common.h",
+        "framework/include/entelea/cbor.h",
+        "tests/contracts/main.c",
+        "tools/test_legacy_equivalence.py"
+      ],
       "verification": {
-        "state": "not_run",
-        "evidence_paths": []
+        "state": "passed",
+        "evidence_paths": [
+          "docs/r01-validation.md"
+        ]
       },
       "source_file_count": 1
     },
@@ -1076,12 +1133,14 @@
       ],
       "first_batch": "R02",
       "migration_action": "review",
-      "status": "not_migrated",
-      "constraints": "六项已批准 Zephyr 补丁与 GDMA/CPLL 实验必须区分；不能一键全应用。",
+      "status": "in_progress",
+      "constraints": "六项已批准 Zephyr 补丁与 GDMA/CPLL 实验必须区分；不能一键全应用。 R01仅迁上述源项/声明或核验子集；组级验证未完成。",
       "target_paths": [],
       "verification": {
         "state": "not_run",
-        "evidence_paths": []
+        "evidence_paths": [
+          "docs/r01-validation.md"
+        ]
       },
       "source_file_count": 8
     },
@@ -1099,12 +1158,14 @@
       ],
       "first_batch": "R01",
       "migration_action": "adapt",
-      "status": "not_migrated",
-      "constraints": "路径、固定版本、完整补丁比较及新目录重新核验；不复用旧绝对 CMake cache。",
+      "status": "in_progress",
+      "constraints": "路径、固定版本、完整补丁比较及新目录重新核验；不复用旧绝对 CMake cache。 R01仅迁上述源项/声明或核验子集；组级验证未完成。",
       "target_paths": [],
       "verification": {
         "state": "not_run",
-        "evidence_paths": []
+        "evidence_paths": [
+          "docs/r01-validation.md"
+        ]
       },
       "source_file_count": 5
     },
@@ -1795,12 +1856,14 @@
       ],
       "first_batch": "R01",
       "migration_action": "port_tests",
-      "status": "not_migrated",
-      "constraints": "用例先当行为 oracle；重接真实路径，不复制桩结果当生产通过。",
+      "status": "in_progress",
+      "constraints": "用例先当行为 oracle；重接真实路径，不复制桩结果当生产通过。 R01仅迁上述源项/声明或核验子集；组级验证未完成。",
       "target_paths": [],
       "verification": {
         "state": "not_run",
-        "evidence_paths": []
+        "evidence_paths": [
+          "docs/r01-validation.md"
+        ]
       },
       "source_file_count": 1
     },
@@ -3008,6 +3071,34 @@
         "state": "not_run",
         "evidence_paths": []
       }
+    },
+    {
+      "id": "N-CONTRACT",
+      "title": "R01窄公共合同与实例时间新实现",
+      "source_repository": null,
+      "source_selector": null,
+      "source_file_count": 0,
+      "target_modules": [
+        "M-CONTRACT"
+      ],
+      "first_batch": "R01",
+      "migration_action": "new",
+      "status": "migrated",
+      "constraints": "新来源/可信身份、时基与deadline、App表示；不实现权限/任务/语言运行时。",
+      "target_paths": [
+        "framework/include/entelea/context.h",
+        "framework/include/entelea/time.h",
+        "framework/include/entelea/app.h",
+        "framework/common/time.c",
+        "framework/common/contract.md"
+      ],
+      "verification": {
+        "state": "passed",
+        "evidence_paths": [
+          "docs/r01-validation.md"
+        ]
+      },
+      "implementation_commit": "f9fcba53d89a0e7f76ceeb6bdf2c8d6616e3ded7"
     }
   ],
   "source_files": [
@@ -3358,9 +3449,10 @@
       "sha256": "1503e98c8fd5e3f3f1854f8de211f5594dc8e7370a355815434188af99351cd9",
       "id": "S-legacy-511ee509a686d00fb3f7",
       "asset_id": "A-DOCS",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
-      "migration_commit": null
+      "migration_commit": null,
+      "migration_note": "依赖/许可研究依据；新说明只覆盖本轮三依赖和六批准补丁。"
     },
     {
       "repository": "legacy",
@@ -3735,9 +3827,10 @@
       "sha256": "95f3600b19b5eb3b91d6d3d66470135e01381c66ee5833a569d986ec0801462a",
       "id": "S-legacy-01e971a5061dc76f2887",
       "asset_id": "A-HEADERS",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
-      "migration_commit": null
+      "migration_commit": null,
+      "migration_note": "参考包/生命周期边界；旧运行时和试用状态未迁入。"
     },
     {
       "repository": "legacy",
@@ -3748,9 +3841,10 @@
       "sha256": "5a9af075573dbc363f2fe7de8b92d0f8858ce71141bc7df78ebdd3791fe1d59a",
       "id": "S-legacy-16f9065bb64aaa0ac21c",
       "asset_id": "A-HEADERS",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
-      "migration_commit": null
+      "migration_commit": null,
+      "migration_note": "只参考时间/时基语义，未迁Zephyr公共头。"
     },
     {
       "repository": "legacy",
@@ -3761,9 +3855,13 @@
       "sha256": "bb5d645dbaee0b230f7177cf4b0cf022abdff7858ff3786c5d93ed56b8f01b99",
       "id": "S-legacy-27a8cf94c3c82f421a2a",
       "asset_id": "A-HEADERS",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/compat/include/ts/err.h",
+        "framework/include/entelea/result.h"
+      ],
+      "migration_commit": "f9fcba53d89a0e7f76ceeb6bdf2c8d6616e3ded7",
+      "migration_note": "错误值/预处理宏和旧opaque ctx保留；不把pending当失败。"
     },
     {
       "repository": "legacy",
@@ -4060,9 +4158,10 @@
       "sha256": "1e18fba2469041569b24174ed04e743d5098778d1414bcb6f1b0e641311a3d8c",
       "id": "S-legacy-a199c0cda91884ec3561",
       "asset_id": "A-CORE",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
-      "migration_commit": null
+      "migration_commit": null,
+      "migration_note": "只参考时间源/测试注入语义；新instance clock独立实现，无Zephyr绑定。"
     },
     {
       "repository": "legacy",
@@ -4216,9 +4315,17 @@
       "sha256": "01a246dc2da40d65c124ed899a9c0c82a545e1fb697b98f8de75e32f88e83c5b",
       "id": "S-legacy-1cc0be7539c76da98b16",
       "asset_id": "A-CBOR",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/common/cbor.c",
+        "framework/include/entelea/cbor.h",
+        "framework/compat/common.c",
+        "framework/compat/include/ts/common.h",
+        "tests/contracts/main.c",
+        "tools/test_legacy_equivalence.py"
+      ],
+      "migration_commit": "f9fcba53d89a0e7f76ceeb6bdf2c8d6616e3ded7",
+      "migration_note": "完整机制提取；合法字节保持，拒绝边界和失败事务语义调整见公共合同。"
     },
     {
       "repository": "legacy",
@@ -4255,9 +4362,13 @@
       "sha256": "eb5c15f884301a7acfa2bf237ec77e0942512c218a37237411d38f48480ad85d",
       "id": "S-legacy-a11632e45a60c259180c",
       "asset_id": "A-NET",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/include/entelea/cbor.h",
+        "framework/compat/include/ts/common.h"
+      ],
+      "migration_commit": "f9fcba53d89a0e7f76ceeb6bdf2c8d6616e3ded7",
+      "migration_note": "仅提取CBOR声明；其余网络内部状态/接口未迁入，资产组保持in_progress。"
     },
     {
       "repository": "legacy",
@@ -4515,9 +4626,13 @@
       "sha256": "dc26f6e74daf40ac397f125abadd2a6754e3a84529abdf917775dab946ccf476",
       "id": "S-legacy-01be16afd79c1cd7ab10",
       "asset_id": "A-STORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/include/entelea/sha256.h",
+        "framework/compat/include/ts/common.h"
+      ],
+      "migration_commit": "f9fcba53d89a0e7f76ceeb6bdf2c8d6616e3ded7",
+      "migration_note": "仅提取SHA布局/声明；其他存储/CRC/IO接口未迁入，资产组保持in_progress。"
     },
     {
       "repository": "legacy",
@@ -4619,9 +4734,17 @@
       "sha256": "7f48e16bba03ae3bc4fa4dd1390bdc0c3ea6f8b2c7e61d3cb5efbbfc52e2cc7a",
       "id": "S-legacy-9172ed07a691ff452e99",
       "asset_id": "A-SHA",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/common/sha256.c",
+        "framework/include/entelea/sha256.h",
+        "framework/compat/common.c",
+        "framework/compat/include/ts/common.h",
+        "tests/contracts/main.c",
+        "tools/test_legacy_equivalence.py"
+      ],
+      "migration_commit": "f9fcba53d89a0e7f76ceeb6bdf2c8d6616e3ded7",
+      "migration_note": "同源算法与旧符号适配；size_t长度、final消费和显式失败见公共合同。"
     },
     {
       "repository": "legacy",
@@ -8688,9 +8811,14 @@
       "sha256": "d7641ddd90b90ad3d7d1aed64931103d0353ee8c1846257ac2712e4f26a53736",
       "id": "S-legacy-67d64c3f5df59c7af6aa",
       "asset_id": "T-SAFETY-CHECK",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "tools/check_architecture.py",
+        "build-support/source-policy.json",
+        "tools/tests/test_r01_checks.py"
+      ],
+      "migration_commit": "f9fcba53d89a0e7f76ceeb6bdf2c8d6616e3ded7",
+      "migration_note": "只接线R01适用约束；未替代旧完整L5/调用图/真实保护，详见验证记录。"
     },
     {
       "repository": "legacy",
@@ -8961,9 +9089,10 @@
       "sha256": "d61c296b80218d6e26dcd27df952338ea353fe143969142fbe7dd5aa350cb8a6",
       "id": "S-legacy-c4896b9ef923a0d30d20",
       "asset_id": "T-STORE",
-      "disposition": "pending_review",
+      "disposition": "reference",
       "target_paths": [],
-      "migration_commit": null
+      "migration_commit": null,
+      "migration_note": "参考abc向量；新测试另用FIPS/hashlib，未移植完整store套件。"
     },
     {
       "repository": "legacy",
@@ -9754,9 +9883,12 @@
       "sha256": "2778b94c4ba5fd00070f2723ef2b443c1885b53bd092318ebe6f7811b8bab2ea",
       "id": "S-legacy-2ffb0583e79a992e30b4",
       "asset_id": "A-PATCHES",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "patches/zephyr-c5-scan.patch"
+      ],
+      "migration_commit": "f9fcba53d89a0e7f76ceeb6bdf2c8d6616e3ded7",
+      "migration_note": "原字节六个批准补丁；只读核验，未应用于新固件。"
     },
     {
       "repository": "legacy",
@@ -9767,9 +9899,12 @@
       "sha256": "483b45d6021f2c9a2643fab50daa1da000b7b54c6254625015e1d2ef832797fc",
       "id": "S-legacy-01e0c4302a0ca803df99",
       "asset_id": "A-PATCHES",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "patches/zephyr-cst8xx-report.patch"
+      ],
+      "migration_commit": "f9fcba53d89a0e7f76ceeb6bdf2c8d6616e3ded7",
+      "migration_note": "原字节六个批准补丁；只读核验，未应用于新固件。"
     },
     {
       "repository": "legacy",
@@ -9793,9 +9928,12 @@
       "sha256": "6000bd83af589ee3b83e6fa1adf0683f2ee618685eddf8db04da13426cecbf20",
       "id": "S-legacy-b602ccbb68b25836f2ed",
       "asset_id": "A-PATCHES",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "patches/zephyr-esp32-gpio-base.patch"
+      ],
+      "migration_commit": "f9fcba53d89a0e7f76ceeb6bdf2c8d6616e3ded7",
+      "migration_note": "原字节六个批准补丁；只读核验，未应用于新固件。"
     },
     {
       "repository": "legacy",
@@ -9806,9 +9944,12 @@
       "sha256": "36435e29410dd91210c95151ddac33db74985169924caecaff1146c0b8a2346f",
       "id": "S-legacy-194b00ca5f41c6e9f1e6",
       "asset_id": "A-PATCHES",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "patches/zephyr-p4-dsi-frame-size.patch"
+      ],
+      "migration_commit": "f9fcba53d89a0e7f76ceeb6bdf2c8d6616e3ded7",
+      "migration_note": "原字节六个批准补丁；只读核验，未应用于新固件。"
     },
     {
       "repository": "legacy",
@@ -9819,9 +9960,12 @@
       "sha256": "120c0d3354733cc79005b47ea5dc554336f34af1df912f809d2a6baa73d00974",
       "id": "S-legacy-146236bac997b8d7a350",
       "asset_id": "A-PATCHES",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "patches/zephyr-p4-ram-digest.patch"
+      ],
+      "migration_commit": "f9fcba53d89a0e7f76ceeb6bdf2c8d6616e3ded7",
+      "migration_note": "原字节六个批准补丁；只读核验，未应用于新固件。"
     },
     {
       "repository": "legacy",
@@ -9832,9 +9976,12 @@
       "sha256": "f824b43fafaa06bf32ad95a6094c4185a68461eac132fbaba00c7154fe43125c",
       "id": "S-legacy-a2048699da18fea7543d",
       "asset_id": "A-PATCHES",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "patches/zephyr-task-wdt-setup.patch"
+      ],
+      "migration_commit": "f9fcba53d89a0e7f76ceeb6bdf2c8d6616e3ded7",
+      "migration_note": "原字节六个批准补丁；只读核验，未应用于新固件。"
     },
     {
       "repository": "legacy",
@@ -9910,9 +10057,14 @@
       "sha256": "ce6bf8b739ad37bebfff8d0023b045568bf5fc0d9b20524f7844e0d751f6a9a2",
       "id": "S-legacy-d0b04c7fe34e82d51fb9",
       "asset_id": "A-SCRIPTS",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "tools/check_dependencies.py",
+        "build-support/dependencies.json",
+        "build-support/README.md"
+      ],
+      "migration_commit": "f9fcba53d89a0e7f76ceeb6bdf2c8d6616e3ded7",
+      "migration_note": "仅改造固定版本/完整补丁diff核验；不迁下载/应用操作，其他脚本未迁。"
     },
     {
       "repository": "legacy",

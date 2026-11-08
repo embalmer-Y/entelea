@@ -1,8 +1,9 @@
 # Entelea
 
 面向 Zephyr MCU 与原生 Linux ARM64/x86 的智能硬件和模拟智能框架。
-当前正在交付 **R01 公共合同与构建底座**：时间/截止时间、独立CBOR/SHA、
+已完成 **R01 公共合同与构建底座**：时间/截止时间、独立CBOR/SHA、
 所迁旧子集适配和主机验证。尚无新运行时、驱动或产品实现。
+本轮在R01验收后停止，R02未启动。结果见[验证记录](docs/r01-validation.md)。
 
 - [重建规划](docs/rebuild-plan.md)：顺序、边界、决策闸和验收。
 - [唯一资产台账](docs/migration-assets.json)：固定来源、模块映射、迁移与验证状态。
