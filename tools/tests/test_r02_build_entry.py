@@ -285,11 +285,12 @@ class PreflightTests(unittest.TestCase):
             self.base["cmake_arg"] = [spec]
             self.fails("must not override managed variable BOARD|CMAKE_C_COMPILER|ZEPHYR_MODULES")
 
-    def write_cache(self, board="native_sim", zephyr=None, cc=None):
+    def write_cache(self, board="native_sim", zephyr=None, cc=None, home=None):
         target = self.repo / "build" / "r02-native_sim"
         target.mkdir(parents=True, exist_ok=True)
         lines = [f"BOARD:STRING={board}"]
         lines.append(f"ZEPHYR_BASE:INTERNAL={zephyr or self.zephyr}")
+        lines.append(f"CMAKE_HOME_DIRECTORY:INTERNAL={home or self.app}")
         if cc:
             lines.append(f"CMAKE_C_COMPILER:FILEPATH={cc}")
         (target / "CMakeCache.txt").write_text("\n".join(lines) + "\n")
@@ -305,13 +306,50 @@ class PreflightTests(unittest.TestCase):
             with self.assertRaisesRegex(BZ.BuildError, "mismatch for CMAKE_C_COMPILER"):
                 self.check_effective()
 
-    def test_effective_config_module_count_mismatch_rejected(self):
+    def test_effective_config_module_identity_mismatch_rejected(self):
         self.write_cache(cc="/usr/bin/cc")
         target = self.repo / "build" / "r02-native_sim"
-        (target / "zephyr_modules.txt").write_text("/rogue/module\n")
+        rogue = self.root / "rogue"
+        rogue.mkdir()
+        (target / "zephyr_modules.txt").write_text(f"{rogue}/zephyr/module.yml\n")
         with mock.patch.object(BZ.shutil, "which", return_value="/usr/bin/cc"):
             with self.assertRaisesRegex(BZ.BuildError, "module set differs"):
+                self.check_effective([])
+
+    def test_effective_config_module_identity_match_passes(self):
+        self.write_cache(cc="/usr/bin/cc")
+        target = self.repo / "build" / "r02-native_sim"
+        hal = self.root / "hal"
+        (target / "zephyr_modules.txt").write_text(f"{hal}/zephyr/module.yml\n")
+        with mock.patch.object(BZ.shutil, "which", return_value="/usr/bin/cc"):
+            BZ.verify_effective_config(
+                target, type("Args", (), self.base)(), [str(hal)]
+            )
+
+    def test_effective_config_source_dir_hijack_rejected(self):
+        self.write_cache(cc="/usr/bin/cc", home=str(self.root / "other-app"))
+        with mock.patch.object(BZ.shutil, "which", return_value="/usr/bin/cc"):
+            with self.assertRaisesRegex(BZ.BuildError, "CMAKE_HOME_DIRECTORY"):
                 self.check_effective()
+
+    def test_effective_config_python_mismatch_rejected(self):
+        self.write_cache(cc="/usr/bin/cc")
+        target = self.repo / "build" / "r02-native_sim"
+        lines = (target / "CMakeCache.txt").read_text().splitlines()
+        lines.append("Python3_EXECUTABLE:FILEPATH=/wrong/python")
+        (target / "CMakeCache.txt").write_text("\n".join(lines) + "\n")
+        base = dict(self.base)
+        base["python"] = str(self.root / "right-python")
+        with mock.patch.object(BZ.shutil, "which", return_value="/usr/bin/cc"):
+            with self.assertRaisesRegex(BZ.BuildError, "Python3_EXECUTABLE"):
+                BZ.verify_effective_config(
+                    target, type("Args", (), base)(), []
+                )
+
+    def test_cmake_arg_source_redirect_rejected(self):
+        for spec in ("-S/tmp/rogue-app", "-B/tmp/rogue-build", "-S /rogue"):
+            self.base["cmake_arg"] = [spec]
+            self.fails("must not redirect")
 
     def test_effective_config_matching_passes(self):
         self.write_cache(cc="/usr/bin/cc")
@@ -322,11 +360,11 @@ class PreflightTests(unittest.TestCase):
                 [],
             )
 
-    def check_effective(self):
+    def check_effective(self, modules=None):
         BZ.verify_effective_config(
             self.repo / "build" / "r02-native_sim",
             type("Args", (), self.base)(),
-            [],
+            modules if modules is not None else [],
         )
 
     def test_cmake_arg_app_options_still_allowed(self):

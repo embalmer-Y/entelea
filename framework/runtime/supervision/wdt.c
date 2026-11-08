@@ -69,10 +69,15 @@ entelea_result_t entelea_wdt_bind_clock(const entelea_clock_t *clock)
 static bool now32_checked(uint32_t *out)
 {
 	uint64_t ms = 0;
+	unsigned int key = irq_lock();
+
+	/* 读+比较+更新全程持锁（读取须短且不阻塞——平台合同约束）：
+	 * 线程/ISR 采样完全串行化，“较早采样晚登记”的交错不再可能；
+	 * 锁内仅剩真回退（时钟本身后退）→ 计故障 + 保守沿用最后有效值
+	 * （三轮 review 发现 3：真回退与正常交错必须区分，且不得因
+	 * 交错误停机）。 */
 	bool ok = wdt_clock != NULL &&
 		  wdt_clock->read_ms(wdt_clock->user, &ms) == ENTELEA_OK;
-
-	unsigned int key = irq_lock();
 
 	if (!ok || ms < clock_last_good) {
 		clock_fault_count++;
@@ -130,6 +135,12 @@ entelea_result_t entelea_wdt_register(entelea_wdt_src_t src, uint32_t period_ms)
 
 void entelea_wdt_feed(entelea_wdt_src_t src)
 {
+	/* halt 入口守卫（三轮 review 发现 6）：置位后任何调用路径（含巡检
+	 * 在 halt 检查与喂狗之间被置位的交错）的喂狗在入口被压制；粒度=
+	 * 调用入口，至多放行一次已在飞的调用。 */
+	if (atomic_get(&halted) != 0) {
+		return;
+	}
 	if ((int)src >= 0 && src < ENTELEA_WDT_COUNT) {
 		atomic_set(&srcs[src].last_feed32, (atomic_val_t)now32());
 		/* 正常喂狗恢复即清豁免窗。 */
@@ -217,11 +228,11 @@ static void patrol_work_cb(struct k_work *work)
 	struct k_work_delayable *d = k_work_delayable_from_work(work);
 
 	if (atomic_get(&halted) != 0) {
-		return; /* 全局停机：不喂、不重排（停喂语义由 halted 保证） */
+		return; /* 全局停机：不喂、不重排（feed 入口另有自守卫） */
 	}
 	entelea_wdt_feed(ENTELEA_WDT_SYWORK); /* 巡检自身运行 = sysworkq 活性证明 */
 #ifdef CONFIG_TASK_WDT
-	if (twdt_ch >= 0) {
+	if (twdt_ch >= 0 && atomic_get(&halted) == 0) {
 		task_wdt_feed(twdt_ch); /* L3：软巡检卡死 → 通道过期 → sys_reboot */
 	}
 #endif

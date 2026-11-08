@@ -40,14 +40,16 @@ static uint32_t driver_write_failures;
 bool entelea_safety_now_ms_checked(uint64_t *out)
 {
 	uint64_t ms = 0;
+	unsigned int key = irq_lock();
+
+	/* 读+比较+更新全程持锁（读取须短且不阻塞）：线程/ISR（force/
+	 * estop 补发）采样串行化，正常前进不被交错误记回退；真回退
+	 * 计故障并保守沿用最后有效值（slew 门据此拒绝）。 */
 	bool ok = entelea_safety_clock != NULL &&
 		  entelea_safety_clock->read_ms != NULL &&
 		  entelea_safety_clock->read_ms(entelea_safety_clock->user, &ms) == ENTELEA_OK;
-	unsigned int key = irq_lock();
 
 	if (!ok || ms < clock_last_good) {
-		/* 读失败或回退：沿用最后有效值，不伪造 0（slew 减法下溢会
-		 * 放宽输出限制）；从未成功过则保持 0（可观测的未配置）。 */
 		clock_fault_count++;
 		ms = clock_last_good;
 	} else {
@@ -176,10 +178,12 @@ static int write_transition_locked(struct entelea_ch_slot *s,
 	if (entelea_drivers[s->desc->kind].write(s->desc, &value) != 0) {
 		driver_write_failures++;
 		s->state = ENTELEA_ST_SAFE_FAULT;
+		s->fault_by_write_failure = true; /* 仅 channel_recover 可恢复 */
 		s->have_last = false;
 		return -1;
 	}
 	s->shadow = value;
+	s->fault_by_write_failure = false;
 	s->have_last = false;
 	s->state = next;
 	return 0;
@@ -270,6 +274,7 @@ void entelea_safety_test_reset(void)
 	clock_fault_count = 0;
 	driver_write_failures = 0;
 	entelea_drv_test_reset();
+	entelea_safety_test_reset_system_failed();
 	entelea_safety_estop_announce_reset();
 }
 #endif
@@ -341,7 +346,13 @@ entelea_result_t entelea_safety_clear_fault(void)
 	 * 测试）。释放语义：状态条件恢复（link up → ACTIVE，否则
 	 * SAFE_LINKLOSS）+ 输出值不回写——物理输出保持 fault 安全值直至
 	 * 下一次显式 commit。estop 可在释放后任意时刻再抢入：逐通道在
-	 * 临界区内复查 forced（缺陷 3）。 */
+	 * 临界区内复查 forced（缺陷 3）。
+	 * 释放资格（三轮 review 发现 1）：system_fail 是终态（halt 一次性、
+	 * 停机语义），其后 clear_fault 拒绝；安全写失败所致 SAFE_FAULT 的
+	 * 通道（物理未知）不在本路径恢复——仅显式 channel_recover。 */
+	if (atomic_get(&entelea_system_failed) != 0) {
+		return ENTELEA_E_STATE; /* system_fail 后不得恢复输出 */
+	}
 	atomic_set(&entelea_forced, 0);
 	entelea_safety_estop_announce_reset();
 	/* 锁收口：状态批量迁移与 commit/单通道迁移互斥 */
@@ -349,8 +360,8 @@ entelea_result_t entelea_safety_clear_fault(void)
 	for (size_t i = 0; i < entelea_ch_count; i++) {
 		struct entelea_ch_slot *s = &entelea_ch_table[i];
 
-		if (s->state != ENTELEA_ST_SAFE_FAULT) {
-			continue;
+		if (s->state != ENTELEA_ST_SAFE_FAULT || s->fault_by_write_failure) {
+			continue; /* 写失败通道仅 recover 可恢复 */
 		}
 		entelea_ch_state_t next = atomic_get(&entelea_link_up)
 						  ? ENTELEA_ST_ACTIVE

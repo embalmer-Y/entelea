@@ -40,9 +40,12 @@ static uint64_t now_ms(void)
 {
 	static uint64_t last_good;
 	uint64_t ms = 0;
+	unsigned int key = irq_lock();
+
+	/* 读+比较+更新全程持锁（短且不阻塞的读取）：ISR/线程采样串行化，
+	 * 正常前进不再被交错误记为回退；真回退保守沿用最后有效值。 */
 	bool ok = evt_clock != NULL && evt_clock->read_ms != NULL &&
 		  evt_clock->read_ms(evt_clock->user, &ms) == ENTELEA_OK;
-	unsigned int key = irq_lock();
 
 	if (!ok || ms < last_good) {
 		ms = last_good;

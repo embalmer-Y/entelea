@@ -12,6 +12,14 @@
 #include "internal.h"
 
 static uint32_t fail_reason_store;
+atomic_t entelea_system_failed = ATOMIC_INIT(0);
+
+#ifdef ENTELEA_TEST
+void entelea_safety_test_reset_system_failed(void)
+{
+	atomic_set(&entelea_system_failed, 0);
+}
+#endif
 
 /* estop ISR 直达：[ISR] 安全——仅原子置位与直写（不经队列/调度）。
  * 写失败在 ISR 上下文不可返回：计入失败计数（可观测），状态/影子仍按
@@ -26,9 +34,17 @@ void entelea_safety_force_all_fault(void)
 		struct entelea_ch_slot *s = &entelea_ch_table[i];
 
 		if (entelea_drivers[s->desc->kind].write(s->desc, &s->desc->fault) != 0) {
+			/* 写失败：物理效果未知——不伪称 fault 值已落（shadow
+			 * 留最后确认值）；状态仍撤销资格并标记仅 recover
+			 * 可恢复（三轮 review 发现 2）。 */
 			entelea_safety_count_write_failure();
+			s->state = ENTELEA_ST_SAFE_FAULT;
+			s->fault_by_write_failure = true;
+			s->have_last = false;
+			continue;
 		}
-		s->shadow = s->desc->fault;
+		s->shadow = s->desc->fault; /* 确认写：覆盖早期“物理未知”标记 */
+		s->fault_by_write_failure = false;
 		s->state = ENTELEA_ST_SAFE_FAULT;
 		s->have_last = false;
 	}
@@ -42,6 +58,7 @@ void entelea_safety_system_fail(uint32_t reason)
 	/* 全局停机先行（缺陷 4）：任何线程触发 system_fail，软 WDT 巡检
 	 * 立即停喂停排——停机语义不依赖调用线程自身挂起。 */
 	entelea_wdt_halt();
+	atomic_set(&entelea_system_failed, 1); /* 一次性：clear_fault 拒绝释放 */
 	atomic_set(&entelea_forced, 1);
 	atomic_set(&entelea_forced_at,
 		   (atomic_val_t)(uint32_t)entelea_safety_now_ms());
@@ -51,8 +68,13 @@ void entelea_safety_system_fail(uint32_t reason)
 
 		if (entelea_drivers[s->desc->kind].write(s->desc, &s->desc->fault) != 0) {
 			entelea_safety_count_write_failure();
+			s->state = ENTELEA_ST_SAFE_FAULT;
+			s->fault_by_write_failure = true;
+			s->have_last = false;
+			continue;
 		}
-		s->shadow = s->desc->fault;
+		s->shadow = s->desc->fault; /* 确认写：覆盖早期“物理未知”标记 */
+		s->fault_by_write_failure = false;
 		s->state = ENTELEA_ST_SAFE_FAULT;
 		s->have_last = false;
 	}

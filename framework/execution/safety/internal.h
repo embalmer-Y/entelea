@@ -11,9 +11,12 @@
 struct entelea_ch_slot {
 	const entelea_out_channel_t *desc;
 	entelea_ch_state_t state;
-	entelea_out_value_t shadow; /* SAFE_* 态 = 安全值；ACTIVE = 最后落值 */
+	entelea_out_value_t shadow; /* 最后确认值（写失败不更新） */
 	bool have_last;             /* slew 基线是否已建立 */
-	uint64_t last_t;            /* 上次 commit 时刻（slew Δt） */
+	uint64_t last_t;            /* 上次确认写时刻（slew Δt 锚点） */
+	bool fault_by_write_failure; /* 安全写失败所致 SAFE_FAULT：
+				      * 仅 channel_recover 可恢复（clear_fault
+				      * 跳过），物理效果未知 */
 	struct {
 		uint32_t head, count;
 		entelea_write_rec_t ring[ENTELEA_SAFETY_SIM_REC_PER_CH];
@@ -24,6 +27,7 @@ extern struct entelea_ch_slot entelea_ch_table[ENTELEA_SAFETY_MAX_CHANNELS];
 extern size_t entelea_ch_count;
 
 extern atomic_t entelea_forced;    /* estop/fail 锁存标志（clear_fault 释放） */
+extern atomic_t entelea_system_failed; /* system_fail 已发生（一次性；clear_fault 拒绝） */
 extern atomic_t entelea_forced_at; /* forced 置位时刻（低 32 位，补发事件用） */
 extern atomic_t entelea_link_up;   /* 全局链路标志 */
 extern const entelea_clock_t *entelea_safety_clock;
@@ -49,6 +53,8 @@ void entelea_safety_count_write_failure(void);
 #ifdef ENTELEA_TEST
 /** 后端就绪位/失败计数复位（drivers.c；测试隔离）。 */
 void entelea_drv_test_reset(void);
+/** system_failed 一次性标志复位（force.c；仅测试隔离）。 */
+void entelea_safety_test_reset_system_failed(void);
 #endif
 
 /** estop 补发宣布位复位（clear_fault 调用；二次 estop 可再补发）。 */

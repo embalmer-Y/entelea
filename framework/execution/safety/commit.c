@@ -78,34 +78,43 @@ static entelea_result_t commit_impl(const char *uid, entelea_out_value_t v)
 		}
 	}
 
-	/* 2) slew：|Δv| ≤ slew_per_ms × Δt；超率拆分到界值并返回
-	 *    ENTELEA_E_RANGE（实际落值经 readback 可观）。now 单调护栏使
-	 *    now < last_t 实际不可达；带式保险显式拒绝，绝不放宽界
-	 *    （下溢会得到巨大 dt = 无限制）。
-	 *    时钟门（二轮 review 发现 1）：本次读失败（护栏介入）= 时间不可
-	 *    知 → 速率界不可立 → 整笔拒绝；持续失败期间不可经重复提交逐步
-	 *    改变输出（护栏的 dt=0 只代表“每笔一跳”，不满足限速合同）。 */
-	if (ch->limits.slew_per_ms > 0 && s->have_last) {
+	/* 2) slew：总预算锚定最后一次确认写（值=shadow，时刻=last_t）。
+	 *    界 = slew × (now - last_t)，无 +1 免跳：同一毫秒内重复提交的
+	 *    总变化 ≤ slew（三轮 review 发现 4——每笔 dt+1 使 200 笔同类
+	 *    提交可绕过限速）；拆分到界值返回 ENTELEA_E_RANGE（实际落值经
+	 *    readback 可观）。成功写刷新锚点（末段临界区），后续提交重新
+	 *    从新锚点起算。
+	 *    时钟门：本通道带 slew 限 → 首笔（基线建立）与后续提交都要求
+	 *    本次读成功——时间不可知不得建立基线或立界。
+	 *    溢出：bound 饱和到 u32 极限（u64 ms 时标下实际不可达，仅为
+	 *    确定性；等价于本笔不超 u32 域，仍有限）。 */
+	if (ch->limits.slew_per_ms > 0) {
 		uint64_t now;
 
 		if (!entelea_safety_now_ms_checked(&now)) {
-			return ENTELEA_E_STATE; /* 时间不可知：不伪造 slew 界 */
+			return ENTELEA_E_STATE; /* 时间不可知：不立界/不建基线 */
 		}
-		if (now < s->last_t) {
-			return ENTELEA_E_STATE; /* 时基异常：不伪造 slew 界 */
-		}
-		uint64_t dt = now - s->last_t;
-		uint32_t last_u = entelea_value_encode(ch->kind, s->shadow);
-		uint32_t req_u = entelea_value_encode(ch->kind, v);
-		uint64_t bound = (uint64_t)ch->limits.slew_per_ms * (dt + 1);
+		if (s->have_last) {
+			if (now < s->last_t) {
+				return ENTELEA_E_STATE; /* 时基异常：不伪造界 */
+			}
+			uint64_t dt = now - s->last_t;
+			uint64_t bound64 = (uint64_t)ch->limits.slew_per_ms * dt;
+			uint32_t bound = bound64 > 0xFFFFFFFFU ? 0xFFFFFFFFU
+							       : (uint32_t)bound64;
+			uint32_t last_u = entelea_value_encode(ch->kind, s->shadow);
+			uint32_t req_u = entelea_value_encode(ch->kind, v);
 
-		if (req_u > last_u && (uint64_t)(req_u - last_u) > bound) {
-			v.u = last_u + (uint32_t)bound;
-			res = ENTELEA_E_RANGE;
-		} else if (req_u < last_u && (uint64_t)(last_u - req_u) > bound) {
-			v.u = last_u - (uint32_t)bound;
-			res = ENTELEA_E_RANGE;
+			if (req_u > last_u && (uint64_t)(req_u - last_u) > bound) {
+				v.u = last_u + bound;
+				res = ENTELEA_E_RANGE;
+			} else if (req_u < last_u && (uint64_t)(last_u - req_u) > bound) {
+				v.u = last_u - bound;
+				res = ENTELEA_E_RANGE;
+			}
 		}
+		/* !have_last：首笔/恢复后建立基线（min/max/限幅仍生效；基线
+		 * 时刻 = now）。首笔幅度是否也按 slew 收紧 → owner 选项。 */
 	}
 
 	/* 3) 限流（POWER）：请求电流超限 → 整笔拒绝。 */

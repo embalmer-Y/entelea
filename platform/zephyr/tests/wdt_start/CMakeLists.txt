@@ -20,7 +20,8 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/execution/safety/drivers.c
 )
 target_compile_definitions(app PRIVATE ENTELEA_TEST=1)
-target_link_options(app PUBLIC -Wl,--wrap=task_wdt_init -Wl,--wrap=task_wdt_add)
+target_link_options(app PUBLIC -Wl,--wrap=task_wdt_init -Wl,--wrap=task_wdt_add
+  -Wl,--wrap=task_wdt_feed)
 if(TEST_WDT_REQUIRED_MISSING)
   target_compile_definitions(app PRIVATE TEST_WDT_REQUIRED_MISSING=1 ENTELEA_WDT_REQUIRE_HW=1)
 endif()

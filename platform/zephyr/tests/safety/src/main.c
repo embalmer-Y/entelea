@@ -126,40 +126,41 @@ ZTEST(framework_safety, test_safety_full_scenario)
 	zassert_equal(entelea_safety_readback("pwm1", &rb), ENTELEA_OK);
 	zassert_equal(rb.u, 100, "恢复不回写断链前值");
 
-	/* slew 数学：slew1 5/ms。 */
+	/* slew 数学：slew1 5/ms，总预算锚定最后确认写（三轮 review 发现 4：
+	 * 严格界 = slew×dt，无每笔 +1 免跳）。 */
 	virt_now = 1000;
 	v.u = 100;
-	zassert_equal(entelea_safety_commit("slew1", v), ENTELEA_OK);
-	virt_now = 1010; /* Δt=10 → 界 = 5×11 = 55 */
-	v.u = 155;
+	zassert_equal(entelea_safety_commit("slew1", v), ENTELEA_OK); /* 基线 */
+	virt_now = 1010; /* Δt=10 → 界 = 5×10 = 50 */
+	v.u = 150;
 	zassert_equal(entelea_safety_commit("slew1", v), ENTELEA_OK, "within bound");
-	virt_now = 1011; /* Δt=1 → 界 = 5×2 = 10 */
+	virt_now = 1011; /* Δt=1 → 界 = 5×1 = 5 */
 	v.u = 300;
 	zassert_equal(entelea_safety_commit("slew1", v), ENTELEA_E_RANGE,
 		      "over slew -> split");
 	zassert_equal(entelea_safety_readback("slew1", &rb), ENTELEA_OK);
-	zassert_equal(rb.u, 165, "split to bound 155+10");
+	zassert_equal(rb.u, 155, "split to bound 150+5");
 
 	/* ---- 2b. slew 时钟门（二轮 review 发现 1）：本次读失败=时间不可知
 	 * → 速率界不可立 → 整笔拒绝；持续失败下重复提交不得逐步改变输出
 	 * （修复前：护栏 dt=0 → 每笔一跳，可逐步走满）。 ---- */
-	virt_now = 1011; /* 上一提交基线 last_t = 1011（shadow 165） */
+	virt_now = 1011; /* 上一确认写 last_t = 1011（shadow 155） */
 	clock_fail_persist = true; /* 持续失败：重复提交不得逐步改变输出 */
 	for (int i = 0; i < 3; i++) {
 		zassert_equal(
 			entelea_safety_commit("slew1", (entelea_out_value_t){.u = 300}),
 			ENTELEA_E_STATE, "unreadable clock must reject slew commits");
 		zassert_equal(entelea_safety_readback("slew1", &rb), ENTELEA_OK);
-		zassert_equal(rb.u, 165, "输出不得在时钟失明期间改变");
+		zassert_equal(rb.u, 155, "输出不得在时钟失明期间改变");
 	}
 	clock_fail_persist = false;
 	zassert_true(entelea_safety_clock_faults() >= 3, "failures counted");
-	/* 时钟恢复后正常计量：dt=10 → 界 55 → 拆到 165+55=220。 */
+	/* 时钟恢复后正常计量：dt=10 → 界 50 → 拆到 155+50=205。 */
 	virt_now = 1021;
 	v.u = 400;
 	zassert_equal(entelea_safety_commit("slew1", v), ENTELEA_E_RANGE);
 	zassert_equal(entelea_safety_readback("slew1", &rb), ENTELEA_OK);
-	zassert_equal(rb.u, 220, "bound 165+5*11 (dt=10 after recovery)");
+	zassert_equal(rb.u, 205, "bound 155+5*10 (dt=10 after recovery)");
 
 	/* ---- 3. 限流（POWER）：请求超限整笔拒绝 ---- */
 	v.pwr.en = true;
@@ -256,6 +257,41 @@ ZTEST(framework_safety, test_estop_edge_mapping)
 }
 
 /* ---- poweron 值落驱动（注册 → poweron_init：物理写序列第一笔 = 声明值） ---- */
+/* ---- slew 总预算（三轮 review 发现 4）：同一毫秒内重复提交的
+ * 总变化 ≤ slew/ms——修复前每笔 dt+1 免跳，200 笔同类提交可 0→200。 */
+ZTEST(framework_safety, test_slew_total_budget_per_ms)
+{
+	entelea_safety_test_reset();
+	zassert_equal(entelea_safety_bind_clock(&virt_clock), ENTELEA_OK);
+	static const entelea_out_channel_t rate1 = {
+		.uid = "rate1", .kind = ENTELEA_CH_PWM,
+		.poweron = {.u = 0}, .linkloss = {.u = 0}, .fault = {.u = 0},
+		.limits = {.min = 0, .max = 1000, .slew_per_ms = 1},
+	};
+	zassert_equal(entelea_safety_register_channel(&rate1), ENTELEA_OK);
+	entelea_safety_set_link(true);
+
+	virt_now = 5000;
+	zassert_equal(entelea_safety_commit("rate1", (entelea_out_value_t){.u = 0}),
+		      ENTELEA_OK); /* 基线：shadow 0, last_t 5000 */
+	/* 同一毫秒 200 笔上跳请求：每笔 dt=0 → 界 0 → 拆分回当前值。 */
+	for (int i = 0; i < 200; i++) {
+		zassert_equal(
+			entelea_safety_commit("rate1", (entelea_out_value_t){.u = 200}),
+			ENTELEA_E_RANGE, "same-ms commits must not move the output");
+	}
+	entelea_out_value_t rb;
+
+	zassert_equal(entelea_safety_readback("rate1", &rb), ENTELEA_OK);
+	zassert_equal(rb.u, 0, "total same-ms movement must be 0 (was 200 pre-fix)");
+	/* 下一毫秒：预算 1/ms。 */
+	virt_now = 5001;
+	zassert_equal(entelea_safety_commit("rate1", (entelea_out_value_t){.u = 5}),
+		      ENTELEA_E_RANGE);
+	zassert_equal(entelea_safety_readback("rate1", &rb), ENTELEA_OK);
+	zassert_equal(rb.u, 1, "next-ms budget = slew*1");
+}
+
 /* ---- estop 锁存不被 poweron_init 覆盖（缺陷 3 守卫） ---- */
 ZTEST(framework_safety, test_poweron_preserves_estop_latch)
 {

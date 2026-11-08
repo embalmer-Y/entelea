@@ -98,6 +98,9 @@ ZTEST(wdt_start_failures, test_halt_stops_patrol_from_any_context)
 	add_result = 0;
 	zassert_equal(entelea_wdt_start(), ENTELEA_OK);
 	zassert_true(entelea_wdt_test_patrol_tick(), "halt 前巡检体应执行");
+	/* 正向控制（三轮 review 发现 6）：wrapper 确实被链接且真实路径
+	 * 经过它——零计数不得作为“零喂狗”的证据。 */
+	zassert_true(feed_calls > 0, "positive control: patrol must feed task_wdt");
 	entelea_wdt_halt();
 	int snap = feed_calls;
 

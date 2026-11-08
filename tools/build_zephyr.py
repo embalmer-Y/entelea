@@ -183,7 +183,14 @@ def preflight(root, args):
             )
 
     for extra in args.cmake_arg or []:
-        name = extra[2:] if extra.startswith("-D") else extra
+        flag = extra.strip()
+        if flag in {"-S", "-B"} or flag.startswith("-S") or flag.startswith("-B"):
+            raise BuildError(
+                f"--cmake-arg must not redirect {flag.split(' ')[0]} "
+                "(source/build directories are managed by the entry; "
+                "third-review finding 5)"
+            )
+        name = flag[2:] if flag.startswith("-D") else flag
         # Strip cache-type suffixes too: -DBOARD:STRING=... must not bypass
         # the managed-variable blacklist (second-review finding 4).
         var = name.split("=", 1)[0].split(":", 1)[0].strip()
@@ -212,9 +219,11 @@ def preflight(root, args):
 def verify_effective_config(build_dir, args, modules):
     """Check what CMake actually adopted, not just the command we printed.
 
-    A verified command line does not prove an effective configuration
-    (second-review finding 4/6): read back the generated cache and the
-    module list and compare them with the preflight-verified values.
+    A verified command line does not prove an effective configuration:
+    read back the generated cache, the resolved module list and the source
+    directory, and compare them with the preflight-verified values
+    (third-review finding 5: source-dir hijack via a second -S, module
+    identity vs count, board-target compiler, pinned interpreter).
     """
     cache = build_dir / "CMakeCache.txt"
     if not cache.is_file():
@@ -228,10 +237,23 @@ def verify_effective_config(build_dir, args, modules):
     checks = [
         ("BOARD", cached("BOARD"), args.board),
         ("ZEPHYR_BASE", cached("ZEPHYR_BASE"), str(Path(args.zephyr_base).resolve())),
+        # Actual source directory (a second -S would land here).
+        ("CMAKE_HOME_DIRECTORY", cached("CMAKE_HOME_DIRECTORY"),
+         str(Path(args.app).resolve())),
     ]
     if is_native(args.board):
         cc = shutil.which(args.host_cc)
         checks.append(("CMAKE_C_COMPILER", cached("CMAKE_C_COMPILER"), cc))
+    else:
+        # Board builds compile with the SDK cross compiler: the cache must
+        # point at the verified toolchain inside the verified SDK.
+        sdk = Path(args.sdk).resolve()
+        expected_cc = sdk / "gnu" / args.toolchain / "bin" / f"{args.toolchain}-gcc"
+        checks.append(("CMAKE_C_COMPILER", cached("CMAKE_C_COMPILER"),
+                       str(expected_cc)))
+    if args.python:
+        checks.append(("Python3_EXECUTABLE", cached("Python3_EXECUTABLE"),
+                       str(Path(args.python).absolute())))
     for name, actual, expected in checks:
         if actual is None:
             raise BuildError(f"Effective-config check: {name} missing from cache")
@@ -240,8 +262,7 @@ def verify_effective_config(build_dir, args, modules):
                 f"Effective-config mismatch for {name}: "
                 f"cache={actual}, verified={expected}"
             )
-    # Modules actually consumed by the build (Zephyr writes the resolved
-    # module list here; absent/empty means the explicit empty set).
+    # Modules actually consumed by the build: identity, not just count.
     module_file = build_dir / "zephyr_modules.txt"
     effective = []
     if module_file.is_file():
@@ -250,13 +271,18 @@ def verify_effective_config(build_dir, args, modules):
             for line in module_file.read_text().splitlines()
             if line.strip()
         ]
-    expected_count = len(modules)
-    if len(effective) != expected_count:
+    expected_roots = {str(Path(m).resolve()) for m in modules}
+    effective_roots = set()
+    for entry in effective:
+        # Entries are <module-root>/zephyr/module.yml style paths.
+        root = str(Path(entry).resolve().parents[1])
+        effective_roots.add(root)
+    if effective_roots != expected_roots:
         raise BuildError(
             "Effective module set differs from the verified set: "
-            f"build has {len(effective)} module(s), verified {expected_count}"
+            f"build={sorted(effective_roots)}, verified={sorted(expected_roots)}"
         )
-    print("[effective] cache/board/compiler and module count verified")
+    print("[effective] source-dir/board/compiler/python and module identity verified")
 
 
 def main():
