@@ -753,12 +753,17 @@
       ],
       "first_batch": "R09",
       "migration_action": "extract",
-      "status": "not_migrated",
-      "constraints": "单全局配置；图像/PCM 参数、驱动/网络发布拆分，保留清理失败回归。",
-      "target_paths": [],
+      "status": "in_progress",
+      "constraints": "单全局配置；图像/PCM 参数、驱动/网络发布拆分，保留清理失败回归。 R09接口面已迁（独立可选/权限门/生命周期/取消不复活/失败显式+假后端）；真AV后端随板级批。",
+      "target_paths": [
+        "framework/services/media/media.c",
+        "framework/include/entelea/media.h"
+      ],
       "verification": {
         "state": "not_run",
-        "evidence_paths": []
+        "evidence_paths": [
+          "docs/r09-validation.md"
+        ]
       },
       "source_file_count": 1
     },
@@ -776,12 +781,16 @@
       ],
       "first_batch": "R09",
       "migration_action": "reference",
-      "status": "not_migrated",
-      "constraints": "S3/MP34DT05 历史后端，不把引脚、GDMA reset 和频率照搬 P4。",
-      "target_paths": [],
+      "status": "in_progress",
+      "constraints": "S3/MP34DT05 历史后端，不把引脚、GDMA reset 和频率照搬 P4。 R09接口面覆盖（采集语义/取消）；PDM真后端板级批。",
+      "target_paths": [
+        "framework/services/media/media.c"
+      ],
       "verification": {
         "state": "not_run",
-        "evidence_paths": []
+        "evidence_paths": [
+          "docs/r09-validation.md"
+        ]
       },
       "source_file_count": 1
     },
@@ -799,12 +808,16 @@
       ],
       "first_batch": "R09",
       "migration_action": "reference",
-      "status": "not_migrated",
-      "constraints": "ATK S3 GPIO/XL9555/环 DMA 假设；当前 P4 正式后端需单独设计和实测。",
-      "target_paths": [],
+      "status": "in_progress",
+      "constraints": "ATK S3 GPIO/XL9555/环 DMA 假设；当前 P4 正式后端需单独设计和实测。 R09接口面覆盖；es8311真后端板级批。",
+      "target_paths": [
+        "framework/services/media/media.c"
+      ],
       "verification": {
         "state": "not_run",
-        "evidence_paths": []
+        "evidence_paths": [
+          "docs/r09-validation.md"
+        ]
       },
       "source_file_count": 1
     },
