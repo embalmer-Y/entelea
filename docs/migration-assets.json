@@ -855,13 +855,14 @@
       "first_batch": "R01",
       "migration_action": "extract",
       "status": "in_progress",
-      "constraints": "meta 双副本、audit/KV 各有不同恢复能力；250B KV 不能当经历库或试用隔离。 R03子闭环1已迁端口(RAM)/meta/noinit+R02留痕接线并 native_sim 验证；slot.c→R05包事实批次(defer)，prov/audit/kv/trust 待后续子闭环，组级未完成。",
+      "constraints": "meta 双副本、audit/KV 各有不同恢复能力；250B KV 不能当经历库或试用隔离。 R03子闭环1已迁端口(RAM)/meta/noinit+R02留痕接线并 native_sim 验证；slot.c→R05包事实批次(defer)，prov/kv/trust 待后续子闭环（audit 已迁子闭环2：两页乒乓环+safety异常/estop落盘，节流1Hz），组级未完成。",
       "target_paths": [
         "framework/services/storage/part.c",
         "framework/services/storage/meta.c",
         "framework/services/storage/noinit.c",
         "framework/services/storage/internal.h",
-        "framework/include/entelea/storage.h"
+        "framework/include/entelea/storage.h",
+        "framework/services/storage/audit.c"
       ],
       "verification": {
         "state": "not_run",
@@ -4745,9 +4746,13 @@
       "sha256": "8c2bcd6ac6e86e9c866ac9d327bbd1df3e8bc5a37dcb9b8cfef6b9f625c2f184",
       "id": "S-legacy-f5db0f9ac49a2233ba04",
       "asset_id": "A-STORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/services/storage/audit.c",
+        "framework/include/entelea/storage.h",
+        "platform/zephyr/tests/store/src/main.c"
+      ],
+      "migration_commit": "7107d2d135eff3550cca619bd46b932c0c0569e8"
     },
     {
       "repository": "legacy",

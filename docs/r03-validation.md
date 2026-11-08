@@ -33,6 +33,18 @@ flash/宿主文件持久性、真实掉电半写、system_fail 语境 flash 可�
 板级（D12）；prov/audit/kv/trust 子闭环未开始；250B KV 不作经历库
 （合同既有约束）；无存储链接变体（弱桩路径）未构建验证。
 
+## 子闭环 2（审计环 + safety 异常落盘）
+
+- store 套件 7/7 SUCCESSFUL：翻页边界（65 过渡态/恰满 128/翻页后
+  66+最旧段被覆盖）、reboot 游标续接（seq 131）、**半写断尾**（破坏
+  槽0 → 仅另一页 64 条连续段）、未 init append 拒绝、**commit 全早退
+  路径落审计**（外层包装）、节流（同窗第二拒=丢弃计数1、环不增长）、
+  estop 沿 evt=1（补发面直调，正向控制）。
+- 回归：minimal/core/safety×2/wdt_start/wdt_hardware 全部 SUCCESSFUL
+  零失败；主机 94 项 + CTest 6/6 + 架构 25 源。
+- 自行决策（建议值，待追认）：审计节流窗沿用旧 1Hz（DEC-52① 出处）；
+  boot 打印留平台层（存储模块 printk-free）。
+
 ## 复现
 
 ```sh
