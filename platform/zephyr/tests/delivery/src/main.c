@@ -28,7 +28,16 @@ ZTEST(framework_trial, test_lifecycle_and_user_gate)
 
 	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
 	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_PENDING_CONFIRM);
+	/* review P1 负测：PENDING 期不可静默替换确认对象（内容绑定）。 */
+	entelea_trial_candidate_t swapped = c;
+
+	swapped.digest[0] = 0xFF;
+	zassert_equal(entelea_trial_submit(&swapped), ENTELEA_E_BUSY,
+		      "PENDING 期新候选拒");
 	entelea_trial_candidate_t cur;
+
+	entelea_trial_current(&cur);
+	zassert_equal(cur.digest[0], 0xAB, "确认对象未被替换");
 
 	entelea_trial_current(&cur);
 	zassert_equal(cur.digest[0], 0xAB, "内容绑定（digest=确认对象）");

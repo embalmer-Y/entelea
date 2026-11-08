@@ -20,6 +20,12 @@ entelea_result_t entelea_trial_submit(const entelea_trial_candidate_t *cand)
 	if (state == ENTELEA_TRIAL_ACTIVE) {
 		return ENTELEA_E_BUSY; /* 单候选：ACTIVE 期不受理新候选 */
 	}
+	if (state == ENTELEA_TRIAL_PENDING_CONFIRM) {
+		return ENTELEA_E_BUSY; /* review P1 修复：PENDING 期不受理
+					 * 新候选——已展示的确认对象不可被
+					 * 静默替换（内容绑定完整性）。
+					 * reject/timeout 先行释放。 */
+	}
 	current = *cand;
 	state = ENTELEA_TRIAL_PENDING_CONFIRM;
 	return ENTELEA_OK;

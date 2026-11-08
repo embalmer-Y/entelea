@@ -15,5 +15,5 @@ INC="-Iframework/include -Iplatform/linux -Iplatform/linux/zephyr_inc"
 DEF="-DENTELEA_TEST=1 -DZEPHYR_KERNEL_SHIM=1"
 # events.c/safety 源 #include <zephyr/kernel.h>/<zephyr/...> —— 以 shim 头覆盖。
 $CC -std=c11 -Wall -Wextra -Werror $INC $DEF -include platform/linux/zephyr_shim.h \
-  $SRC -o "$OUT/host" -lpthread 2>&1 | head -20
+  $SRC -o "$OUT/host" -lpthread
 echo "[linux-host] built $OUT/host"

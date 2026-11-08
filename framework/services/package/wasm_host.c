@@ -145,6 +145,14 @@ entelea_result_t entelea_wasm_load(uint8_t slot, uint32_t *app_id_out)
 		wasm_runtime_unload(module);
 		module = NULL;
 	}
+	/* review P2 修复：同槽重暂存（re-stage）后旧缓存不得复活——
+	 * 验签对象是新字节，执行对象必须同为新字节。无 cheap digest 面
+	 * （本层不做哈希）——直接在每次 load 时卸载重建（最小闭环的
+	 * 单实例语义下成本可接受；缓存归后续需求）。 */
+	if (module != NULL && module_slot == slot) {
+		wasm_runtime_unload(module);
+		module = NULL;
+	}
 	if (module == NULL) {
 		module = wasm_runtime_load(bytes, len, err, sizeof(err));
 		if (module == NULL) {

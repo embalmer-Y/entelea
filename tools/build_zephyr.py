@@ -34,6 +34,9 @@ MANAGED_CMAKE_VARS = (
     "BOARD", "BOARD_ROOT", "ZEPHYR_BASE", "ZEPHYR_MODULES",
     "ZEPHYR_TOOLCHAIN_VARIANT", "ZEPHYR_SDK_INSTALL_DIR",
     "Python3_EXECUTABLE", "CMAKE_C_COMPILER",
+    "CMAKE_PROJECT_INCLUDE", "CMAKE_PROJECT_TOP_LEVEL_INCLUDES",
+    "CMAKE_HOME_DIRECTORY", "DTC_OVERLAY_FILE", "DTC_ROOT",
+    "CMAKE_TOOLCHAIN_FILE",
 )
 
 
@@ -208,8 +211,13 @@ def preflight(root, args):
         if flag in {"-S", "-B"} or flag.startswith("-S") or flag.startswith("-B"):
             raise BuildError(
                 f"--cmake-arg must not redirect {flag.split(' ')[0]} "
-                "(source/build directories are managed by the entry; "
-                "third-review finding 5)"
+                "(source/build directories are managed by the entry)"
+            )
+        if flag.startswith("-C") or flag.startswith("--preset") or \
+                flag.startswith("--toolchain") or flag.startswith("-U"):
+            raise BuildError(
+                f"--cmake-arg must not inject {flag.split(' ')[0]} "
+                "(init scripts/presets/toolchain/unset are entry-managed)"
             )
         name = flag[2:] if flag.startswith("-D") else flag
         # Strip cache-type suffixes too: -DBOARD:STRING=... must not bypass

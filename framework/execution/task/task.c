@@ -71,9 +71,11 @@ entelea_result_t entelea_task_submit(entelea_principal_t ctx, const char *name,
 	return ENTELEA_E_NOMEM; /* 槽满（有界——不排队） */
 }
 
-static entelea_result_t transition(entelea_principal_t ctx, entelea_task_id_t id,
-				   entelea_task_state_t expect_from,
-				   entelea_task_state_t next)
+static entelea_result_t transition_effect(entelea_principal_t ctx,
+					  entelea_task_id_t id,
+					  entelea_task_state_t expect_from,
+					  entelea_task_state_t next,
+					  bool flag)
 {
 	k_mutex_lock(&task_lock, K_FOREVER);
 	int i = find_id(id);
@@ -93,6 +95,42 @@ static entelea_result_t transition(entelea_principal_t ctx, entelea_task_id_t id
 		return ENTELEA_E_STATE; /* 状态竞态：显式拒绝 */
 	}
 	t->state = next;
+	/* 效果域在锁内写入（review P1 修复：解锁后写可能被 release+重用
+	 * 竞态覆盖到新任务——不再可能伪造确认）。 */
+	if (next == ENTELEA_TASK_SUCCEEDED) {
+		t->effect = flag ? ENTELEA_EFFECT_CONFIRMED
+				 : ENTELEA_EFFECT_NONE;
+	} else {
+		t->effect = flag ? ENTELEA_EFFECT_UNKNOWN
+				 : ENTELEA_EFFECT_NONE;
+	}
+	k_mutex_unlock(&task_lock);
+	return ENTELEA_OK;
+}
+
+static entelea_result_t transition(entelea_principal_t ctx, entelea_task_id_t id,
+				   entelea_task_state_t expect_from,
+				   entelea_task_state_t next)
+{
+	/* 状态迁移（无效果域面——start 等中间迁移用）。 */
+	k_mutex_lock(&task_lock, K_FOREVER);
+	int i = find_id(id);
+
+	if (i < 0) {
+		k_mutex_unlock(&task_lock);
+		return ENTELEA_E_NOTFOUND;
+	}
+	entelea_task_t *t = &tb.tasks[i];
+
+	if (!same_principal(t->owner, ctx)) {
+		k_mutex_unlock(&task_lock);
+		return ENTELEA_E_PERM;
+	}
+	if (t->state != expect_from) {
+		k_mutex_unlock(&task_lock);
+		return ENTELEA_E_STATE;
+	}
+	t->state = next;
 	k_mutex_unlock(&task_lock);
 	return ENTELEA_OK;
 }
@@ -105,17 +143,8 @@ entelea_result_t entelea_task_start(entelea_principal_t ctx, entelea_task_id_t i
 static entelea_result_t finish(entelea_principal_t ctx, entelea_task_id_t id,
 			       entelea_task_state_t st, bool flag)
 {
-	entelea_result_t r = transition(ctx, id, ENTELEA_TASK_RUNNING, st);
-
-	if (r == ENTELEA_OK) {
-		/* 效果域由调用方据真实回执给出——本层不伪造确认。 */
-		tb.tasks[id - 1].effect = st == ENTELEA_TASK_SUCCEEDED
-						  ? (flag ? ENTELEA_EFFECT_CONFIRMED
-							  : ENTELEA_EFFECT_NONE)
-						  : (flag ? ENTELEA_EFFECT_UNKNOWN
-							  : ENTELEA_EFFECT_NONE);
-	}
-	return r;
+	/* 效果域由调用方据真实回执给出——本层不伪造确认；写入在锁内。 */
+	return transition_effect(ctx, id, ENTELEA_TASK_RUNNING, st, flag);
 }
 
 entelea_result_t entelea_task_succeed(entelea_principal_t ctx,

@@ -21,6 +21,9 @@
 
 #define SLOT_SZ ENTELEA_APP_SLOT_SIZE
 
+/* 顺序写游标（stage_begin 复位；chunk 乱序拒——appstore.h 合同）。 */
+static uint32_t staged_until[ENTELEA_APP_SLOT_COUNT];
+
 /* ENTELEA_PART_SLOT_A/B 在存储端口（part.c）——本层经公共端口访问。 */
 
 entelea_result_t entelea_pkg_slot_read(uint8_t slot, uint32_t off, void *buf,
@@ -50,6 +53,7 @@ entelea_result_t entelea_pkg_stage_begin(uint8_t slot)
 	if (slot >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_PARAM;
 	}
+	staged_until[slot] = 0; /* 游标复位 */
 	return entelea_storage_erase((entelea_store_part_t)(
 		ENTELEA_PART_SLOT_A + slot));
 }
@@ -59,6 +63,10 @@ entelea_result_t entelea_pkg_stage_chunk(uint8_t slot, uint32_t off,
 {
 	if (buf == NULL || off > SLOT_SZ || len > SLOT_SZ - off) {
 		return ENTELEA_E_RANGE;
+	}
+	/* review P2 修复：顺序写纪律（乱序拒——appstore.h 合同承诺）。 */
+	if (slot >= ENTELEA_APP_SLOT_COUNT || off != staged_until[slot]) {
+		return ENTELEA_E_RANGE; /* 乱序/跳写拒 */
 	}
 	if (entelea_pkg_slot_write(slot, off, buf, len) != ENTELEA_OK) {
 		return ENTELEA_E_IO;
@@ -76,6 +84,7 @@ entelea_result_t entelea_pkg_stage_chunk(uint8_t slot, uint32_t off,
 			return ENTELEA_E_IO; /* 回读校验（RAM 后端不触发；flash 语义） */
 		}
 	}
+	staged_until[slot] = off + len; /* 顺序游标推进 */
 	return ENTELEA_OK;
 }
 

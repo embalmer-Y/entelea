@@ -189,7 +189,13 @@ entelea_result_t entelea_safety_commit_src(const char *uid,
 		}
 		return ENTELEA_E_STATE;
 	}
-	return commit_impl(uid, v);
+	/* review P1 修复：与 commit 同一 write_lock 纪律（此前裸调
+	 * commit_impl 绕过锁——与 set_link 竞态可向 SAFE_LINKLOSS 通道
+	 * 物理写产品值）。 */
+	entelea_safety_write_lock();
+	entelea_result_t r = commit_impl(uid, v);
+	entelea_safety_write_unlock();
+	return r;
 }
 
 static entelea_result_t commit_impl(const char *uid, entelea_out_value_t v)

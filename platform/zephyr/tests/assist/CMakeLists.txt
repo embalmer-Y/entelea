@@ -25,6 +25,9 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/execution/safety/force.c
   ${ENTELEA_ROOT}/framework/execution/safety/drivers.c
   ${ENTELEA_ROOT}/framework/execution/capability/perm.c
+  ${ENTELEA_ROOT}/framework/execution/capability/desc.c
+  ${ENTELEA_ROOT}/framework/execution/resource/power.c
+  ${ENTELEA_ROOT}/framework/runtime/supervision/wdt.c
   ${ENTELEA_ROOT}/framework/common/time.c
 )
 target_compile_definitions(app PRIVATE ENTELEA_TEST=1)

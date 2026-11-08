@@ -9,8 +9,10 @@
  */
 #include <string.h>
 #include <entelea/assistant.h>
+#include <entelea/capability.h>
 #include <entelea/events.h>
 #include <entelea/netmon.h>
+#include <entelea/resource.h>
 #include <entelea/safety.h>
 
 /* ---- 上下文汇聚（有界窗） ---- */
@@ -80,36 +82,59 @@ entelea_result_t entelea_assistant_execute(entelea_principal_t actor,
 	case ENTELEA_ACT_NOTIFY:
 		return ENTELEA_OK; /* 无副作用——不留执行回执面 */
 	case ENTELEA_ACT_OUTPUT: {
-		if (cand->target_uid == NULL) {
-			return ENTELEA_E_PARAM;
+		if (cand->target_uid == NULL || cand->value_kind > 2) {
+			return ENTELEA_E_PARAM; /* 域外 value_kind 拒（review
+						  * P1：不再默认映射为 pwr） */
 		}
-		/* 权限门：ACT_OUTPUT 要求目标描述符的 write 声明（R04 面
-		 * ——R05 periph_acquire 在 WASM 侧；宿主侧直接 commit 前
-		 * 先查 principal 有任一 gpio/pwm write——简化面，完整
-		 * periph 绑定归 R09+ 装配）。 */
-		entelea_result_t pr = entelea_perm_check(
-			actor, ENTELEA_PERM_GPIO, ENTELEA_PERM_WRITE, 0);
+		/* 权限门（review P1 修复）：按目标描述符的真实类/实例裁决
+		 * ——不再以"任一 gpio/pwm write"替代目标面。 */
+		const entelea_periph_desc_t *d = NULL;
+		entelea_result_t pr = entelea_periph_acquire(actor, cand->target_uid,
+							     &d);
 
-		if (pr != ENTELEA_OK && cand->value_kind != 0) {
-			pr = entelea_perm_check(actor, ENTELEA_PERM_PWM,
-						ENTELEA_PERM_WRITE, 0);
-		}
 		if (pr != ENTELEA_OK) {
-			return ENTELEA_E_PERM; /* 模型不能自批 */
+			return pr; /* 未注册/越权/非 ACTIVE（模型不能自批） */
+		}
+		if (cand->value_kind == 2) {
+			/* POWER 值必须经 entelea_power_request：power:write
+			 * 权限 + 预算检查-提交原子化（review P1：不再旁路）。 */
+			entelea_out_value_t pv = {
+				.pwr = {.en = cand->value_b, .ma = cand->value_u}};
+
+			return entelea_power_request(actor, cand->target_uid, pv);
+		}
+		/* 类匹配：value_kind 0=GPIO / 1=PWM 须与目标描述符类一致
+		 * （review P1：跨类写拒）。 */
+		entelea_ch_kind_t want = cand->value_kind == 0
+						 ? ENTELEA_CH_GPIO
+						 : ENTELEA_CH_PWM;
+
+		if (d->safety_uid != NULL) {
+			entelea_ch_state_t st;
+			/* 经 safety 通道 kind 校验（描述符不直接存 kind——
+			 * 以注册表类映射）。 */
+			/* periph desc 无 channel kind——用权限类推断：
+			 * perm_class GPIO→GPIO 通道、PWM→PWM 通道。 */
+			want = d->perm_class == ENTELEA_PERM_GPIO
+				       ? ENTELEA_CH_GPIO
+				       : ENTELEA_CH_PWM;
+			if (cand->value_kind == 0 &&
+			    d->perm_class != ENTELEA_PERM_GPIO) {
+				return ENTELEA_E_PARAM; /* GPIO 值打 PWM 目标 */
+			}
+			if (cand->value_kind == 1 &&
+			    d->perm_class != ENTELEA_PERM_PWM) {
+				return ENTELEA_E_PARAM; /* PWM 值打 GPIO 目标 */
+			}
+			(void)st;
+			(void)want;
 		}
 		entelea_out_value_t v;
 
-		switch (cand->value_kind) {
-		case 0:
+		if (cand->value_kind == 0) {
 			v = (entelea_out_value_t){.b = cand->value_b};
-			break;
-		case 1:
+		} else {
 			v = (entelea_out_value_t){.u = cand->value_u};
-			break;
-		default:
-			v = (entelea_out_value_t){.pwr = {.en = cand->value_b,
-						       .ma = cand->value_u}};
-			break;
 		}
 		/* 唯一写路径（保护层——无旁路）。 */
 		return entelea_safety_commit(cand->target_uid, v);

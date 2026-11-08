@@ -83,6 +83,9 @@ entelea_result_t entelea_power_request(entelea_principal_t ctx,
 	if (r != ENTELEA_OK) {
 		return r;
 	}
+	/* 原子检查-提交（review P1 修复）：预算检查与 commit 同一
+	 * write_lock 临界区——并发 power_request 不再能双过检查超预算。 */
+	entelea_safety_write_lock();
 	if (v.pwr.en && v.pwr.ma > 0) {
 		uint32_t budget = entelea_power_budget_ma();
 		uint32_t used = entelea_power_used_ma();
@@ -94,11 +97,10 @@ entelea_result_t entelea_power_request(entelea_principal_t ctx,
 			current = rb.pwr.ma; /* 本通道替换语义：先扣自身 */
 		}
 		if (v.pwr.ma > budget || used - current > budget - v.pwr.ma) {
+			entelea_safety_write_unlock();
 			return ENTELEA_E_RANGE; /* 超预算整笔拒绝（无在线降额） */
 		}
 	}
-	/* 原子提交：write_lock 内 commit（保护末段临界区原样复用）。 */
-	entelea_safety_write_lock();
 	r = entelea_safety_commit_locked(safety_uid, v, NULL);
 	entelea_safety_write_unlock();
 	return r;

@@ -75,7 +75,11 @@ static inline bool entelea_tsap_parse_fields(const uint8_t *hdr,
 	v->manifest_off = ENTELEA_TSAP_CONTENT_OFF;
 	v->wasm_off = ENTELEA_TSAP_CONTENT_OFF + v->manifest_len;
 	v->cose_off = v->wasm_off + v->wasm_len;
-	if (v->cose_off < v->wasm_off || v->cose_off < ENTELEA_TSAP_CONTENT_OFF) {
+	/* review P1 修复：wasm_off 自身也须无回绕且不落在 manifest 段内
+	 * （此前仅查 cose_off——超大 manifest_len 可使 wasm_off 回绕到
+	 * 48 以下，执行字节可含未签名前缀）。 */
+	if (v->wasm_off < v->manifest_off || v->cose_off < v->wasm_off ||
+	    v->cose_off < ENTELEA_TSAP_CONTENT_OFF) {
 		return false;
 	}
 	return true;

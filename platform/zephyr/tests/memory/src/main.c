@@ -98,6 +98,23 @@ ZTEST(framework_mem, test_delete_tombstone_no_revival)
 	zassert_equal(out[n - 1].t_ms, 50, "墓碑外新条目正常");
 	zassert_equal(entelea_mem_delete(100, 1), ENTELEA_E_PARAM,
 		      "逆区间拒");
+	/* review P1 负测：第二次 delete 不复活第一次删除的区间。 */
+	entelea_mem_test_reset();
+	for (uint64_t t = 10; t <= 30; t += 10) {
+		entelea_mem_entry_t e2 = mk(t, (uint8_t)(t / 10));
+
+		zassert_equal(entelea_mem_write(true, &e2), ENTELEA_OK);
+	}
+	zassert_equal(entelea_mem_delete(15, 25), ENTELEA_OK); /* 隐 t=20 */
+	zassert_equal(entelea_mem_delete(0, 5), ENTELEA_OK); /* 新区间 */
+	n = entelea_mem_read(out, 8);
+	zassert_equal(n, 2, "两条可见");
+	zassert_equal(out[0].t_ms, 10);
+	zassert_equal(out[1].t_ms, 30);
+	/* t=20 保持隐藏（墓碑累计不覆盖）。 */
+	for (size_t i = 0; i < n; i++) {
+		zassert_not_equal(out[i].t_ms, 20, "首区间不复活");
+	}
 }
 
 ZTEST_SUITE(framework_mem, NULL, mem_setup, NULL, NULL, NULL);

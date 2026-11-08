@@ -11,15 +11,24 @@
 static entelea_mem_entry_t chain[ENTELEA_MEM_CHAIN_MAX];
 static uint32_t chain_len;
 static uint32_t evicted_count;
+/* 墓碑列表（review P1 修复：单一墓碑被第二次 delete 覆盖会复活首个
+ * 删除区间——改为累计列表；容量有界，满时最旧合并出界）。 */
+#define ENTELEA_MEM_TOMBSTONES_MAX 8
 static struct {
 	uint64_t from, to;
 	bool active;
-} tombstone;
+} tombstones[ENTELEA_MEM_TOMBSTONES_MAX];
 static uint32_t tombstoned_count;
 
 static bool is_tombstoned(uint64_t t)
 {
-	return tombstone.active && t >= tombstone.from && t <= tombstone.to;
+	for (int i = 0; i < ENTELEA_MEM_TOMBSTONES_MAX; i++) {
+		if (tombstones[i].active && t >= tombstones[i].from &&
+		    t <= tombstones[i].to) {
+			return true;
+		}
+	}
+	return false;
 }
 
 entelea_result_t entelea_mem_write(bool consent, const entelea_mem_entry_t *e)
@@ -64,9 +73,26 @@ entelea_result_t entelea_mem_delete(uint64_t t_from_ms, uint64_t t_to_ms)
 	if (t_from_ms > t_to_ms) {
 		return ENTELEA_E_PARAM;
 	}
-	tombstone.from = t_from_ms;
-	tombstone.to = t_to_ms;
-	tombstone.active = true;
+	/* 已被完全覆盖的墓碑槽复用；否则找空槽/最旧槽（有界）。 */
+	int slot = -1;
+
+	for (int i = 0; i < ENTELEA_MEM_TOMBSTONES_MAX; i++) {
+		if (!tombstones[i].active) {
+			slot = i;
+			break;
+		}
+	}
+	if (slot < 0) {
+		slot = 0;
+		for (int i = 1; i < ENTELEA_MEM_TOMBSTONES_MAX; i++) {
+			if (tombstones[i].from < tombstones[slot].from) {
+				slot = i;
+			}
+		}
+	}
+	tombstones[slot].from = t_from_ms;
+	tombstones[slot].to = t_to_ms;
+	tombstones[slot].active = true;
 	tombstoned_count++;
 	return ENTELEA_OK;
 }
@@ -87,7 +113,7 @@ void entelea_mem_test_reset(void)
 	memset(chain, 0, sizeof(chain));
 	chain_len = 0;
 	evicted_count = 0;
-	memset(&tombstone, 0, sizeof(tombstone));
+	memset(tombstones, 0, sizeof(tombstones));
 	tombstoned_count = 0;
 }
 #endif

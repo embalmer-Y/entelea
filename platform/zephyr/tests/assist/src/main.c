@@ -3,6 +3,7 @@
 #include <string.h>
 #include <zephyr/ztest.h>
 #include <entelea/assistant.h>
+#include <entelea/capability.h>
 #include <entelea/events.h>
 #include <entelea/netmon.h>
 #include <entelea/principal.h>
@@ -48,6 +49,13 @@ ZTEST(framework_assist, test_candidate_gate_and_protection)
 	};
 	zassert_equal(entelea_safety_register_channel(&led), ENTELEA_OK);
 	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
+	/* periph 注册（review P1 修复后 execute 经 R04 acquire 门）。 */
+	static const entelea_periph_desc_t led_desc = {
+		.uid = "aled", .kind = ENTELEA_DEV_OUTPUT, .inst = 0,
+		.perm_class = ENTELEA_PERM_GPIO, .safety_uid = "aled",
+	};
+
+	zassert_equal(entelea_periph_register(&led_desc, 1), ENTELEA_OK);
 
 	entelea_candidate_t cand = {
 		.kind = ENTELEA_ACT_OUTPUT,
@@ -57,7 +65,7 @@ ZTEST(framework_assist, test_candidate_gate_and_protection)
 		.value_b = true,
 	};
 
-	/* 未授权 principal → E_PERM（模型不能自批）。 */
+	/* 未授权 principal → E_PERM（模型不能自批——经 acquire 权限门）。 */
 	entelea_perm_table_t empty;
 
 	entelea_perm_table_init(&empty);
@@ -66,6 +74,12 @@ ZTEST(framework_assist, test_candidate_gate_and_protection)
 	zassert_equal(entelea_principal_bind(&poor, 9, &empty), ENTELEA_OK);
 	zassert_equal(entelea_assistant_execute(poor, &cand, NULL),
 		      ENTELEA_E_PERM);
+	/* 未注册目标 → E_NOTFOUND（不静默成功）。 */
+	entelea_candidate_t ghost = cand;
+
+	ghost.target_uid = "no-such-uid";
+	zassert_equal(entelea_assistant_execute(poor, &ghost, NULL),
+		      ENTELEA_E_NOTFOUND);
 	entelea_out_value_t rb;
 
 	zassert_equal(entelea_safety_readback("aled", &rb), ENTELEA_OK);

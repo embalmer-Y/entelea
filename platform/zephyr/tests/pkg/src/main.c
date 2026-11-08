@@ -264,10 +264,12 @@ ZTEST(framework_pkg, test_stage_chain_and_activate)
 	struct pkgb p;
 
 	build_pkg(&p, MAN, sizeof(MAN), WASM, sizeof(WASM), 0);
-	/* 越界 chunk 拒。 */
+	/* 越界 + 乱序 chunk 拒（顺序游标）。 */
 	zassert_equal(entelea_pkg_stage_begin(0), ENTELEA_OK);
 	zassert_equal(entelea_pkg_stage_chunk(0, ENTELEA_APP_SLOT_SIZE - 2, p.b, 4),
 		      ENTELEA_E_RANGE);
+	zassert_equal(entelea_pkg_stage_chunk(0, 4, p.b, 4), ENTELEA_E_RANGE,
+		      "乱序拒（游标=0）");
 	zassert_equal(entelea_pkg_stage_chunk(0, 0, p.b, p.n), ENTELEA_OK);
 	entelea_tsap_view_t v;
 
