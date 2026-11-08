@@ -113,6 +113,25 @@ tick=true、失败后 tick=false；单通道 detach 失败 tick 仍=true——�
 并加正向控制（tick 后计数>0 才断言 halt 稳定）。7 事件语义=历史迁移
 事实写入合同（权威态=channel_state）。
 
+## 板级软件面（A-BOARD 迁移 + 交叉构建，本轮追加）
+
+- A-BOARD 12 文件自固定基线逐字节迁移（唯一改动：image.cmake 脚本
+  路径重指向新树），prepare_p4_image.py（清单内 A-SCRIPTS）随迁。
+- **真实板级交叉构建通过**（经核验入口全链）：板
+  `esp32p4c5_core_board/esp32p4/hpcore`，BOARD_ROOT=platform/zephyr，
+  固定 hal_espressif 模块（只读核验），SDK 1.0.1 / riscv64-zephyr-elf
+  GCC 14.3.0（实测版本），ESP_SIMPLE_BOOT，esptool 经受管 shim
+  （冻结 venv 壳脚本 shebang 为搬迁前旧绝对路径——不修 venv，入口
+  校验解释器可导入后于 build/.toolbin 生成 shim 并前置 PATH）。
+  产物：zephyr.elf（2.3MB）+ zephyr.bin（144KB，FLASH 0.80%）。
+  `[effective]` 生效配置全比对通过（源目录/板/交叉编译器/模块身份）。
+- 构建入口新增 `--esptool-python`（3 项负测：缺失/导入失败/shim 生成
+  +PATH 前置正测）；模块身份解析修正为 Zephyr 实际
+  `"name":"root":"root/zephyr"` 格式（fixture 更新，97 项主机测试）。
+- **未做（如实）**：烧录、上电/复位/失联/物理故障停止实测——owner
+  硬件闸（需到场与授权）；native_sim 板形≠板级；交叉编译通过≠设备
+  运行或物理停止通过。
+
 ## 未测与边界（如实）
 
 - native_sim 只证明软件路径：上电/复位/失联/物理故障停止、真实 WDT/

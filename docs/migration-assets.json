@@ -61,7 +61,7 @@
       "title": "Zephyr 集成与硬件后端",
       "planned_root": "platform/zephyr",
       "first_batch": "R02",
-      "status": "in_progress"
+      "status": "implemented"
     },
     {
       "id": "M-STORAGE",
@@ -530,12 +530,28 @@
       ],
       "first_batch": "R02",
       "migration_action": "adapt",
-      "status": "not_migrated",
-      "constraints": "固定板/硅/SDK；板定义不是全部外设可用证明。",
-      "target_paths": [],
+      "status": "migrated",
+      "constraints": "固定板/硅/SDK；板定义不是全部外设可用证明。 R02已迁12文件（image.cmake仅脚本路径重指向）+prepare_p4_image.py；板级交叉构建经核验入口通过（SDK1.0.1/riscv64 14.3.0/hal模块/ESP_SIMPLE_BOOT，产物elf+bin）；烧录与物理验收=owner硬件闸（未授权）。",
+      "target_paths": [
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/Kconfig",
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/Kconfig.defconfig",
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/Kconfig.esp32p4c5_core_board",
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/Kconfig.sysbuild",
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/board.cmake",
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/board.yml",
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/doc/index.rst",
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/esp32p4c5_core_board_esp32p4_hpcore-pinctrl.dtsi",
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/esp32p4c5_core_board_esp32p4_hpcore.dts",
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/esp32p4c5_core_board_esp32p4_hpcore.yaml",
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/esp32p4c5_core_board_esp32p4_hpcore_defconfig",
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/image.cmake",
+        "platform/zephyr/scripts/prepare_p4_image.py"
+      ],
       "verification": {
         "state": "not_run",
-        "evidence_paths": []
+        "evidence_paths": [
+          "docs/r02-validation.md"
+        ]
       },
       "source_file_count": 12
     },
@@ -3740,9 +3756,11 @@
       "sha256": "e16236c9100a522c81db11a296117e8314f7c2c6f2ac9ecabe4f5d85656815aa",
       "id": "S-legacy-886068cd0efada19a602",
       "asset_id": "A-BOARD",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/Kconfig"
+      ],
+      "migration_commit": "2c14f87f0a4f6e4a46cdfc2c1b994468592e42ba"
     },
     {
       "repository": "legacy",
@@ -3753,9 +3771,11 @@
       "sha256": "64258c109950ff55a44ed349968141dac931fedf06b8d21f6eb885bf8947ac10",
       "id": "S-legacy-bb955fd2ed2152446f7d",
       "asset_id": "A-BOARD",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/Kconfig.defconfig"
+      ],
+      "migration_commit": "2c14f87f0a4f6e4a46cdfc2c1b994468592e42ba"
     },
     {
       "repository": "legacy",
@@ -3766,9 +3786,11 @@
       "sha256": "d92b0231aebdd1f5d4d951541d6b3efa54f09c6f96eff3e0d561207e7b53a9a6",
       "id": "S-legacy-ac1c11a3d3b3cd0cfe02",
       "asset_id": "A-BOARD",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/Kconfig.esp32p4c5_core_board"
+      ],
+      "migration_commit": "2c14f87f0a4f6e4a46cdfc2c1b994468592e42ba"
     },
     {
       "repository": "legacy",
@@ -3779,9 +3801,11 @@
       "sha256": "69b27687680747218fd8ae55b2a3f54949b63fb509ac84a1ddbdcbba8938695a",
       "id": "S-legacy-e9f1c235a5d90860387a",
       "asset_id": "A-BOARD",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/Kconfig.sysbuild"
+      ],
+      "migration_commit": "2c14f87f0a4f6e4a46cdfc2c1b994468592e42ba"
     },
     {
       "repository": "legacy",
@@ -3792,9 +3816,11 @@
       "sha256": "2a5cdf76073acc110d7b7746127a33493d9e178e8d89d464180a2407f6d89ebd",
       "id": "S-legacy-728e5caf1234693d9b7b",
       "asset_id": "A-BOARD",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/board.cmake"
+      ],
+      "migration_commit": "2c14f87f0a4f6e4a46cdfc2c1b994468592e42ba"
     },
     {
       "repository": "legacy",
@@ -3805,9 +3831,11 @@
       "sha256": "9cb0b7a669574ace9ac63765bdd9a4be228756f11281633ae4144dc50f2435c2",
       "id": "S-legacy-abdefd9c8e5a6b830cb9",
       "asset_id": "A-BOARD",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/board.yml"
+      ],
+      "migration_commit": "2c14f87f0a4f6e4a46cdfc2c1b994468592e42ba"
     },
     {
       "repository": "legacy",
@@ -3818,9 +3846,11 @@
       "sha256": "a4a0d9923b2857bc0979b643003f0a39d5d2be43908f5624cde835a7d94fdcc0",
       "id": "S-legacy-897e70d8eb0d1371bc95",
       "asset_id": "A-BOARD",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/doc/index.rst"
+      ],
+      "migration_commit": "2c14f87f0a4f6e4a46cdfc2c1b994468592e42ba"
     },
     {
       "repository": "legacy",
@@ -3831,9 +3861,11 @@
       "sha256": "915525098a7e02e0f814684c1f656cf3b0f5c8763f054d575ff9da8aef58288e",
       "id": "S-legacy-e029dd6e4a1a27fba77b",
       "asset_id": "A-BOARD",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/esp32p4c5_core_board_esp32p4_hpcore-pinctrl.dtsi"
+      ],
+      "migration_commit": "2c14f87f0a4f6e4a46cdfc2c1b994468592e42ba"
     },
     {
       "repository": "legacy",
@@ -3844,9 +3876,11 @@
       "sha256": "de443ba007833a957f2b82bcc302590d7bb2c0c4bca841d4c308945702b3fa89",
       "id": "S-legacy-4c2547a1f8dbae96c8ac",
       "asset_id": "A-BOARD",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/esp32p4c5_core_board_esp32p4_hpcore.dts"
+      ],
+      "migration_commit": "2c14f87f0a4f6e4a46cdfc2c1b994468592e42ba"
     },
     {
       "repository": "legacy",
@@ -3857,9 +3891,11 @@
       "sha256": "e63ce9a5a9d1222e7064b8b568ca8279aeeccdfe68aba0ff81bda95fcdf9024c",
       "id": "S-legacy-7fe4a4538f0c56648b74",
       "asset_id": "A-BOARD",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/esp32p4c5_core_board_esp32p4_hpcore.yaml"
+      ],
+      "migration_commit": "2c14f87f0a4f6e4a46cdfc2c1b994468592e42ba"
     },
     {
       "repository": "legacy",
@@ -3870,9 +3906,11 @@
       "sha256": "1d7f46d174ae64b84f78a86a8062ea755c1f373d87a8997b8f8ca74b4d084816",
       "id": "S-legacy-1a16138e490d949f036d",
       "asset_id": "A-BOARD",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/esp32p4c5_core_board_esp32p4_hpcore_defconfig"
+      ],
+      "migration_commit": "2c14f87f0a4f6e4a46cdfc2c1b994468592e42ba"
     },
     {
       "repository": "legacy",
@@ -3883,9 +3921,12 @@
       "sha256": "5738a7bea4689be80f7b2eda06c5a3b1a11134bcc39f41077f6dfc9e6212ecc1",
       "id": "S-legacy-063203eee5570bcc9a3b",
       "asset_id": "A-BOARD",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/image.cmake",
+        "platform/zephyr/scripts/prepare_p4_image.py"
+      ],
+      "migration_commit": "2c14f87f0a4f6e4a46cdfc2c1b994468592e42ba"
     },
     {
       "repository": "legacy",
@@ -10236,9 +10277,12 @@
       "sha256": "16463c7c702c0754884ebae326ef2bd4fed137e27905dc7a15441c1ff0f38c7d",
       "id": "S-legacy-e30211fc609a70b8712b",
       "asset_id": "A-SCRIPTS",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/scripts/prepare_p4_image.py",
+        "platform/zephyr/boards/osptek/esp32p4c5_core_board/image.cmake"
+      ],
+      "migration_commit": "2c14f87f0a4f6e4a46cdfc2c1b994468592e42ba"
     },
     {
       "repository": "legacy",
