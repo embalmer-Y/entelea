@@ -287,3 +287,91 @@ ZTEST(framework_pkg, test_stage_chain_and_activate)
 }
 
 ZTEST_SUITE(framework_pkg, NULL, pkg_setup, NULL, NULL, NULL);
+
+/* ---- D03 Lua 可行性验证（子闭环 2；无解释器依赖——机制验证） ---- */
+#include <entelea/lua_contract.h>
+
+ZTEST(framework_pkg, test_lua_payload_ident)
+{
+	static const uint8_t lua53[] = {0x1b, 'L', 'u', 'a', 0x53};
+	static const uint8_t lua54[] = {0x1b, 'L', 'u', 'a', 0x54};
+	static const uint8_t wasm[] = {0x00, 0x61, 0x73, 0x6d, 0x01, 0x00};
+	entelea_lua_payload_info_t info;
+
+	zassert_equal(entelea_lua_payload_ident(lua53, sizeof(lua53), &info),
+		      ENTELEA_OK);
+	zassert_equal(info.format, ENTELEA_LUA_FMT_BINARY);
+	zassert_equal(info.version, 0x53);
+	zassert_equal(entelea_lua_payload_ident(lua54, sizeof(lua54), &info),
+		      ENTELEA_OK);
+	zassert_equal(info.version, 0x54);
+	/* 非 Lua 载荷（含 Wasm magic）fail-closed——不得按后缀/默认解释。 */
+	zassert_equal(entelea_lua_payload_ident(wasm, sizeof(wasm), &info),
+		      ENTELEA_E_INVALID_SIG);
+	zassert_equal(entelea_lua_payload_ident(lua53, 3, &info),
+		      ENTELEA_E_PARAM, "截断拒");
+	zassert_equal(entelea_lua_payload_ident(NULL, 8, &info), ENTELEA_E_PARAM);
+}
+
+ZTEST(framework_pkg, test_lua_mem_budget_gate)
+{
+	entelea_lua_mem_budget_t a, b;
+
+	zassert_equal(entelea_lua_mem_init(&a, 1000), ENTELEA_OK);
+	zassert_equal(entelea_lua_mem_init(&b, 1000), ENTELEA_OK);
+	zassert_true(entelea_lua_mem_alloc(&a, 0, 600));
+	zassert_true(entelea_lua_mem_alloc(&a, 600, 800)); /* 扩 200 */
+	zassert_equal(a.used_bytes, 800);
+	zassert_false(entelea_lua_mem_alloc(&a, 800, 1001), "超配额拒");
+	zassert_equal(a.denied, 1);
+	zassert_true(entelea_lua_mem_alloc(&a, 800, 1000), "恰满通过");
+	zassert_false(entelea_lua_mem_alloc(&a, 1000, 1001));
+	zassert_true(entelea_lua_mem_alloc(&a, 1000, 0)); /* 释放 */
+	zassert_equal(a.used_bytes, 0);
+	zassert_equal(a.peak_bytes, 1000);
+	/* 实例隔离：a 释放不影响 b 配额（无共享池）。 */
+	zassert_false(entelea_lua_mem_alloc(&b, 0, 1001), "b 独立配额");
+	zassert_equal(entelea_lua_mem_init(&a, 0), ENTELEA_E_PARAM);
+}
+
+ZTEST(framework_pkg, test_lua_exec_budget_bounded_stop)
+{
+	entelea_lua_exec_budget_t e;
+
+	zassert_equal(entelea_lua_exec_init(&e, 10), ENTELEA_OK);
+	for (int i = 0; i < 10; i++) {
+		zassert_true(entelea_lua_exec_step(&e), "预算内步");
+	}
+	zassert_false(entelea_lua_exec_step(&e), "超预算停");
+	zassert_true(e.aborted, "停止态置位");
+	zassert_false(entelea_lua_exec_step(&e), "停止后一切步拒（有界）");
+	zassert_equal(entelea_lua_exec_init(&e, 0), ENTELEA_E_PARAM);
+}
+
+ZTEST(framework_pkg, test_lua_contract_encode)
+{
+	const entelea_lua_contract_t good = {
+		.version = 1, .mem_quota_kb = 64, .exec_budget_steps = 100000,
+		.format = ENTELEA_LUA_FMT_BINARY,
+	};
+	uint8_t buf[ENTELEA_LUA_CONTRACT_CBOR_MAX];
+	uint32_t n = 0;
+
+	zassert_equal(entelea_lua_contract_encode(&good, buf, &n), ENTELEA_OK);
+	zassert_true(n > 0 && n <= sizeof(buf));
+	zassert_equal(buf[0], 0xa4, "map(4) 定序");
+	/* 域外负测。 */
+	entelea_lua_contract_t bad = good;
+
+	bad.version = 2;
+	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n), ENTELEA_E_PARAM);
+	bad = good;
+	bad.mem_quota_kb = 513;
+	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n), ENTELEA_E_PARAM);
+	bad = good;
+	bad.mem_quota_kb = 0;
+	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n), ENTELEA_E_PARAM);
+	bad = good;
+	bad.exec_budget_steps = 0;
+	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n), ENTELEA_E_PARAM);
+}

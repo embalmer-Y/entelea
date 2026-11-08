@@ -32,7 +32,9 @@
     "framework/execution/task/task.c",
     "framework/services/package/store.c",
     "framework/services/package/crypto/tweetnacl.c",
-    "framework/services/package/crypto/tnacl_selftest.c"
+    "framework/services/package/crypto/tnacl_selftest.c",
+    "framework/services/package/lua_feasibility.c",
+    "framework/services/package/wasm_host.c"
   ],
   "platform_zephyr": [
     "platform/zephyr/clock.c",
@@ -45,7 +47,9 @@
     "platform/zephyr/tests/safety/src/pwm_real.c",
     "platform/zephyr/tests/store/src/main.c",
     "platform/zephyr/tests/r04/src/main.c",
-    "platform/zephyr/tests/pkg/src/main.c"
+    "platform/zephyr/tests/pkg/src/main.c",
+    "platform/zephyr/tests/wasm/src/main.c",
+    "platform/zephyr/tests/wasm/src/wamr_compat.c"
   ],
   "diagnostics": {},
   "protected_output_sources": [

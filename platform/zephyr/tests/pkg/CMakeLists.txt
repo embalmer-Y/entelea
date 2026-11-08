@@ -18,6 +18,7 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/services/config/prov.c
   ${ENTELEA_ROOT}/framework/services/config/prov_maint.c
   ${ENTELEA_ROOT}/framework/services/package/store.c
+  ${ENTELEA_ROOT}/framework/services/package/lua_feasibility.c
   ${ENTELEA_ROOT}/framework/services/package/crypto/tweetnacl.c
 )
 target_compile_definitions(app PRIVATE ENTELEA_TEST=1)
