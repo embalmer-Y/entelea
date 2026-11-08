@@ -39,7 +39,8 @@
     "framework/services/assistant/assistant.c",
     "framework/services/media/media.c",
     "framework/services/memory/memory.c",
-    "framework/services/affect/affect.c"
+    "framework/services/affect/affect.c",
+    "framework/services/delivery/delivery.c"
   ],
   "platform_zephyr": [
     "platform/zephyr/clock.c",
@@ -62,7 +63,8 @@
     "platform/zephyr/tests/assist/src/main.c",
     "platform/zephyr/tests/media/src/main.c",
     "platform/zephyr/tests/memory/src/main.c",
-    "platform/zephyr/tests/affect/src/main.c"
+    "platform/zephyr/tests/affect/src/main.c",
+    "platform/zephyr/tests/delivery/src/main.c"
   ],
   "diagnostics": {},
   "protected_output_sources": [
