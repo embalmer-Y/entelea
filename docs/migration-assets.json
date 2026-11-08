@@ -248,7 +248,8 @@
       "depends_on": [
         "R02"
       ],
-      "status": "in_progress"
+      "status": "pending",
+      "note": "软件面已交付（docs/r04-validation.md；N-CAPABILITY/N-RESOURCE/N-TASK migrated/passed，hal/perm.c 已迁）；正式 in_progress 受 R02 硬件闸（owner blocked）阻塞——机制依赖（保护端口）已就绪，台账状态机如实保持 pending。"
     },
     {
       "id": "R05",
