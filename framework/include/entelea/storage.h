@@ -24,6 +24,8 @@ typedef enum {
 	ENTELEA_PART_PROV,   /* 配置 provisioning（子闭环 3，只读装载） */
 	ENTELEA_PART_TRUST,  /* 信任根表双副本（子闭环 4） */
 	ENTELEA_PART_KV,     /* App 业务状态两页追加（子闭环 4） */
+	ENTELEA_PART_SLOT_A, /* APP 包槽 A（R05） */
+	ENTELEA_PART_SLOT_B, /* APP 包槽 B（R05） */
 	ENTELEA_PART_COUNT,
 } entelea_store_part_t;
 
@@ -87,6 +89,12 @@ size_t entelea_storage_audit_read(entelea_storage_audit_entry_t *out, size_t max
 
 #include <entelea/kv.h>
 #include <entelea/trust.h>
+
+/* ---- SHA-256 流式（包验签用；与 R01 一次性接口同算法） ---- */
+void entelea_sha256_stream_init(uint32_t state[8]);
+void entelea_sha256_stream_update(uint32_t state[8], const uint8_t *data,
+				  uint32_t len);
+void entelea_sha256_stream_final(const uint32_t state[8], uint8_t out[32]);
 
 /* 尺寸出处 DEC-23/27 语义（基线结构性数值；板级按 DT 调整）。 */
 #define ENTELEA_STORAGE_META_MAX 256

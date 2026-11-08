@@ -29,7 +29,10 @@
     "framework/execution/capability/perm.c",
     "framework/execution/capability/desc.c",
     "framework/execution/resource/power.c",
-    "framework/execution/task/task.c"
+    "framework/execution/task/task.c",
+    "framework/services/package/store.c",
+    "framework/services/package/crypto/tweetnacl.c",
+    "framework/services/package/crypto/tnacl_selftest.c"
   ],
   "platform_zephyr": [
     "platform/zephyr/clock.c",
@@ -41,7 +44,8 @@
     "platform/zephyr/tests/wdt_hardware/src/main.c",
     "platform/zephyr/tests/safety/src/pwm_real.c",
     "platform/zephyr/tests/store/src/main.c",
-    "platform/zephyr/tests/r04/src/main.c"
+    "platform/zephyr/tests/r04/src/main.c",
+    "platform/zephyr/tests/pkg/src/main.c"
   ],
   "diagnostics": {},
   "protected_output_sources": [
