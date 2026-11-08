@@ -3,7 +3,12 @@
 面向 Zephyr MCU 与原生 Linux ARM64/x86 的智能硬件和模拟智能框架。
 '已完成 **R01 公共合同与构建底座**：时间/截止时间、独立CBOR/SHA、
 所迁旧子集适配和主机验证。
-**R02–R13 软件面已全部交付**（每批验证记录在 docs/rXX-validation.md；烧录/物理验收/真实云=owner 硬件闸，blocked）。见[R01 验证记录](docs/r01-validation.md)。
+**R02 已完成**（软件面三轮整改 + D12 硬件闸 2026-11-08 实测关闭：
+烧录/上电/复位一致性 + 两相物理故障停止闭环，见
+[R02 验证记录](docs/r02-validation.md)）。
+**R03–R13 软件面已交付**（每批验证记录在 docs/rXX-validation.md；
+批次状态与剩余闸见唯一台账——flash/板级持久化/真后端随板级批，
+真网/真云/SDK 接入另需 owner 授权）。
 
 - [重建规划](docs/rebuild-plan.md)：顺序、边界、决策闸和验收。
 - [唯一资产台账](docs/migration-assets.json)：固定来源、模块映射、迁移与验证状态。

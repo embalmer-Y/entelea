@@ -117,4 +117,39 @@ ZTEST(framework_mem, test_delete_tombstone_no_revival)
 	}
 }
 
+/* ---- 墓碑容量边界（计划符合性审查 P2）：满时不得复活任何已删区间 ---- */
+ZTEST(framework_mem, test_tombstone_capacity_no_revival)
+{
+	entelea_mem_test_reset(); /* 用例序不保证：自含净基线 */
+	/* 9 条不同时间戳经历：t=10..90（步进 10）。 */
+	for (uint64_t t = 10; t <= 90; t += 10) {
+		entelea_mem_entry_t e = {.t_ms = t, .len = 1};
+
+		zassert_equal(entelea_mem_write(true, &e), ENTELEA_OK);
+	}
+	/* 8 个互不覆盖墓碑（t=10..80 各自单点）→ 槽满。 */
+	for (uint64_t t = 10; t <= 80; t += 10) {
+		zassert_equal(entelea_mem_delete(t, t), ENTELEA_OK);
+	}
+	/* 第 9 个不覆盖任何既有区间的删除 → E_NOMEM 显式拒
+	 * （修复前：覆盖 from 最小槽 → t=10 复活）。 */
+	zassert_equal(entelea_mem_delete(90, 90), ENTELEA_E_NOMEM,
+		      "满 + 无覆盖：显式拒（不复活）");
+	entelea_mem_entry_t out[16];
+	size_t n = entelea_mem_read(out, 16);
+
+	zassert_equal(n, 1, "只余 t=90");
+	zassert_equal(out[0].t_ms, 90);
+	/* 覆盖式删除恒可成功：大区间覆盖一切既有墓碑 → 复用槽 OK。 */
+	zassert_equal(entelea_mem_delete(0, UINT64_MAX), ENTELEA_OK,
+		      "全区间覆盖既有 → 复用槽成功");
+	n = entelea_mem_read(out, 16);
+	zassert_equal(n, 0, "全删后链空（覆盖面不丢）");
+	/* 健康计数：8 次 + 1 次覆盖复用 = 9；E_NOMEM 拒绝路径不计。 */
+	entelea_mem_health_t h;
+
+	entelea_mem_health(&h);
+	zassert_equal(h.tombstoned, 9);
+}
+
 ZTEST_SUITE(framework_mem, NULL, mem_setup, NULL, NULL, NULL);

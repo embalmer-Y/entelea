@@ -16,6 +16,11 @@ static const unsigned char test_root_sk[64] = {
 #include "test_root_sk.inc"
 };
 
+/* 构包签名键可覆盖（默认=测试根=ENTEleA_TEST 工厂根；信任表判别性
+ * 测试用非工厂键签名——计划符合性审查 P2：旧用例把测试根写入表，
+ * 而工厂根本就在信任集内，表键分支无判别力）。 */
+static const unsigned char *sign_sk = test_root_sk;
+
 /* ---- 包构造器（canonical COSE_Sign1） ---- */
 #define PKG_MAX 4096
 struct pkgb {
@@ -93,7 +98,7 @@ static void build_pkg(struct pkgb *p, const uint8_t *manifest, uint32_t mlen,
 	uint8_t sm[64 + 22 + sizeof(payload)];
 	size_t tail = 0;
 
-	memcpy(sm + tail, test_root_sk + 32, 64); /* sig 占位（sign 前缀=sk[32:96]） */
+	memcpy(sm + tail, sign_sk + 32, 64); /* sig 占位（sign 前缀=sk[32:96]） */
 	tail = 64;
 	sm[tail++] = 0x84;
 	sm[tail++] = 0x6a;
@@ -128,7 +133,7 @@ static void build_pkg(struct pkgb *p, const uint8_t *manifest, uint32_t mlen,
 	/* crypto_sign(sm_signed, &smlen, m, mlen, sk)：输出 = sig(64)‖m。 */
 	static uint8_t signed_buf[64 + sizeof(payload)];
 
-	crypto_sign(signed_buf, &smlen, sm + 64 + (0), tail - 64, test_root_sk);
+	crypto_sign(signed_buf, &smlen, sm + 64 + (0), tail - 64, sign_sk);
 	/* signed_buf = 64B sig ‖ Sig_structure-minus-sig（我们构造的
 	 * Sig_structure 前缀+payload）——即 sm 完整形态。 */
 	pb8(p, 0xd2); /* tag 18 */
@@ -257,6 +262,70 @@ ZTEST(framework_pkg, test_verify_good_and_bad)
 	zassert_equal(entelea_trust_write(trust_cbor, n), ENTELEA_OK);
 	zassert_equal(entelea_pkg_verify(1, NULL, &v, NULL), ENTELEA_OK,
 		      "信任集路径（表键过）");
+}
+
+/* ---- 信任表键独立生效（判别性）：仅存在于表的非工厂键 ---- */
+
+/* tweetnacl keypair 需 randombytes；生产树刻意无 RNG（确定性纪律）——
+ * 测试内确定性实现（固定种子序列）：只为生成一把与工厂根**无关**的
+ * 密钥，无需密码学随机。 */
+void randombytes(unsigned char *buf, unsigned long long len)
+{
+	unsigned char st = 0xA7;
+
+	for (unsigned long long i = 0; i < len; i++) {
+		st = (unsigned char)(st * 31 + i + 0x5A);
+		buf[i] = st;
+	}
+}
+
+ZTEST(framework_pkg, test_trust_table_only_key)
+{
+	entelea_trust_test_reset();
+	struct pkgb p;
+
+	/* 生成非工厂键（与测试根/工厂根无关的独立密钥对）。 */
+	unsigned char pk2[32], sk2[64];
+
+	zassert_equal(crypto_sign_keypair(pk2, sk2), 0);
+
+	/* 前置差分：pk2 尚不在信任集（工厂根∪空表）→ 其签名包必须拒。 */
+	sign_sk = sk2;
+	build_pkg(&p, MAN, sizeof(MAN), WASM, sizeof(WASM), 0);
+	stage_pkg(0, &p);
+	entelea_tsap_view_t v;
+
+	zassert_equal(entelea_pkg_verify(0, NULL, &v, NULL),
+		      ENTELEA_E_INVALID_SIG, "非工厂键不在表=不受信");
+
+	/* 信任表（次版）只写 pk2 → 同一包经 NULL 路径过——证明表键独立
+	 * 生效（不是靠工厂根兜底）。 */
+	static uint8_t trust_cbor[128];
+	uint32_t n = 0;
+
+	trust_cbor[n++] = 0xa2;
+	memcpy(trust_cbor + n, "\x63ver", 4);
+	n += 4;
+	trust_cbor[n++] = 1;
+	memcpy(trust_cbor + n, "\x64keys", 5);
+	n += 5;
+	trust_cbor[n++] = 0x81;
+	trust_cbor[n++] = 0x58;
+	trust_cbor[n++] = 32;
+	memcpy(trust_cbor + n, pk2, 32);
+	n += 32;
+	zassert_equal(entelea_trust_write(trust_cbor, n), ENTELEA_OK);
+	zassert_equal(entelea_pkg_verify(0, NULL, &v, NULL), ENTELEA_OK,
+		      "仅信任表键验签过");
+
+	/* 并集语义：表只含 pk2 时，工厂根签名包仍过（工厂根∪表）。 */
+	sign_sk = test_root_sk;
+	build_pkg(&p, MAN, sizeof(MAN), WASM, sizeof(WASM), 0);
+	stage_pkg(1, &p);
+	zassert_equal(entelea_pkg_verify(1, NULL, &v, NULL), ENTELEA_OK,
+		      "并集：工厂根不受表内容影响");
+	entelea_trust_test_reset();
+	sign_sk = test_root_sk;
 }
 
 ZTEST(framework_pkg, test_stage_chain_and_activate)

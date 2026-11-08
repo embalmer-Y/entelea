@@ -26,6 +26,9 @@ __weak void entelea_safety_record_fail_reason(uint32_t reason)
 void entelea_safety_test_reset_system_failed(void)
 {
 	atomic_set(&entelea_system_failed, 0);
+	fail_reason_store = 0; /* 计划符合性审查连带修复：reason 原无复位
+				* 路径——跨用例残留使后续 fail_reason 断言
+				* 读到陈旧值（用例隔离缺口）。 */
 }
 #endif
 

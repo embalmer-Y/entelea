@@ -67,6 +67,23 @@ class ArchitectureTests(unittest.TestCase):
         self.write("framework/common/a.c", "gpio_pin_set(0, 1);")
         self.rejected("Output bypass")
 
+    def test_output_bypass_port_level_writes(self):
+        # 计划符合性审查 P2：固定 Zephyr 4.5 的端口级写变体（toggle/
+        # set_masked/set_clr_bits 及非 raw 形式）不得绕过输出门。
+        variants = (
+            "gpio_port_toggle_bits(d, m);",
+            "gpio_port_set_masked(d, p, m);",
+            "gpio_port_set_masked_raw(d, p, m);",
+            "gpio_port_set_clr_bits(d, s, c);",
+            "gpio_port_set_clr_bits_raw(d, s, c);",
+            "gpio_port_set_bits(d, m);",
+            "gpio_port_clear_bits(d, m);",
+        )
+        for call in variants:
+            with self.subTest(call=call):
+                self.write("framework/common/a.c", call)  # 同路径覆写=净面
+                self.rejected("Output bypass")
+
     def test_gate_cannot_cover_host_sources(self):
         self.policy["protected_output_sources"] = ["framework/common/a.c"]
         self.rejected("Protection gate outside reviewed Zephyr sources")

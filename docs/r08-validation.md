@@ -42,3 +42,13 @@ python3 tools/build_zephyr.py --app platform/zephyr/tests/assist \
   --python ../entelea-legacy/.venv/bin/python3 --build
 ./build/r08-tassist/zephyr/zephyr.exe
 ```
+
+## 计划符合性审查补记（2026-11-08，轨道 1）
+
+- 新增 test_output_domain_gates：跨类拒（双向）/域外 value_kind/
+  非 DEV_OUTPUT 目标拒（修复：类检原条件化在 safety_uid!=NULL 内，
+  传感器类描述符 READ 即 acquire 可跳类检）/POWER 路由（无
+  power:write=E_PERM 零输出；有权限+预算内经 power_request 落值）
+  ——review P1 修复三分支零负测的证据缺口消除。
+- 如实点名（处置归计划修订/轨道 2）：计划步骤"Task 执行+来源化
+  反馈"未实现（ACT_TASK 无分支→E_PERM；contract 称上层组装）。

@@ -12,7 +12,11 @@ static entelea_mem_entry_t chain[ENTELEA_MEM_CHAIN_MAX];
 static uint32_t chain_len;
 static uint32_t evicted_count;
 /* 墓碑列表（review P1 修复：单一墓碑被第二次 delete 覆盖会复活首个
- * 删除区间——改为累计列表；容量有界，满时最旧合并出界）。 */
+ * 删除区间——改为累计列表）。容量有界；淘汰纪律（计划符合性审查 P2
+ * 修复：原"满时覆盖 from 最小者"可使链内已删条目复活）：只复用被新区间
+ * **完全覆盖**的槽（覆盖面不丢失）；无空槽且无被覆盖槽 = E_NOMEM
+ * 显式拒（不复活任何已删区间）。全区间删除恒覆盖既有一切 → 永不因
+ * 满而失败。 */
 #define ENTELEA_MEM_TOMBSTONES_MAX 8
 static struct {
 	uint64_t from, to;
@@ -73,22 +77,26 @@ entelea_result_t entelea_mem_delete(uint64_t t_from_ms, uint64_t t_to_ms)
 	if (t_from_ms > t_to_ms) {
 		return ENTELEA_E_PARAM;
 	}
-	/* 已被完全覆盖的墓碑槽复用；否则找空槽/最旧槽（有界）。 */
+	/* 有界且不复活：① 空槽；② 被新区间完全覆盖的槽（覆盖面不丢）；
+	 * ③ 否则 E_NOMEM（显式拒——绝不覆盖仍有效的删除区间）。 */
 	int slot = -1;
+	int subsumed = -1;
 
 	for (int i = 0; i < ENTELEA_MEM_TOMBSTONES_MAX; i++) {
 		if (!tombstones[i].active) {
 			slot = i;
 			break;
 		}
+		if (subsumed < 0 && t_from_ms <= tombstones[i].from &&
+		    tombstones[i].to <= t_to_ms) {
+			subsumed = i; /* 保留首个被覆盖槽（循环继续找空槽） */
+		}
 	}
 	if (slot < 0) {
-		slot = 0;
-		for (int i = 1; i < ENTELEA_MEM_TOMBSTONES_MAX; i++) {
-			if (tombstones[i].from < tombstones[slot].from) {
-				slot = i;
-			}
-		}
+		slot = subsumed;
+	}
+	if (slot < 0) {
+		return ENTELEA_E_NOMEM; /* 满 + 无覆盖：拒（不复活） */
 	}
 	tombstones[slot].from = t_from_ms;
 	tombstones[slot].to = t_to_ms;

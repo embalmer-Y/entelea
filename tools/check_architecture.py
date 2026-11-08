@@ -7,7 +7,10 @@ import sys
 from pathlib import Path, PurePosixPath
 
 OUTPUT = re.compile(
-    r"\b(?:gpio_pin_set(?:_raw|_dt)?|gpio_port_set_bits_raw|gpio_port_clear_bits_raw"
+    # gpio_port_(set|clear|toggle)\w* covers every port-level write variant in
+    # fixed Zephyr 4.5 (set_bits[_raw]/set_masked[_raw]/set_clr_bits[_raw]/
+    # clear_bits[_raw]/toggle_bits); read APIs all start with "get".
+    r"\b(?:gpio_pin_set(?:_raw|_dt)?|gpio_port_(?:set|clear|toggle)\w*"
     r"|pwm_set(?:_(?:cycles|duty|pulse|ticks))?(?:_dt)?)\s*\("
 )
 PRIVATE_INCLUDE = re.compile(

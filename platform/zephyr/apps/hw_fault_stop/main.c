@@ -9,7 +9,7 @@
  *  P2（复位原因 = SOFTWARE 进入）：irq_lock+自旋楔死内核（本板单核
  *     配置，CONFIG_SMP 未置）→ task_wdt 监视器死亡 → MWDT0
  *     (RESET_SOC, 窗 3+2s) 到期 → SoC 硬复位（期望复位原因 =
- *     WATCHDOG；ROM 横幅 rst:0x8 独立佐证）。
+ *     WATCHDOG；ROM 横幅 rst:0x7 (HP_SYS_HP_WDT_RESET) 独立佐证）。
  *  P3（复位原因 = WATCHDOG 进入）：双闭环收官 → 常驻（巡检持续喂狗）。
  * 无测试钩子（ENTELEA_TEST 未定义）：只走生产 API。 */
 #include <zephyr/kernel.h>

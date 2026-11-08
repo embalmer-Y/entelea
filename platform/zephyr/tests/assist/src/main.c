@@ -7,6 +7,7 @@
 #include <entelea/events.h>
 #include <entelea/netmon.h>
 #include <entelea/principal.h>
+#include <entelea/resource.h>
 #include <entelea/safety.h>
 
 static void *assist_setup(void)
@@ -167,3 +168,131 @@ ZTEST(framework_assist, test_trigger_on_full_window)
 }
 
 ZTEST_SUITE(framework_assist, NULL, assist_setup, NULL, NULL, NULL);
+
+/* ---- 输出域门（计划符合性审查 P2）：跨类/域外/POWER 路由/非输出目标 ---- */
+ZTEST(framework_assist, test_output_domain_gates)
+{
+	/* 自含净基线（用例序不保证：清安全注册表/estop 锁存/principal 槽）。 */
+	entelea_safety_test_reset();
+	entelea_perm_test_reset();
+	/* 注册 PWM 输出 + GPIO 输出 + 传感器（非输出）目标。 */
+	static const entelea_out_channel_t pwmch = {
+		.uid = "apwm", .kind = ENTELEA_CH_PWM,
+		.poweron = {.u = 0}, .linkloss = {.u = 0}, .fault = {.u = 0},
+	};
+	static const entelea_out_channel_t gpioch = {
+		.uid = "agio", .kind = ENTELEA_CH_GPIO,
+		.poweron = {.b = false}, .linkloss = {.b = false},
+		.fault = {.b = false},
+	};
+
+	zassert_equal(entelea_safety_register_channel(&pwmch), ENTELEA_OK);
+	zassert_equal(entelea_safety_register_channel(&gpioch), ENTELEA_OK);
+	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
+	static const entelea_periph_desc_t descs[] = {
+		{.uid = "apwm", .kind = ENTELEA_DEV_OUTPUT, .inst = 0,
+		 .perm_class = ENTELEA_PERM_PWM, .safety_uid = "apwm"},
+		{.uid = "agio", .kind = ENTELEA_DEV_OUTPUT, .inst = 0,
+		 .perm_class = ENTELEA_PERM_GPIO, .safety_uid = "agio"},
+		{.uid = "asens", .kind = ENTELEA_DEV_SENSOR, .inst = 0,
+		 .perm_class = ENTELEA_PERM_GPIO, .safety_uid = NULL},
+		{.uid = "apwr", .kind = ENTELEA_DEV_OUTPUT, .inst = 0,
+		 .perm_class = ENTELEA_PERM_POWER, .safety_uid = "apwr"},
+	};
+
+	zassert_equal(entelea_periph_register(descs, 4), ENTELEA_OK);
+
+	entelea_perm_table_t t;
+
+	entelea_perm_table_init(&t);
+	zassert_equal(entelea_perm_parse("gpio:write:0", &t), ENTELEA_OK);
+	zassert_equal(entelea_perm_parse("pwm:write:0", &t), ENTELEA_OK);
+	entelea_principal_t actor;
+
+	zassert_equal(entelea_principal_bind(&actor, 3, &t), ENTELEA_OK);
+
+	entelea_candidate_t cand = {
+		.kind = ENTELEA_ACT_OUTPUT,
+		.source = {.id = 1, .kind = ENTELEA_SOURCE_MODEL},
+		.value_b = true, .value_u = 100,
+	};
+
+	/* 跨类拒（双向）：GPIO 值打 PWM 目标 / PWM 值打 GPIO 目标。 */
+	cand.target_uid = "apwm";
+	cand.value_kind = 0;
+	zassert_equal(entelea_assistant_execute(actor, &cand, NULL),
+		      ENTELEA_E_PARAM, "GPIO 值打 PWM 目标拒");
+	cand.target_uid = "agio";
+	cand.value_kind = 1;
+	zassert_equal(entelea_assistant_execute(actor, &cand, NULL),
+		      ENTELEA_E_PARAM, "PWM 值打 GPIO 目标拒");
+	entelea_out_value_t rb;
+
+	zassert_equal(entelea_safety_readback("apwm", &rb), ENTELEA_OK);
+	zassert_equal(rb.u, 0, "跨类拒零输出");
+	zassert_equal(entelea_safety_readback("agio", &rb), ENTELEA_OK);
+	zassert_false(rb.b, "跨类拒零输出（gpio）");
+
+	/* 同类对照：正面路径仍通（防过度收紧）。 */
+	cand.target_uid = "agio";
+	cand.value_kind = 0;
+	zassert_equal(entelea_assistant_execute(actor, &cand, NULL),
+		      ENTELEA_OK, "同类（GPIO→GPIO）放行");
+
+	/* 域外 value_kind 拒（>2）。 */
+	cand.value_kind = 3;
+	zassert_equal(entelea_assistant_execute(actor, &cand, NULL),
+		      ENTELEA_E_PARAM, "value_kind 域外拒");
+
+	/* 非 DEV_OUTPUT 目标拒：传感器描述符（READ 即可 acquire——但输出
+	 * 动作必须打 DEV_OUTPUT；修复前跳过类检直落 safety_commit）。 */
+	entelea_perm_table_t rt;
+
+	entelea_perm_table_init(&rt);
+	zassert_equal(entelea_perm_parse("gpio:read:0", &rt), ENTELEA_OK);
+	entelea_principal_t reader;
+
+	zassert_equal(entelea_principal_bind(&reader, 4, &rt), ENTELEA_OK);
+	cand.target_uid = "asens";
+	cand.value_kind = 0;
+	zassert_equal(entelea_assistant_execute(reader, &cand, NULL),
+		      ENTELEA_E_PARAM, "输出动作打非 DEV_OUTPUT 目标拒");
+
+	/* POWER 路由（value_kind=2 必经 power_request）：无 power:write →
+	 * E_PERM（不旁路预算门）。 */
+	static const entelea_out_channel_t pwrch = {
+		.uid = "apwr", .kind = ENTELEA_CH_POWER,
+		.poweron = {.pwr = {false, 0}}, .linkloss = {.pwr = {false, 0}},
+		.fault = {.pwr = {false, 0}},
+		.limits = {.current_limit_ma = 1000},
+	};
+
+	zassert_equal(entelea_safety_register_channel(&pwrch), ENTELEA_OK);
+	/* 注册晚于 set_link 边沿：翻转一次使新通道进入 ACTIVE。 */
+	entelea_safety_set_link(false);
+	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
+	cand.target_uid = "apwr";
+	cand.value_kind = 2;
+	cand.value_b = true;
+	cand.value_u = 50;
+	zassert_equal(entelea_assistant_execute(actor, &cand, NULL),
+		      ENTELEA_E_PERM, "无 power:write → power_request 权限门拒");
+	zassert_equal(entelea_safety_readback("apwr", &rb), ENTELEA_OK);
+	zassert_false(rb.b, "POWER 旁路拒：零输出");
+
+	/* 有 power:write + 预算内 → 经 power_request 落值（正面对照）。 */
+	entelea_power_test_reset();
+	entelea_power_test_set_budget(100);
+	entelea_perm_table_t pt;
+
+	entelea_perm_table_init(&pt);
+	zassert_equal(entelea_perm_parse("gpio:write:0", &pt), ENTELEA_OK);
+	zassert_equal(entelea_perm_parse("power:write:0", &pt), ENTELEA_OK);
+	entelea_principal_t pactor;
+
+	zassert_equal(entelea_principal_bind(&pactor, 5, &pt), ENTELEA_OK);
+	zassert_equal(entelea_assistant_execute(pactor, &cand, NULL),
+		      ENTELEA_OK, "POWER 经 power_request 放行");
+	zassert_equal(entelea_safety_readback("apwr", &rb), ENTELEA_OK);
+	zassert_true(rb.b, "POWER 经预算门落值");
+}

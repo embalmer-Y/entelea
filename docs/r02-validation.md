@@ -236,3 +236,14 @@ PATH="$PWD/build/.toolbin:$PATH" esptool --port /dev/ttyACM0 --baud 921600 \
   --flash_freq 80m --flash_size 16MB 0x2000 build/r02-hwgate/zephyr/zephyr.bin
 # 复位+监听：DTR/RTS 空闲电平后 EN 脉冲（pyserial；勿与 esptool 并发开同口）
 ```
+
+## 计划符合性审查补记（2026-11-08，轨道 1）
+
+- wdt 时钟真回退改按不可知上报（合同"真回退仍按 A1 计入失明轮数"；
+  修复前回退返回 ok=true 把 blind_rounds 归零——持续回退后端下 A1
+  静默失效）；新增持续回退→第 3 轮 FAIL_WDT(0xFF) 负测
+  （test_wdt_persistent_rollback_counts_blind，含好读复位面）。
+- 输出门正则补全固定 Zephyr 4.5 全部端口级写 API（toggle_bits/
+  set_masked[_raw]/set_clr_bits[_raw]/set_bits/clear_bits——审查
+  P2：原正则漏 toggle_bits 与 set_masked_raw 可绕过）；架构负测
+  按变体逐项拒绝。

@@ -134,7 +134,10 @@ ZTEST(framework_wasm, test_signed_load_call_stop)
 		      ENTELEA_OK, "导出函数调用");
 	zassert_true(ret >= 0, "health_ping 返回（native 身份裁决经 host_probe 语义同面）");
 
-	/* 未授权 principal → native 返回 E_PERM（VM 内可见错误码，非崩溃）。 */
+	/* 未授权 principal：sample.wasm 无导入——health_ping 不触 native，
+	 * 调用成功**不构成**授权证据（计划符合性审查 P2：此前注释声称
+	 * "native 返回 E_PERM"与断言矛盾）。裁决面在下例经直达钩子验证；
+	 * VM 内 wasm→native 调用路径随工厂夹具。 */
 	entelea_perm_table_t empty;
 
 	entelea_perm_table_init(&empty);
@@ -142,7 +145,7 @@ ZTEST(framework_wasm, test_signed_load_call_stop)
 
 	zassert_equal(entelea_principal_bind(&poor, 2, &empty), ENTELEA_OK);
 	zassert_equal(entelea_wasm_call(app, poor, "health_ping", 100, &ret), ENTELEA_OK);
-	zassert_true(ret >= 0, "无 natives 模块：调用仍成（授权面经 R04 natives 统一面——本闭环不冒充）");
+	zassert_true(ret >= 0, "无导入模块调用与授权无关");
 
 	/* 死循环模块：步预算到期 → E_TIMEOUT 有界停止 + 实例销毁。 */
 	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
@@ -161,3 +164,35 @@ ZTEST(framework_wasm, test_signed_load_call_stop)
 }
 
 ZTEST_SUITE(framework_wasm, NULL, wasm_setup, NULL, NULL, NULL);
+
+/* ---- 代表 native 裁决面（直达钩子；sample.wasm 无导入） ---- */
+ZTEST(framework_wasm, test_native_probe_principal_gate)
+{
+	entelea_wasm_test_reset();
+	entelea_perm_test_reset();
+	/* 授权 principal（gpio:read:0）→ 1（授权可见）。 */
+	entelea_perm_table_t t;
+
+	entelea_perm_table_init(&t);
+	zassert_equal(entelea_perm_parse("gpio:read:0", &t), ENTELEA_OK);
+	entelea_principal_t ok_ctx;
+
+	zassert_equal(entelea_principal_bind(&ok_ctx, 1, &t), ENTELEA_OK);
+	zassert_equal(entelea_wasm_test_probe_decide(ok_ctx, 0xFFFFFFFF), 1,
+		      "注入授权身份 → 授权可见（Wasm 传参被忽略）");
+	/* 未授权（空权限）→ E_PERM。 */
+	entelea_perm_table_t empty;
+
+	entelea_perm_table_init(&empty);
+	entelea_principal_t poor;
+
+	zassert_equal(entelea_principal_bind(&poor, 2, &empty), ENTELEA_OK);
+	zassert_equal(entelea_wasm_test_probe_decide(poor, 0), ENTELEA_E_PERM,
+		      "注入未授权身份 → E_PERM（不崩溃、不越权）");
+	/* 伪造/过期句柄恒 E_PERM（principal 合同面：bind 唯一构造）。 */
+	entelea_principal_t fake = {._handle = 91, .app_id = 0};
+
+	zassert_equal(entelea_wasm_test_probe_decide(fake, 0), ENTELEA_E_PERM,
+		      "伪造句柄 → E_PERM");
+	entelea_perm_test_reset(); /* 用例序不保证：释放 principal 槽 */
+}

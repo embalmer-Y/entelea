@@ -42,6 +42,7 @@ ZTEST(framework_trial, test_lifecycle_and_user_gate)
 	entelea_trial_current(&cur);
 	zassert_equal(cur.digest[0], 0xAB, "内容绑定（digest=确认对象）");
 	zassert_equal(cur.permissions, 0x0005);
+	zassert_equal(cur.version, 3, "version 同为确认对象（合同三要素）");
 
 	/* 确认前不生效：confirm 是唯一晋升路径。 */
 	zassert_equal(entelea_trial_end(), ENTELEA_E_STATE, "PENDING 不可结束");

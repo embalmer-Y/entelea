@@ -63,3 +63,13 @@ python3 tools/build_zephyr.py --app platform/zephyr/tests/r04 \
   --python ../entelea-legacy/.venv/bin/python3 --build
 ./build/r04-texec/zephyr/zephyr.exe
 ```
+
+## 计划符合性审查补记（2026-11-08，轨道 1）
+
+- 出处登记补正：periph/desc.c→capability/desc.c、power/budget.c 与
+  power/slots.c→resource/power.c 已在台账登记 migrate（commit 4bc4a1d）
+  ——原代码注释声称"迁自旧"而源项 pending_review 的不一致消除。
+- 如实点名（处置归计划修订/轨道 2）：计划步骤"截止时间"条目零落点
+  （类型已备于 app.h/time.h）；A-LEASE 输入唯一源 lease.c 处置指向
+  R06（net/netmon.c），本批未显式记录租约面去向。
+- review P1 修复分支（预算锁内原子性/效果域锁内写）复核在位。

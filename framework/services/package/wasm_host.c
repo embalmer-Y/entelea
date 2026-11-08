@@ -31,11 +31,8 @@ static uint8_t wamr_heap[ENTELEA_WASM_HEAP_SIZE] __aligned(8);
 
 /* 代表 native：宿主注入 principal 裁决（gpio:read:0 门）——证明
  * natives 只信注入身份。Wasm 侧传入整数被忽略。 */
-static int32_t native_host_probe(wasm_exec_env_t env,
-				 uint32_t ctx_opaque_ignored)
+static int32_t probe_decide(const struct inst *it, uint32_t ctx_opaque_ignored)
 {
-	struct inst *it = (struct inst *)wasm_runtime_get_user_data(env);
-
 	(void)ctx_opaque_ignored;
 	if (it == NULL) {
 		return ENTELEA_E_PERM;
@@ -47,6 +44,26 @@ static int32_t native_host_probe(wasm_exec_env_t env,
 	}
 	return 1; /* 授权可见 */
 }
+
+static int32_t native_host_probe(wasm_exec_env_t env,
+				 uint32_t ctx_opaque_ignored)
+{
+	struct inst *it = (struct inst *)wasm_runtime_get_user_data(env);
+
+	return probe_decide(it, ctx_opaque_ignored);
+}
+
+#ifdef ENTELEA_TEST
+/* 裁决面直达钩子（sample.wasm 无导入——VM 内调用路径随工厂夹具；
+ * 授权/E_PERM 两分支的判决函数在此直接验证，不冒充 VM 路径）。 */
+int32_t entelea_wasm_test_probe_decide(entelea_principal_t owner,
+				       uint32_t ignored)
+{
+	struct inst fake = {.owner = owner};
+
+	return probe_decide(&fake, ignored);
+}
+#endif
 
 static NativeSymbol native_syms[] = {
 	{

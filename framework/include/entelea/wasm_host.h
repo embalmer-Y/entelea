@@ -41,6 +41,10 @@ uint8_t entelea_wasm_instance_count(void);
 
 #ifdef ENTELEA_TEST
 void entelea_wasm_test_reset(void);
+/* 代表 native 裁决面直达钩子（sample.wasm 无导入——VM 内调用路径随
+ * 工厂夹具；授权/E_PERM 判决在此直接验证）。 */
+int32_t entelea_wasm_test_probe_decide(entelea_principal_t owner,
+				       uint32_t ignored);
 #endif
 
 #ifdef __cplusplus

@@ -78,16 +78,22 @@ static bool now32_checked(uint32_t *out)
 	 * 交错误停机）。 */
 	bool ok = wdt_clock != NULL &&
 		  wdt_clock->read_ms(wdt_clock->user, &ms) == ENTELEA_OK;
+	bool known = ok;
 
 	if (!ok || ms < clock_last_good) {
 		clock_fault_count++;
 		ms = clock_last_good;
+		known = false;
 	} else {
 		clock_last_good = ms;
 	}
 	irq_unlock(key);
 	*out = (uint32_t)ms;
-	return ok;
+	/* 时间可知 = 读成功**且**未回退：真回退（读到过期值）与读失败同样
+	 * 按不可知上报——合同“真回退仍按 A1 计入失明轮数”（计划符合性
+	 * 审查 P2：修复前回退返回 true 会把 blind_rounds 归零，持续回退
+	 * 的时钟后端下 A1 静默失效）。 */
+	return known;
 }
 
 static uint32_t now32(void)

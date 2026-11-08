@@ -55,3 +55,17 @@ python3 tools/build_zephyr.py --app platform/zephyr/tests/$app \
 ./build/r05-t$app/zephyr/zephyr.exe
 done
 ```
+
+## 计划符合性审查补记（2026-11-08，轨道 1）
+
+- 新增判别性用例 test_trust_table_only_key：生成**非工厂**密钥对——
+  入表前验签拒、仅写入信任表后过、并集语义（工厂根不受表内容影响）
+  三面（原用例把测试根写入表而工厂根==测试根，表键分支无判别力）。
+- appstore.h activate 合同字面已对齐实现（激活=包事实记录，验签
+  前置不存在——装载链复核强制安全；原"仅验签通过后可调"失实）。
+- wasm 代表 native 裁决：矛盾注释/断言订正；新增 test_native_probe_
+  principal_gate 经直达钩子覆盖授权=1/未授权=E_PERM/伪造句柄=E_PERM
+  （sample.wasm 无导入——VM 内 wasm→native 调用路径随工厂夹具，不冒充）。
+- 如实点名（处置归计划修订/轨道 2）：设备/Forge 字节对拍记"归 R12"
+  但计划文本未修订（L311 输出项）；D03 首期七项之"宿主调用与可信
+  身份"在 Lua 合同无条款亦未记为不适项。

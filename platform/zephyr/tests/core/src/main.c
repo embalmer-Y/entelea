@@ -293,6 +293,42 @@ ZTEST(framework_core, test_wdt_blind_clock_fails_safe)
 	entelea_safety_test_reset();
 }
 
+/* ---- 持续回退同计失明（计划符合性审查 P2）：真回退不得把轮数归零 ---- */
+ZTEST(framework_core, test_wdt_persistent_rollback_counts_blind)
+{
+	entelea_wdt_test_reset();
+	entelea_safety_test_reset();
+	zassert_equal(entelea_wdt_bind_clock(&virt_clock), ENTELEA_OK);
+	virt_now = 5000;
+	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 1000), ENTELEA_OK);
+	entelea_wdt_feed(ENTELEA_WDT_SYWORK);
+
+	/* 两轮回退：不判逾不假活（修复前回退 ok=true 把轮数归零，
+	 * 第 3 轮也永不 fail——持续回退后端下 A1 静默失效）。 */
+	virt_now = 4000;
+	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT,
+		      "回退轮不得伪逾期");
+	virt_now = 3000;
+	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT);
+	zassert_equal(entelea_safety_test_fail_reason(), 0, "两轮回退不得提前 fail");
+	/* 好读复位轮数（回退后恢复前进 = 时间重新可知）。 */
+	virt_now = 5100;
+	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT, "好读恢复判时");
+	/* 重新累计：3 轮连续回退 → fail-safe（载荷 0xFF）。 */
+	virt_now = 4900;
+	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT);
+	virt_now = 4800;
+	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT);
+	virt_now = 4700;
+	(void)entelea_wdt_patrol_once();
+	zassert_equal(entelea_safety_test_fail_reason(),
+		      ENTELEA_FAIL_WDT_CLOCK_BLIND,
+		      "持续回退必须按 A1 计入失明轮数并 fail-safe");
+	zassert_false(entelea_wdt_test_patrol_tick());
+	entelea_wdt_test_reset();
+	entelea_safety_test_reset();
+}
+
 /* ---- ISR 上下文并发冒烟（R-E）：feed 从 ISR 调用，簿记一致 ---- */
 static void isr_feed_fn(const void *arg)
 {

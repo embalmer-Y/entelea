@@ -36,7 +36,9 @@ entelea_result_t entelea_pkg_stage_chunk(uint8_t slot, uint32_t off,
 entelea_result_t entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
 				    entelea_tsap_view_t *v, uint8_t digest_out[32]);
 
-/** 激活（meta 记录 active slot；仅验签通过后可调）。 */
+/** 激活（meta 记录 active slot）。激活本身不做验签前置——它是包**事实
+ * 记录**，安全由两层强制：装载链（wasm_host）装载前复核验签，未经
+ * 验签的 active 不产生任何执行（pkg 测试如实呈现该分层）。 */
 entelea_result_t entelea_pkg_activate(uint8_t slot);
 
 /** 当前 active slot（无 = E_UNINIT）。 */

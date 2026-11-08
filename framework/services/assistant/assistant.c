@@ -103,31 +103,20 @@ entelea_result_t entelea_assistant_execute(entelea_principal_t actor,
 
 			return entelea_power_request(actor, cand->target_uid, pv);
 		}
-		/* 类匹配：value_kind 0=GPIO / 1=PWM 须与目标描述符类一致
-		 * （review P1：跨类写拒）。 */
-		entelea_ch_kind_t want = cand->value_kind == 0
-						 ? ENTELEA_CH_GPIO
-						 : ENTELEA_CH_PWM;
-
-		if (d->safety_uid != NULL) {
-			entelea_ch_state_t st;
-			/* 经 safety 通道 kind 校验（描述符不直接存 kind——
-			 * 以注册表类映射）。 */
-			/* periph desc 无 channel kind——用权限类推断：
-			 * perm_class GPIO→GPIO 通道、PWM→PWM 通道。 */
-			want = d->perm_class == ENTELEA_PERM_GPIO
-				       ? ENTELEA_CH_GPIO
-				       : ENTELEA_CH_PWM;
-			if (cand->value_kind == 0 &&
-			    d->perm_class != ENTELEA_PERM_GPIO) {
-				return ENTELEA_E_PARAM; /* GPIO 值打 PWM 目标 */
-			}
-			if (cand->value_kind == 1 &&
-			    d->perm_class != ENTELEA_PERM_PWM) {
-				return ENTELEA_E_PARAM; /* PWM 值打 GPIO 目标 */
-			}
-			(void)st;
-			(void)want;
+		/* 输出动作只打 DEV_OUTPUT 目标（计划符合性审查 P2：原类检
+		 * 条件化在 safety_uid!=NULL 内——非输出描述符（acquire 仅
+		 * 要求 READ）跳过类检直落 safety_commit，装配撞名时可越权）。*/
+		if (d->kind != ENTELEA_DEV_OUTPUT) {
+			return ENTELEA_E_PARAM;
+		}
+		/* 类匹配（无条件）：value_kind 0=GPIO/1=PWM 与目标描述符权限类
+		 * 一致（review P1：跨类写拒）。DEV_OUTPUT 注册强制 safety_uid
+		 * 非空——描述符即权威类面。 */
+		if (cand->value_kind == 0 && d->perm_class != ENTELEA_PERM_GPIO) {
+			return ENTELEA_E_PARAM; /* GPIO 值打 PWM 目标 */
+		}
+		if (cand->value_kind == 1 && d->perm_class != ENTELEA_PERM_PWM) {
+			return ENTELEA_E_PARAM; /* PWM 值打 GPIO 目标 */
 		}
 		entelea_out_value_t v;
 
