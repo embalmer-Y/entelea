@@ -89,28 +89,28 @@
       "title": "能力目录",
       "planned_root": "framework/runtime/capability",
       "first_batch": "R04",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "id": "M-EXECUTION",
       "title": "权限与执行门",
       "planned_root": "framework/execution/gate",
       "first_batch": "R04",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "id": "M-RESOURCE",
       "title": "资源所有权",
       "planned_root": "framework/runtime/resource",
       "first_batch": "R04",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "id": "M-TASK",
       "title": "任务/回执/取消",
       "planned_root": "framework/runtime/task",
       "first_batch": "R04",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "id": "M-APP",
@@ -248,7 +248,7 @@
       "depends_on": [
         "R02"
       ],
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": "R05",
@@ -674,7 +674,7 @@
       "first_batch": "R02",
       "migration_action": "extract",
       "status": "in_progress",
-      "constraints": "保护提交、强制故障和驱动分开；取消不等待普通队列。R02 已迁通道/唯一写路径/force/驱动分发（保护门）并 native_sim 验证；审计环形+留痕持久化→R03、控制源仲裁→R04、estop prov 边沿/通用输入后端→后续批次，组级未完成。 2026-11-08 review 缺陷1-3整改（a2fa264）：驱动表模块私有+架构禁旁路；后端失败传播E_IO且影子/golden不更新；PWM u==0=占空0停止；estop窗口全临界区闭合。 二轮review发现1-3整改（c3713db）：slew时钟门（时间不可知整笔E_STATE）；绑定后端未就绪=ENODEV显式失败（未绑定=软件通道，A3）；安全态写失败→SAFE_FAULT撤销输出资格、shadow留最后确认值（A2）。 三轮review发现1-4,7整改（07cfd29）：释放资格按故障来源（写失败仅recover；system_fail终态拒clear）；强停写失败影子留最后确认值；slew严格总预算（锚定确认写，无每笔+1）；SAFE_STATE_CHANGED=历史迁移事实。 强停落驱失败升级①（owner 2026-11-08 定案，本轮提交）：任一estop/system_fail写失败→先安全化其余通道再立即wdt halt（WDT复位收口）；单通道detach失败不升级。 slew基线定案C（owner 2026-11-08，本轮提交）：任何确认写刷新锚点、迁移/清除/失败不重置；estop-clear循环免跳关闭；无锚点首笔仅限幅。",
+      "constraints": "保护提交、强制故障和驱动分开；取消不等待普通队列。R02 已迁通道/唯一写路径/force/驱动分发（保护门）并 native_sim 验证；审计环形+留痕持久化→R03、控制源仲裁→R04、estop prov 边沿/通用输入后端→后续批次，组级未完成。 2026-11-08 review 缺陷1-3整改（a2fa264）：驱动表模块私有+架构禁旁路；后端失败传播E_IO且影子/golden不更新；PWM u==0=占空0停止；estop窗口全临界区闭合。 二轮review发现1-3整改（c3713db）：slew时钟门（时间不可知整笔E_STATE）；绑定后端未就绪=ENODEV显式失败（未绑定=软件通道，A3）；安全态写失败→SAFE_FAULT撤销输出资格、shadow留最后确认值（A2）。 三轮review发现1-4,7整改（07cfd29）：释放资格按故障来源（写失败仅recover；system_fail终态拒clear）；强停写失败影子留最后确认值；slew严格总预算（锚定确认写，无每笔+1）；SAFE_STATE_CHANGED=历史迁移事实。 强停落驱失败升级①（owner 2026-11-08 定案，本轮提交）：任一estop/system_fail写失败→先安全化其余通道再立即wdt halt（WDT复位收口）；单通道detach失败不升级。 slew基线定案C（owner 2026-11-08，本轮提交）：任何确认写刷新锚点、迁移/清除/失败不重置；estop-clear循环免跳关闭；无锚点首笔仅限幅。 R04仲裁面已迁（set_arb/commit_src/ARB事件；压制门控+审计留痕）。",
       "target_paths": [
         "framework/execution/safety/channel.c",
         "framework/execution/safety/commit.c",
@@ -2975,17 +2975,26 @@
       "source_selector": null,
       "source_file_count": 0,
       "target_modules": [
-        "M-CAPABILITY"
+        "M-CAPABILITY",
+        "M-EXECUTION"
       ],
       "first_batch": "R04",
       "migration_action": "new",
-      "status": "not_migrated",
-      "constraints": "没有旧完整实现；先冻结窄合同和验收，不从目录/日志推断完成。",
-      "target_paths": [],
+      "status": "migrated",
+      "constraints": "principal唯bind构造；文法fail-closed；原子批量注册；acquire=权限+ACTIVE门；伪造/过期句柄不可绕（r04套件oracle）。",
+      "target_paths": [
+        "framework/execution/capability/perm.c",
+        "framework/execution/capability/desc.c",
+        "framework/include/entelea/principal.h",
+        "framework/include/entelea/capability.h"
+      ],
       "verification": {
-        "state": "not_run",
-        "evidence_paths": []
-      }
+        "state": "passed",
+        "evidence_paths": [
+          "docs/r04-validation.md"
+        ]
+      },
+      "implementation_commit": "4bc4a1da4d57df545fc353a054e987a8dfb4296b"
     },
     {
       "id": "N-RESOURCE",
@@ -2998,13 +3007,19 @@
       ],
       "first_batch": "R04",
       "migration_action": "new",
-      "status": "not_migrated",
-      "constraints": "没有旧完整实现；先冻结窄合同和验收，不从目录/日志推断完成。",
-      "target_paths": [],
+      "status": "migrated",
+      "constraints": "预算源=prov只读（0=全拒）；记账单源=readback和；替换先扣；检查-提交在safety write_lock内原子化。",
+      "target_paths": [
+        "framework/execution/resource/power.c",
+        "framework/include/entelea/resource.h"
+      ],
       "verification": {
-        "state": "not_run",
-        "evidence_paths": []
-      }
+        "state": "passed",
+        "evidence_paths": [
+          "docs/r04-validation.md"
+        ]
+      },
+      "implementation_commit": "4bc4a1da4d57df545fc353a054e987a8dfb4296b"
     },
     {
       "id": "N-TASK",
@@ -3017,13 +3032,19 @@
       ],
       "first_batch": "R04",
       "migration_action": "new",
-      "status": "not_migrated",
-      "constraints": "没有旧完整实现；先冻结窄合同和验收，不从目录/日志推断完成。",
-      "target_paths": [],
+      "status": "migrated",
+      "constraints": "有界4；受理去重E_BUSY；取消效果域NONE/UNKNOWN；CONFIRMED不伪造；他者拒；终态回收。",
+      "target_paths": [
+        "framework/execution/task/task.c",
+        "framework/include/entelea/task.h"
+      ],
       "verification": {
-        "state": "not_run",
-        "evidence_paths": []
-      }
+        "state": "passed",
+        "evidence_paths": [
+          "docs/r04-validation.md"
+        ]
+      },
+      "implementation_commit": "4bc4a1da4d57df545fc353a054e987a8dfb4296b"
     },
     {
       "id": "N-DEPENDENCY",
@@ -4427,9 +4448,13 @@
       "sha256": "d3b66de61f67f9e51b2a809ff75c8f84eed2b869c4068be62e26b8d06e3fb17d",
       "id": "S-legacy-b30f468d7f3c6c198c12",
       "asset_id": "A-HAL",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/execution/capability/perm.c",
+        "framework/include/entelea/principal.h",
+        "platform/zephyr/tests/r04/src/main.c"
+      ],
+      "migration_commit": "4bc4a1da4d57df545fc353a054e987a8dfb4296b"
     },
     {
       "repository": "legacy",

@@ -5,8 +5,8 @@
 所迁旧子集适配和主机验证。
 **R02 进行中**（软件闭环+A-BOARD 迁移与板级交叉构建已交付；烧录与
 物理验收=owner 硬件闸 blocked）；
-**R03 软件面已交付**（端口/meta/noinit、审计环、prov、信任表、KV
-五子闭环，store 套件 12/12；flash/板级持久化待 D12）。见
+**R03 软件面已交付**（五子闭环 12/12）；**R04 已交付**（principal/
+能力/预算原子提交/任务状态机/仲裁，r04 套件 5/5）。见
 [R02 验证记录](docs/r02-validation.md)与[R01 验证记录](docs/r01-validation.md)。
 
 - [重建规划](docs/rebuild-plan.md)：顺序、边界、决策闸和验收。
