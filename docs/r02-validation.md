@@ -91,6 +91,19 @@ checkout（六补丁完整核验通过）；Zephyr 构建解释器显式使用�
 | 项 | 提案（依据） | 状态 |
 | --- | --- | --- |
 | ① 参考板 | OSPTEK esp32p4c5_core_board/esp32p4/hpcore（固定基线唯一板定义；toolchain=zephyr 对应本机 SDK 1.0.1 riscv64-zephyr-elf 14.3.0 已 dry-run 核验；P4 rev3.2、16MB flash、MWDT 在 chosen） | 待冻结 |
+
+①附属（引导路径，已核查无需新决策依赖）：板默认 BOOTLOADER_MCUBOOT，
+但 MCUboot 模块不在固定 pin 集；改用固定基线自身的 ESP_SIMPLE_BOOT 路径
+（image.cmake 钩子 → `scripts/prepare_p4_image.py`，126 行纯 Python 无网络，
+在 800 项清单内：A-SCRIPTS `S-legacy-e30211fc609a70b8712b`，其 pytest oracle
+在 T-PYTEST）。冻结后随批迁移该脚本，不引入新依赖/不 pin MCUboot。
+
+冻结后就绪的执行路径（前置已全部核验）：A-BOARD 12 文件适配迁移至
+`platform/zephyr/boards/`（DTS 全外设保留，媒体/网络节点由驱动配置休眠，
+R02 只消费 console=uart0(37/38)、chosen wdt0、gpio0/1）→ 板级构建
+（--board-root + --module hal_espressif + SDK 1.0.1/riscv64-zephyr-elf
+14.3.0 + ESP_SIMPLE_BOOT）→ 按②负载/测量做上电/复位/失联/物理故障停止
+实测（estop alias 由板 overlay 提供，缺节点按⑤ fail-safe）。
 | ② 负载/测量 | 负载=R02 最小监督镜像；测量=串口时间戳+行为观测（输出停止/复位次数）；需另行明确授权真机烧录/上电/复位操作 | 待冻结+授权 |
 | ③ 停止/WDT 阈值 | DEC-48 旧值：巡检源 1000ms / task_wdt 通道 5000ms / 硬上限 10000ms / 豁免钳制 60000ms（native_sim 已按此验证） | 待冻结 |
 | ④ 安全态/panic | 三安全态如实现；system_fail=停喂WDT→冷复位不掩蔽；compat 旧 void 非法→板级 k_panic；estop 上升沿缺省 | 待冻结 |
