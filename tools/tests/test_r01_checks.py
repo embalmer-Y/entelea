@@ -53,7 +53,7 @@ class ArchitectureTests(unittest.TestCase):
             ARCH.validate(self.root, self.policy)
 
     def test_current_sources(self):
-        self.assertEqual(ARCH.validate(ROOT, POLICY), 47)
+        self.assertEqual(ARCH.validate(ROOT, POLICY), 49)
 
     def test_unclassified_source(self):
         self.write("framework/common/extra.c", "")

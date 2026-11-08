@@ -35,7 +35,8 @@
     "framework/services/package/crypto/tnacl_selftest.c",
     "framework/services/package/lua_feasibility.c",
     "framework/services/package/wasm_host.c",
-    "framework/services/net/netmon.c"
+    "framework/services/net/netmon.c",
+    "framework/services/assistant/assistant.c"
   ],
   "platform_zephyr": [
     "platform/zephyr/clock.c",
@@ -54,7 +55,8 @@
     "platform/zephyr/tests/net/src/main.c",
     "platform/linux/clock.c",
     "platform/linux/host_main.c",
-    "platform/linux/zephyr_shim.c"
+    "platform/linux/zephyr_shim.c",
+    "platform/zephyr/tests/assist/src/main.c"
   ],
   "diagnostics": {},
   "protected_output_sources": [
