@@ -47,21 +47,21 @@
       "title": "启动与监督",
       "planned_root": "framework/runtime/supervision",
       "first_batch": "R02",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "id": "M-SAFETY",
       "title": "不可绕过的输出保护",
       "planned_root": "framework/execution/safety",
       "first_batch": "R02",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "id": "M-PLATFORM-ZEPHYR",
       "title": "Zephyr 集成与硬件后端",
       "planned_root": "platform/zephyr",
       "first_batch": "R02",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "id": "M-STORAGE",
@@ -234,7 +234,7 @@
       "depends_on": [
         "R01"
       ],
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": "R03",
@@ -625,12 +625,21 @@
       ],
       "first_batch": "R02",
       "migration_action": "extract",
-      "status": "not_migrated",
-      "constraints": "同步回调/ISR 指针借用；WDT 与启动顺序先保行为后替换载体。",
-      "target_paths": [],
+      "status": "in_progress",
+      "constraints": "同步回调/ISR 指针借用；WDT 与启动顺序先保行为后替换载体。R02 已迁事件/软WDT/启动执行器/平台表并 native_sim 验证；墙钟 set/get 与 noinit 留痕未迁（R03 定归属），组级未完成。",
+      "target_paths": [
+        "framework/runtime/supervision/events.c",
+        "framework/runtime/supervision/wdt.c",
+        "framework/runtime/supervision/boot.c",
+        "framework/include/entelea/events.h",
+        "framework/include/entelea/wdt.h",
+        "framework/include/entelea/supervision.h"
+      ],
       "verification": {
         "state": "not_run",
-        "evidence_paths": []
+        "evidence_paths": [
+          "docs/r02-validation.md"
+        ]
       },
       "source_file_count": 4
     },
@@ -648,12 +657,21 @@
       ],
       "first_batch": "R02",
       "migration_action": "extract",
-      "status": "not_migrated",
-      "constraints": "保护提交、强制故障和驱动分开；取消不等待普通队列；不继承未测物理完成。",
-      "target_paths": [],
+      "status": "in_progress",
+      "constraints": "保护提交、强制故障和驱动分开；取消不等待普通队列。R02 已迁通道/唯一写路径/force/驱动分发（保护门）并 native_sim 验证；审计环形+留痕持久化→R03、控制源仲裁→R04、estop prov 边沿/通用输入后端→后续批次，组级未完成。",
+      "target_paths": [
+        "framework/execution/safety/channel.c",
+        "framework/execution/safety/commit.c",
+        "framework/execution/safety/force.c",
+        "framework/execution/safety/drivers.c",
+        "framework/execution/safety/internal.h",
+        "framework/include/entelea/safety.h"
+      ],
       "verification": {
         "state": "not_run",
-        "evidence_paths": []
+        "evidence_paths": [
+          "docs/r02-validation.md"
+        ]
       },
       "source_file_count": 5
     },
@@ -1418,12 +1436,20 @@
       ],
       "first_batch": "R01",
       "migration_action": "port_tests",
-      "status": "not_migrated",
-      "constraints": "用例先当行为 oracle；重接真实路径，不复制桩结果当生产通过。",
-      "target_paths": [],
+      "status": "in_progress",
+      "constraints": "用例先当行为 oracle；重接真实路径，不复制桩结果当生产通过。R02 已迁 main/wdt_start/wdt_hardware/CMake/prj.conf/overlay 适配并全部通过；testcase.yaml（twister）defer，组级未完成。",
+      "target_paths": [
+        "platform/zephyr/tests/core/src/main.c",
+        "platform/zephyr/tests/wdt_start/src/main.c",
+        "platform/zephyr/tests/wdt_hardware/src/main.c",
+        "platform/zephyr/tests/core/CMakeLists.txt",
+        "platform/zephyr/tests/core/prj.conf"
+      ],
       "verification": {
         "state": "not_run",
-        "evidence_paths": []
+        "evidence_paths": [
+          "docs/r02-validation.md"
+        ]
       },
       "source_file_count": 7
     },
@@ -1583,12 +1609,18 @@
       ],
       "first_batch": "R01",
       "migration_action": "port_tests",
-      "status": "not_migrated",
-      "constraints": "用例先当行为 oracle；重接真实路径，不复制桩结果当生产通过。",
-      "target_paths": [],
+      "status": "in_progress",
+      "constraints": "用例先当行为 oracle；重接真实路径，不复制桩结果当生产通过。R02 已迁 full scenario（审计/仲裁断言随机制延后裁掉）+边沿映射+poweron 落驱动并全部通过；仲裁/审计用例随 R04/R03 回补，组级未完成。",
+      "target_paths": [
+        "platform/zephyr/tests/safety/src/main.c",
+        "platform/zephyr/tests/safety/CMakeLists.txt",
+        "platform/zephyr/tests/safety/prj.conf"
+      ],
       "verification": {
         "state": "not_run",
-        "evidence_paths": []
+        "evidence_paths": [
+          "docs/r02-validation.md"
+        ]
       },
       "source_file_count": 4
     },
@@ -3102,6 +3134,63 @@
         ]
       },
       "implementation_commit": "f9fcba53d89a0e7f76ceeb6bdf2c8d6616e3ded7"
+    },
+    {
+      "id": "N-ZEPHYR-BUILD",
+      "title": "R02 Zephyr 构建入口与前置核验新实现",
+      "source_repository": null,
+      "source_selector": null,
+      "source_file_count": 0,
+      "target_modules": [
+        "M-BUILD",
+        "M-PLATFORM-ZEPHYR"
+      ],
+      "first_batch": "R02",
+      "migration_action": "new",
+      "status": "migrated",
+      "constraints": "显式 ZEPHYR_BASE/SDK/工具链核验+每目标独立构建目录；失败显式报错，不自动下载/回退；不验证固件行为。",
+      "target_paths": [
+        "tools/build_zephyr.py",
+        "tools/tests/test_r02_build_entry.py"
+      ],
+      "verification": {
+        "state": "passed",
+        "evidence_paths": [
+          "docs/r02-validation.md"
+        ]
+      },
+      "implementation_commit": "5c5e2aa2b404c5199d3ab1007295890e997a45c4"
+    },
+    {
+      "id": "N-PLATFORM-ZEPHYR",
+      "title": "R02 平台装配与最小监督镜像新实现",
+      "source_repository": null,
+      "source_selector": null,
+      "source_file_count": 0,
+      "target_modules": [
+        "M-PLATFORM-ZEPHYR",
+        "M-SUPERVISION"
+      ],
+      "first_batch": "R02",
+      "migration_action": "new",
+      "status": "migrated",
+      "constraints": "uptime 时钟适配（ISR 安全原始读）、启动顺序规格表、无智脑最小镜像；native_sim 只证明软件路径，物理验收归 D12 冻结后的硬件闸。",
+      "target_paths": [
+        "platform/zephyr/clock.c",
+        "platform/zephyr/clock.h",
+        "platform/zephyr/boot_steps.c",
+        "platform/zephyr/boot_steps.h",
+        "platform/zephyr/apps/minimal/main.c",
+        "platform/zephyr/apps/minimal/CMakeLists.txt",
+        "platform/zephyr/apps/minimal/prj.conf"
+      ],
+      "verification": {
+        "state": "passed",
+        "evidence_paths": [
+          "docs/r02-validation.md"
+        ]
+      },
+      "implementation_commit": "5c5e2aa2b404c5199d3ab1007295890e997a45c4"
     }
   ],
   "source_files": [
@@ -4135,9 +4224,14 @@
       "sha256": "8f601edd4dd4782ed114f95c2a6944e7cfaaebe56e656a2438c1982daf418dee",
       "id": "S-legacy-cc9d07e4a6cc0f53f90e",
       "asset_id": "A-CORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/runtime/supervision/boot.c",
+        "framework/include/entelea/supervision.h",
+        "platform/zephyr/boot_steps.c",
+        "platform/zephyr/boot_steps.h"
+      ],
+      "migration_commit": "5c5e2aa2b404c5199d3ab1007295890e997a45c4"
     },
     {
       "repository": "legacy",
@@ -4148,9 +4242,13 @@
       "sha256": "79a45b98538659af124a88a5add69e468fe1e8bf0673606bf8616ff2dd7e975f",
       "id": "S-legacy-7a9f6f9d7048bcf0c69a",
       "asset_id": "A-CORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/runtime/supervision/events.c",
+        "framework/include/entelea/events.h",
+        "platform/zephyr/tests/core/src/main.c"
+      ],
+      "migration_commit": "5c5e2aa2b404c5199d3ab1007295890e997a45c4"
     },
     {
       "repository": "legacy",
@@ -4175,9 +4273,15 @@
       "sha256": "9303fb716447e119cb5821b19e59ee354024385a8ffe0c1a1300fc818da22781",
       "id": "S-legacy-a0c446f6acae048599cb",
       "asset_id": "A-CORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/runtime/supervision/wdt.c",
+        "framework/include/entelea/wdt.h",
+        "platform/zephyr/tests/core/src/main.c",
+        "platform/zephyr/tests/wdt_start/src/main.c",
+        "platform/zephyr/tests/wdt_hardware/src/main.c"
+      ],
+      "migration_commit": "5c5e2aa2b404c5199d3ab1007295890e997a45c4"
     },
     {
       "repository": "legacy",
@@ -4551,9 +4655,13 @@
       "sha256": "99ab265cb49ab99c805a3ece93c791ed87296537f99137d4095a59b6cf4b33db",
       "id": "S-legacy-fd47f5fb5f33a8cc6b76",
       "asset_id": "A-SAFETY",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/execution/safety/channel.c",
+        "framework/include/entelea/safety.h",
+        "platform/zephyr/tests/safety/src/main.c"
+      ],
+      "migration_commit": "5c5e2aa2b404c5199d3ab1007295890e997a45c4"
     },
     {
       "repository": "legacy",
@@ -4564,9 +4672,13 @@
       "sha256": "68dd5ab547c79179d6cd99d316838154d5674ec26cab9bc644be31068675b0bb",
       "id": "S-legacy-fca5b57e03622e1e88a2",
       "asset_id": "A-SAFETY",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/execution/safety/commit.c",
+        "framework/include/entelea/safety.h",
+        "platform/zephyr/tests/safety/src/main.c"
+      ],
+      "migration_commit": "5c5e2aa2b404c5199d3ab1007295890e997a45c4"
     },
     {
       "repository": "legacy",
@@ -4577,9 +4689,12 @@
       "sha256": "4fc73b39e018a236a5cc9b714494b102f7c9c7801e8d4a087492b322677a3669",
       "id": "S-legacy-9961646cb99dc925add7",
       "asset_id": "A-SAFETY",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/execution/safety/drivers.c",
+        "platform/zephyr/tests/safety/src/main.c"
+      ],
+      "migration_commit": "5c5e2aa2b404c5199d3ab1007295890e997a45c4"
     },
     {
       "repository": "legacy",
@@ -4590,9 +4705,12 @@
       "sha256": "03cfe0e2d1680652e882ffafa87713f3694afb9547f04a97f0c930b626bf52de",
       "id": "S-legacy-c84181171a295f59a2f1",
       "asset_id": "A-SAFETY",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/execution/safety/force.c",
+        "framework/include/entelea/safety.h"
+      ],
+      "migration_commit": "5c5e2aa2b404c5199d3ab1007295890e997a45c4"
     },
     {
       "repository": "legacy",
@@ -4603,9 +4721,11 @@
       "sha256": "26817492178b60765f5ecdf33c79e1249b05fa8eddee3e354e7359054362ce4c",
       "id": "S-legacy-2be43a1059c9ece0b8a8",
       "asset_id": "A-SAFETY",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "framework/execution/safety/internal.h"
+      ],
+      "migration_commit": "5c5e2aa2b404c5199d3ab1007295890e997a45c4"
     },
     {
       "repository": "legacy",
@@ -8099,9 +8219,14 @@
       "sha256": "c80b78d1e1a4142a2f20f82b2786f2fb15134270cf1cad479f4e8588dd27e4ef",
       "id": "S-legacy-d8bafba934d613d4dd51",
       "asset_id": "T-CORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/tests/core/CMakeLists.txt",
+        "platform/zephyr/tests/safety/CMakeLists.txt",
+        "platform/zephyr/tests/wdt_start/CMakeLists.txt",
+        "platform/zephyr/tests/wdt_hardware/CMakeLists.txt"
+      ],
+      "migration_commit": "5c5e2aa2b404c5199d3ab1007295890e997a45c4"
     },
     {
       "repository": "legacy",
@@ -8112,9 +8237,14 @@
       "sha256": "c9cced8298cde9af0dff27e60b31529ee1b5456c08f63db0dd30b4dd756385e1",
       "id": "S-legacy-b6cfb2af17251f436b90",
       "asset_id": "T-CORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/tests/core/prj.conf",
+        "platform/zephyr/tests/safety/prj.conf",
+        "platform/zephyr/tests/wdt_start/prj.conf",
+        "platform/zephyr/tests/wdt_hardware/prj.conf"
+      ],
+      "migration_commit": "5c5e2aa2b404c5199d3ab1007295890e997a45c4"
     },
     {
       "repository": "legacy",
@@ -8125,9 +8255,11 @@
       "sha256": "43d0cf03fd415e7c56990f37b338e5dc071e4465aa507ec68c3a11a10c44fb19",
       "id": "S-legacy-b43c91aa41647f6f448a",
       "asset_id": "T-CORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/tests/core/src/main.c"
+      ],
+      "migration_commit": "5c5e2aa2b404c5199d3ab1007295890e997a45c4"
     },
     {
       "repository": "legacy",
@@ -8138,9 +8270,12 @@
       "sha256": "0c98653ddeb37737ad68eb81ebb36d8ae6258ae111a1cd5810cc8936524c3ca1",
       "id": "S-legacy-aea020cc28c4c5f9fc9d",
       "asset_id": "T-CORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/tests/wdt_hardware/src/main.c",
+        "platform/zephyr/tests/wdt_hardware/wdt.overlay"
+      ],
+      "migration_commit": "5c5e2aa2b404c5199d3ab1007295890e997a45c4"
     },
     {
       "repository": "legacy",
@@ -8151,9 +8286,11 @@
       "sha256": "df5b93fba8fff33ca5c6bc4f3c2391055c5a241dd224906610fa7d264e139203",
       "id": "S-legacy-6f144fca55b3444c379e",
       "asset_id": "T-CORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/tests/wdt_start/src/main.c"
+      ],
+      "migration_commit": "5c5e2aa2b404c5199d3ab1007295890e997a45c4"
     },
     {
       "repository": "legacy",
@@ -8164,7 +8301,7 @@
       "sha256": "90ac64fa38ab632a751184ef6b8ad3eb2c4fb3a829c467f5837ecd955173ce96",
       "id": "S-legacy-4c52140300955447c786",
       "asset_id": "T-CORE",
-      "disposition": "pending_review",
+      "disposition": "defer",
       "target_paths": [],
       "migration_commit": null
     },
@@ -8177,9 +8314,11 @@
       "sha256": "a9aa13e4d44ae000a60962882d619446007b1d50a0e8cf91394bc5986e45bb3a",
       "id": "S-legacy-8b8f2eebaf5ae641b2f8",
       "asset_id": "T-CORE",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/tests/wdt_hardware/wdt.overlay"
+      ],
+      "migration_commit": "5c5e2aa2b404c5199d3ab1007295890e997a45c4"
     },
     {
       "repository": "legacy",
@@ -8788,9 +8927,11 @@
       "sha256": "5a0f5d57df163b2fa4e2afc83839711a55758326352f93992b208ce28deb0312",
       "id": "S-legacy-55b6a8dda191e99c42ee",
       "asset_id": "T-SAFETY",
-      "disposition": "pending_review",
-      "target_paths": [],
-      "migration_commit": null
+      "disposition": "migrate",
+      "target_paths": [
+        "platform/zephyr/tests/safety/src/main.c"
+      ],
+      "migration_commit": "5c5e2aa2b404c5199d3ab1007295890e997a45c4"
     },
     {
       "repository": "legacy",
