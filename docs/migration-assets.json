@@ -626,7 +626,7 @@
       "first_batch": "R02",
       "migration_action": "extract",
       "status": "in_progress",
-      "constraints": "同步回调/ISR 指针借用；WDT 与启动顺序先保行为后替换载体。R02 已迁事件/软WDT/启动执行器/平台表并 native_sim 验证；墙钟 set/get 与 noinit 留痕未迁（R03 定归属），组级未完成。",
+      "constraints": "同步回调/ISR 指针借用；WDT 与启动顺序先保行为后替换载体。R02 已迁事件/软WDT/启动执行器/平台表并 native_sim 验证；墙钟 set/get 与 noinit 留痕未迁（R03 定归属），组级未完成。 2026-11-08 review 缺陷4-5整改（a2fa264）：system_fail先置一次性全局halt（任何线程视角巡检停喂）；三模块时钟单调护栏+失败计数。",
       "target_paths": [
         "framework/runtime/supervision/events.c",
         "framework/runtime/supervision/wdt.c",
@@ -658,7 +658,7 @@
       "first_batch": "R02",
       "migration_action": "extract",
       "status": "in_progress",
-      "constraints": "保护提交、强制故障和驱动分开；取消不等待普通队列。R02 已迁通道/唯一写路径/force/驱动分发（保护门）并 native_sim 验证；审计环形+留痕持久化→R03、控制源仲裁→R04、estop prov 边沿/通用输入后端→后续批次，组级未完成。",
+      "constraints": "保护提交、强制故障和驱动分开；取消不等待普通队列。R02 已迁通道/唯一写路径/force/驱动分发（保护门）并 native_sim 验证；审计环形+留痕持久化→R03、控制源仲裁→R04、estop prov 边沿/通用输入后端→后续批次，组级未完成。 2026-11-08 review 缺陷1-3整改（a2fa264）：驱动表模块私有+架构禁旁路；后端失败传播E_IO且影子/golden不更新；PWM u==0=占空0停止；estop窗口全临界区闭合。",
       "target_paths": [
         "framework/execution/safety/channel.c",
         "framework/execution/safety/commit.c",
@@ -1437,7 +1437,7 @@
       "first_batch": "R01",
       "migration_action": "port_tests",
       "status": "in_progress",
-      "constraints": "用例先当行为 oracle；重接真实路径，不复制桩结果当生产通过。R02 已迁 main/wdt_start/wdt_hardware/CMake/prj.conf/overlay 适配并全部通过；testcase.yaml（twister）defer，组级未完成。",
+      "constraints": "用例先当行为 oracle；重接真实路径，不复制桩结果当生产通过。R02 已迁 main/wdt_start/wdt_hardware/CMake/prj.conf/overlay 适配并全部通过；testcase.yaml（twister）defer，组级未完成。 整改新增：halt 语义两用例（tick确定性驱动+wrap task_wdt_feed计数）、时钟护栏失败/回退注入用例（a2fa264）。",
       "target_paths": [
         "platform/zephyr/tests/core/src/main.c",
         "platform/zephyr/tests/wdt_start/src/main.c",
@@ -1610,11 +1610,14 @@
       "first_batch": "R01",
       "migration_action": "port_tests",
       "status": "in_progress",
-      "constraints": "用例先当行为 oracle；重接真实路径，不复制桩结果当生产通过。R02 已迁 full scenario（审计/仲裁断言随机制延后裁掉）+边沿映射+poweron 落驱动并全部通过；仲裁/审计用例随 R04/R03 回补，组级未完成。",
+      "constraints": "用例先当行为 oracle；重接真实路径，不复制桩结果当生产通过。R02 已迁 full scenario（审计/仲裁断言随机制延后裁掉）+边沿映射+poweron 落驱动并全部通过；仲裁/审计用例随 R04/R03 回补，组级未完成。 整改新增：TEST_PWM_REAL 变体（假PWM设备）覆盖 u==0 停止/后端失败E_IO/poweron失败/force计数；poweron保持estop锁存用例；slew时基护栏用例（a2fa264）。",
       "target_paths": [
         "platform/zephyr/tests/safety/src/main.c",
         "platform/zephyr/tests/safety/CMakeLists.txt",
-        "platform/zephyr/tests/safety/prj.conf"
+        "platform/zephyr/tests/safety/prj.conf",
+        "platform/zephyr/tests/safety/src/pwm_real.c",
+        "platform/zephyr/tests/safety/pwm.overlay",
+        "platform/zephyr/tests/safety/dts/bindings/entelea,fake-pwm.yaml"
       ],
       "verification": {
         "state": "not_run",
@@ -3148,7 +3151,7 @@
       "first_batch": "R02",
       "migration_action": "new",
       "status": "migrated",
-      "constraints": "显式 ZEPHYR_BASE/SDK/工具链核验+每目标独立构建目录；失败显式报错，不自动下载/回退；不验证固件行为。",
+      "constraints": "显式 ZEPHYR_BASE/SDK/工具链核验+每目标独立构建目录；失败显式报错，不自动下载/回退；不验证固件行为。 2026-11-08 review 缺陷6整改（a2fa264）：受管CMake变量黑名单+绑定已核验编译器+受管--python（venv符号链接不resolve）；曾因参数脱绑被review否定，修复后按docs/r02-validation.md重验。",
       "target_paths": [
         "tools/build_zephyr.py",
         "tools/tests/test_r02_build_entry.py"
@@ -3174,7 +3177,7 @@
       "first_batch": "R02",
       "migration_action": "new",
       "status": "migrated",
-      "constraints": "uptime 时钟适配（ISR 安全原始读）、启动顺序规格表、无智脑最小镜像；native_sim 只证明软件路径，物理验收归 D12 冻结后的硬件闸。",
+      "constraints": "uptime 时钟适配（ISR 安全原始读）、启动顺序规格表、无智脑最小镜像；native_sim 只证明软件路径，物理验收归 D12 冻结后的硬件闸。 整改（a2fa264）后重验：最小镜像/taskwdt预演行为不变。",
       "target_paths": [
         "platform/zephyr/clock.c",
         "platform/zephyr/clock.h",
