@@ -47,6 +47,7 @@
     "platform/zephyr/clock.c",
     "platform/zephyr/boot_steps.c",
     "platform/zephyr/apps/minimal/main.c",
+    "platform/zephyr/apps/hw_fault_stop/main.c",
     "platform/zephyr/tests/core/src/main.c",
     "platform/zephyr/tests/safety/src/main.c",
     "platform/zephyr/tests/wdt_start/src/main.c",

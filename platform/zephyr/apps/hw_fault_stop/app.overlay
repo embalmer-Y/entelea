@@ -1,0 +1,6 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* D12 板级装配：chosen zephyr,watchdog 已指向 wdt0（板 DTS）；MWDT0 在
+ * soc dtsi 默认 disabled——本闸镜像显式启用（生产板固化归 D12 冻结）。 */
+&wdt0 {
+	status = "okay";
+};

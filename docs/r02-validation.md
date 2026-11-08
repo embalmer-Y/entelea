@@ -1,10 +1,10 @@
-# R02 最小启动与输出保护验证（进行中批次）
+# R02 最小启动与输出保护验证（硬件闸已实测——见"D12 硬件闸实测"节）
 
 授权边界：R02 软件整改三轮（一轮缺陷 1–6 → `a2fa264`；二轮发现 1–6 →
 `c3713db`，A1/A2/A3 由 owner 2026-11-08 授权定案；三轮发现 1–7 →
-`07cfd29`，自主开发与自验模式下完成）；D12 硬件闸
-（参考板/负载/测量方法/停止阈值/安全状态/panic/estop DT）未冻结，物理
-验收保持 blocked，本记录只覆盖软件路径与 native_sim 证据。二轮整改各项
+`07cfd29`，自主开发与自验模式下完成）。D12 硬件闸原保持 blocked；
+2026-11-08 owner 确认硬件接入并**授权全部硬件操作**后执行实测
+（见下文"D12 硬件闸实测"节——本节以下的软件面记录保持原样）。二轮整改各项
 按故障类别（未配置/单次/持续/恢复/重复/并发/后端未知）验证；动态反例
 （发现 1–4）与仅代码审查结论（发现 5 并发撕裂——结构修复+ISR 冒烟，
 残余交错风险如实保留为未测）区分表述。
@@ -128,9 +128,69 @@ tick=true、失败后 tick=false；单通道 detach 失败 tick 仍=true——�
 - 构建入口新增 `--esptool-python`（3 项负测：缺失/导入失败/shim 生成
   +PATH 前置正测）；模块身份解析修正为 Zephyr 实际
   `"name":"root":"root/zephyr"` 格式（fixture 更新，97 项主机测试）。
-- **未做（如实）**：烧录、上电/复位/失联/物理故障停止实测——owner
+- **未做（当时如实；硬件闸实测已于 2026-11-08 执行——见"D12 硬件闸
+  实测"节）**：烧录、上电/复位/失联/物理故障停止实测——owner
   硬件闸（需到场与授权）；native_sim 板形≠板级；交叉编译通过≠设备
   运行或物理停止通过。
+
+## D12 硬件闸实测（2026-11-08，owner 授权全部硬件操作）
+
+环境：Osptek ESP32-P4C5 核心板（P4 **v3.2**，16MB boya flash，CH343 桥
+=UART0=/dev/ttyACM0；板无 LED/按键——doc/index.rst）；esptool v5.3.0
+经受管 shim；全部镜像经核验入口构建（`[effective]` 比对含模块身份）。
+原始串口证据存 `build/hw-gate/*.log`（不入库；关键摘录如下）。
+
+**烧录（含可回滚备份）**：`read_flash 0 0x1000000` 全量备份
+`build/hw-gate/backup/p4-full-16m.bin`（板上原为 legacy Zephyr 镜像
+@0x2000，与旧冻结树同管线可重建；备份含提取的 legacy-app-0x2000.bin）
+→ `write_flash 0x2000`（dio/80m/16MB，与 runners.yaml 一致）。
+
+**上电/复位**：minimal 首启=ROM `rst:0x1 (POWERON)`→simple boot
+（编译时间=本构建 17:38:55）→`*** Booting Zephyr OS build v4.5.0 ***`→
+`[entelea] minimal supervision image: outputs held at safe poweron`→
+18s 常驻静默。硬复位（EN 脉冲）×3：每次恰 1×banner+1×消息（1253B
+逐字节一致）+8s 静默 **0 字节=无重启循环**。复位方式为 EN 脉冲（ROM
+判为 POWERON 域）；真实 VBUS 断电未做（无软件控制手段，如实）。
+
+**物理故障停止（两相闭环，新验收镜像 `apps/hw_fault_stop`）**：
+只走生产 API（supervision_boot/system_fail/hwinfo，无 ENTELEA_TEST
+钩子）；MWDT0 经 app.overlay 启用（soc dtsi 默认 disabled）。建议值
+（待追认）：MIN_TIMEOUT=3000/HW_FALLBACK_DELAY=2000/通道 5000ms/
+巡检 500ms。连续时间戳捕获（gate-run.log）：
+
+- **P1**（POWERON 进入）：健康窗 6s 存活（MWDT 窗 5s——活着=确在喂狗，
+  差分证明）→ 生产 `system_fail(FAIL_WDT 0xFF)` → **≤4.2s SoC 复位**
+  （ROM `rst:0xc (SW_CPU_RESET)`=task_wdt 通道到期 sys_reboot；
+  hwinfo=SOFTWARE 分支命中）。
+- **P2**（SOFTWARE 进入）：`irq_lock`+自旋楔死内核（本板单核，
+  CONFIG_SMP 未置）→ task_wdt 监视器死 → **≤8.8s MWDT0 RESET_SOC
+  硬复位**（ROM `rst:0x7 (HP_SYS_HP_WDT_RESET)`+"PRO CPU has been
+  reset by WDT"；hwinfo=WATCHDOG 分支命中）。
+- **P3**（WATCHDOG 进入）：双闭环收官，常驻（巡检持续喂狗）。
+- noinit 留痕在真机**不跨复位存活**（RAM 后端=静态数组，启动时 BSS
+  清零）——R03 合同已记"flash 后端板级批"，非新缺陷；故相位判别用
+  hwinfo（判别宏与 ROM rst 码双独立佐证）。
+
+**观察（如实）**：ROM 每次启动报 `SHA-256 comparison failed …
+Attempting to boot anyway`（非致命，镜像正常加载）。归因：镜像结构经
+`esptool image-info` 与备份内 legacy 镜像逐项同构（同段数/入口/头域，
+同冻结工具链+同脚本逐字节）→ **基线一致行为，非迁移引入**；根因属
+ROM（eco7）对 ram-only-header 摘要位置的期望差异，未深究（无安全
+启动时不影响加载）。
+
+**台面其他设备**：CP2102N（ttyUSB0）持续输出 legacy 音频固件运行日志
+（player/mixer）——内容判别为**另一台设备**（我们的镜像无此输出；
+仅被动监听，未触碰）。
+
+**未测残留（如实，不冒充通过）**：真实断电（VBUS 拔插）；estop 物理
+边沿（板级无 `ts-estop-gpio` 别名——estop DT 边界 D12 未冻结且板无
+按键）；输出电平物理测量（无仪器、板无 LED；失联/故障值落驱已由
+native_sim PWM 真路径+影子面覆盖，物理电平未测）；P2 实测 8.8s 与
+设计窗 5s 差值的分解（喂狗时点未打点，仅记有界实测值）。
+
+**新增源登记**：`platform/zephyr/apps/hw_fault_stop/{main.c,CMakeLists.txt,
+prj.conf,app.overlay}`；source-policy platform_zephyr +1（架构检查 59→60，
+test_r01_checks 计数同步）；主机 97 项 OK、迁移 800 项 PASS 复验。
 
 ## 未测与边界（如实）
 
@@ -158,4 +218,21 @@ python3 tools/build_zephyr.py --app platform/zephyr/apps/minimal \
 #   wdt_start: --cmake-arg=-DTEST_WDT_REQUIRED_MISSING=ON
 #   wdt_hardware: --cmake-arg=-DTEST_WDT_HW_NOT_READY=ON
 # 负测演示：--cmake-arg=-DBOARD=qemu_x86 → 显式 FAIL（exit 1）
+
+# 板级（D12 硬件闸，2026-11-08 实测入口；CH343=UART0）：
+PY=../entelea-legacy/.venv/bin/python3
+$PY tools/build_zephyr.py --app platform/zephyr/apps/hw_fault_stop \
+  --board esp32p4c5_core_board/esp32p4/hpcore --board-root platform/zephyr \
+  --zephyr-base ../entelea-legacy/.deps/zephyr --python $PY \
+  --esptool-python $PY --sdk /home/emb/zephyr-sdk-1.0.1 --sdk-version 1.0.1 \
+  --toolchain riscv64-zephyr-elf --gcc-version 14.3.0 \
+  --module hal_espressif=/home/emb/project/entelea-legacy/.deps/hal_espressif \
+  --cmake-arg=-DESP_IDF_PATH=/home/emb/project/entelea-legacy/.deps/hal_espressif \
+  --build-dir build/r02-hwgate --build
+PATH="$PWD/build/.toolbin:$PATH" esptool --port /dev/ttyACM0 --baud 921600 \
+  --before default_reset --after no_reset read_flash 0 0x1000000 <backup>.bin
+PATH="$PWD/build/.toolbin:$PATH" esptool --port /dev/ttyACM0 --baud 921600 \
+  --before default_reset --after no_reset write_flash --flash_mode dio \
+  --flash_freq 80m --flash_size 16MB 0x2000 build/r02-hwgate/zephyr/zephyr.bin
+# 复位+监听：DTR/RTS 空闲电平后 EN 脉冲（pyserial；勿与 esptool 并发开同口）
 ```
