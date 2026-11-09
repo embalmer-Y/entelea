@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "note": "D 批工厂线工具 pin（SDK venv 独立于冻结 .venv；密钥纪律/额度台账见 rebuild-plan.md §10.4-D1/D2）。git 依赖另见 dependencies.json（check_dependencies.py 面）。",
+  "tools": [
+    {
+      "id": "openhands-sdk",
+      "kind": "pip",
+      "version": "1.60.2",
+      "python": "3.12.13",
+      "venv": "/home/emb/project/workspace/openhands-venv",
+      "purpose": "Forge 编程引擎（owner 已确认——R12 合同；不进固件/MCU 公共库依赖）"
+    },
+    {
+      "id": "pynacl",
+      "kind": "pip",
+      "version": "1.6.2",
+      "purpose": "TSAP 打包签名（ed25519——与设备 tweetnacl 实现路径独立互验）"
+    },
+    {
+      "id": "openhands-tools",
+      "kind": "pip",
+      "version": "bundled-with-sdk-run",
+      "purpose": "terminal/file_editor 工具包（agent 循环消费）"
+    }
+  ]
+}

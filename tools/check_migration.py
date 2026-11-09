@@ -126,6 +126,49 @@ def validate(data, root, sources=False):
                 )
         visiting.remove(ident)
         visited.add(ident)
+        if batch["status"] == "done":
+            # E-1（D4 授权 P3 自主整改）：done 证据机器化——不再接受
+            # 仅改状态字段的"口头完成"。evidence_paths 必须非空、实际
+            # 存在且落在 docs/**（证据面）；implementation_commit 必填
+            # 且为严格 commit 对象（cat-file -t——annotated tag 的
+            # ^{commit} 剥壳不能冒充）且是 HEAD 祖先（review P2-2/P2-3/
+            # P3-8：任意 legacy 历史对象同库不可通过）。
+            require(
+                isinstance(batch.get("evidence_paths"), list)
+                and batch["evidence_paths"],
+                f"done batch missing evidence paths: {ident}",
+            )
+            for path in batch["evidence_paths"]:
+                local_file(root, path)
+                require(
+                    path.startswith("docs/"),
+                    f"done evidence outside docs/: {ident}: {path}",
+                )
+            commit = batch.get("implementation_commit")
+            require(
+                isinstance(commit, str)
+                and re.fullmatch(r"[0-9a-f]{7,40}", commit) is not None,
+                f"done batch missing/malformed implementation commit: {ident}",
+            )
+            require(
+                subprocess.run(
+                    ["git", "-C", str(root), "cat-file", "-t", commit],
+                    capture_output=True,
+                    check=False,
+                ).stdout.strip()
+                == b"commit",
+                f"implementation commit is not a commit object: {ident}: {commit}",
+            )
+            require(
+                subprocess.run(
+                    ["git", "-C", str(root), "merge-base", "--is-ancestor",
+                     commit, "HEAD"],
+                    capture_output=True,
+                    check=False,
+                ).returncode
+                == 0,
+                f"implementation commit not an ancestor of HEAD: {ident}: {commit}",
+            )
 
     for ident in batches:
         visit(ident)

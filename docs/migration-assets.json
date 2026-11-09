@@ -216,7 +216,13 @@
     {
       "id": "R00",
       "depends_on": [],
-      "status": "done"
+      "status": "done",
+      "evidence_paths": [
+        "docs/migration-assets.json",
+        "docs/rebuild-plan.md"
+      ],
+      "implementation_commit": "c4a182a",
+      "note": "归档/治理：基线钉版+台账建立（c4a182a；旧失败真实保留于archive 注记）；E-1 机器化补登证据锚。注：本台账文件自身即 R00 交付物（docs/** 内合法自引用——审 P2-3 豁免注记）。"
     },
     {
       "id": "R01",

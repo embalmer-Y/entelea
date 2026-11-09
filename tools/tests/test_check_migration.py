@@ -66,6 +66,29 @@ class MigrationChecks(unittest.TestCase):
         self.data["assets"][-1]["verification"]["evidence_paths"] = []
         self.rejected("Missing passed evidence")
 
+    def test_done_without_implementation_commit(self):
+        # E-1 反例：done 无 commit 锚（口头完成）
+        for b in self.data["batches"]:
+            if b["id"] == "R03":
+                b.pop("implementation_commit", None)
+        self.rejected("missing/malformed implementation commit: R03")
+
+    def test_done_evidence_outside_docs(self):
+        # E-1 反例：证据指向非 docs/ 文件（存在也不行）
+        for b in self.data["batches"]:
+            if b["id"] == "R03":
+                b["evidence_paths"] = ["framework/services/package/store.c"]
+        self.rejected("done evidence outside docs/: R03")
+
+    def test_done_commit_tag_object_rejected(self):
+        # E-1 反例：annotated tag 对象冒充 commit（cat-file -t 严格面——
+        # legacy-baseline tag SHA 在共享对象库内真实存在）
+        tag = "f59b97cf93a786c98518869a90bba3ec5faafa56"
+        for b in self.data["batches"]:
+            if b["id"] == "R03":
+                b["implementation_commit"] = tag
+        self.rejected("not a commit object: R03")
+
     def test_changed_baseline(self):
         self.data["repositories"][0]["commit"] = "0" * 40
         self.rejected("Pinned commit changed")

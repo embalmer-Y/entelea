@@ -44,12 +44,16 @@ entelea_result_t entelea_pkg_activate(uint8_t slot);
 /** 当前 active slot（无 = E_UNINIT）。 */
 entelea_result_t entelea_pkg_active(uint8_t *slot);
 
+/** slot 直读（staged 包事实读面——装载链（wasm_host）取 wasm 段的
+ * 生产路径；D-3 闸首次在非 TEST 构建编译 wasm_host 时发现其曾被误
+ * 包在 TEST 块内）。 */
+entelea_result_t entelea_pkg_slot_read(uint8_t slot, uint32_t off, void *buf,
+				       uint32_t len);
+
 #ifdef ENTELEA_TEST
 /* 固定测试根（公开材料；生成脚本与私钥在旧 Forge fixtures）。 */
 extern const uint8_t entelea_pkg_test_root_pub[32];
-/* slot 直读（测试 oracle 面）。 */
-entelea_result_t entelea_pkg_slot_read(uint8_t slot, uint32_t off, void *buf,
-				       uint32_t len);
+/* slot 直写（测试注入面——腐坏/越界 oracle；非生产路径）。 */
 entelea_result_t entelea_pkg_slot_write(uint8_t slot, uint32_t off,
 					const void *buf, uint32_t len);
 entelea_result_t entelea_pkg_test_reset(void);

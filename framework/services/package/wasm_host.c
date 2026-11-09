@@ -226,16 +226,29 @@ entelea_result_t entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx,
 	uint32_t argc = 1;
 
 	/* 有界执行：timeout_ms 经步预算指令配额近似（指令/毫秒比率上限
-	 * ——DEC-48③ 语义；到期 = WAMR 配额异常 = E_TIMEOUT 有界停止）。 */
-	wasm_runtime_set_instruction_count_limit(
-		it->env, (uint64_t)timeout_ms * 1000U);
+	 * ——DEC-48③ 语义；到期 = WAMR 配额异常 = E_TIMEOUT 有界停止）。
+	 * review P3-7：WAMR 形参 int——≥2^31 隐式截断为负=预算失效
+	 * （无界执行），入口 clamp 2e9 封顶。 */
+	uint32_t quota = timeout_ms;
+
+	if (quota > 2000000U) {
+		quota = 2000000U; /* 2e9 指令（int 域内） */
+	}
+	wasm_runtime_set_instruction_count_limit(it->env,
+						 (int)(quota * 1000U));
 	bool ok = wasm_runtime_call_wasm(it->env, f, argc, argv);
 
 	if (!ok) {
-		/* 异常面：配额到期/trap——实例不可信，停止销毁（有界）。 */
+		/* 异常面（E-2 收窄）：配额到期 ≠ trap——到期=E_TIMEOUT
+		 * （有界停止语义，DEC-48③）；其余 trap=E_IO。两者实例都
+		 * 不可信，停止销毁。判别=WAMR 异常串（fast/classic 解释器
+		 * 同源 "instruction limit exceeded"——pinned 25bd7eb）。 */
+		const char *ex = wasm_runtime_get_exception(it->inst);
+		bool quota = ex != NULL && strstr(ex, "instruction limit") != NULL;
+
 		wasm_runtime_clear_exception(it->inst);
 		entelea_wasm_stop(app_id);
-		return ENTELEA_E_TIMEOUT;
+		return quota ? ENTELEA_E_TIMEOUT : ENTELEA_E_IO;
 	}
 	if (ret_out != NULL) {
 		*ret_out = (int32_t)argv[0];

@@ -1,0 +1,11 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* 板级 flash 布局（同 hw_flash_persist 板级批）：镜像缩 slot0 至 1MB，
+ * storage 扩 1MB@0x120000（SLOT_A/B 各 256KB + meta/kv/audit/prov/trust
+ * ——工厂闭环两包槽全保留）。slot1 重叠注记同 hw_flash_persist。 */
+&slot0_partition {
+	reg = <0x00020000 0x00100000>;
+};
+
+&storage_partition {
+	reg = <0x00120000 0x00100000>;
+};

@@ -163,6 +163,41 @@ ZTEST(framework_wasm, test_signed_load_call_stop)
 		      ENTELEA_E_NOTFOUND);
 }
 
+/* E-2 错误面收窄：trap ≠ 配额到期。trap 模块（wasm 二进制手写：
+ * (module (func (export "t") (param i32) (result i32) unreachable))
+ * ——unreachable 立即 trap，异常串不含 instruction limit → E_IO。 */
+static const uint8_t WASM_TRAP[] = {
+	0x00,0x61,0x73,0x6d,0x01,0x00,0x00,0x00,
+	0x01,0x06,0x01,0x60,0x01,0x7f,0x01,0x7f,
+	0x03,0x02,0x01,0x00,
+	0x07,0x05,0x01,0x01,0x74,0x00,0x00,
+	0x0a,0x05,0x01,0x03,0x00,0x00,0x0b,
+};
+
+ZTEST(framework_wasm, test_trap_vs_quota_error_split)
+{
+	entelea_wasm_test_reset();
+	entelea_storage_test_reset();
+	zassert_equal(entelea_wasm_init(), ENTELEA_OK);
+	stage_signed(0, WASM_TRAP, sizeof(WASM_TRAP));
+	uint32_t app = 0;
+
+	zassert_equal(entelea_wasm_load(0, &app), ENTELEA_OK);
+	entelea_principal_t ctx = {0};
+	int32_t ret = -1;
+
+	zassert_equal(entelea_wasm_call(app, ctx, "t", 1000, &ret),
+		      ENTELEA_E_IO, "trap → E_IO（非配额面）");
+	zassert_equal(entelea_wasm_instance_count(), 0, "trap 后实例销毁");
+	/* 判别性对照：同模块预算 0 仍 E_TIMEOUT（配额异常串路径）。 */
+	uint32_t app2 = 0;
+
+	stage_signed(1, WASM_SAMPLE, sizeof(WASM_SAMPLE));
+	zassert_equal(entelea_wasm_load(1, &app2), ENTELEA_OK);
+	zassert_equal(entelea_wasm_call(app2, ctx, "health_ping", 0, &ret),
+		      ENTELEA_E_TIMEOUT, "配额 0 → E_TIMEOUT（判别对照）");
+}
+
 ZTEST_SUITE(framework_wasm, NULL, wasm_setup, NULL, NULL, NULL);
 
 /* ---- 代表 native 裁决面（直达钩子；sample.wasm 无导入） ---- */

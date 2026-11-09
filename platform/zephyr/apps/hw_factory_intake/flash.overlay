@@ -1,0 +1,9 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* native_sim sim-flash 变体（同 tests/store 板级批）：storage 扩尾段
+ * 1064KB + 写块 4（SLOT_A/B 256KB×2 + 其余区）。 */
+&storage_partition {
+	reg = <0x000fc000 0x00104000>;
+};
+&flash0 {
+	write-block-size = <4>;
+};

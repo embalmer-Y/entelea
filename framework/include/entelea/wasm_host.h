@@ -28,7 +28,10 @@ entelea_result_t entelea_wasm_init(void);
 entelea_result_t entelea_wasm_load(uint8_t slot, uint32_t *app_id_out);
 
 /** 实例化 + 调用导出函数（fn 名；超时 ms=步预算到期 → E_TIMEOUT 有界
- * 停止——实例销毁，无静默续跑）。principal 注入实例（natives 裁决用）。 */
+ * 停止——实例销毁，无静默续跑；trap → E_IO（确定性——判别=WAMR
+ * 异常串 "instruction limit"；实例同样销毁）；预算上限 2e9 指令
+ * 封顶（WAMR 形参 int——防隐式截断预算失效）。principal 注入实例
+ * （natives 裁决用）。 */
 entelea_result_t entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx,
 				   const char *fn, uint32_t timeout_ms,
 				   int32_t *ret_out);

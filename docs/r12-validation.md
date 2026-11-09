@@ -50,3 +50,87 @@ python3 tools/build_zephyr.py --app platform/zephyr/tests/delivery \
   permissions/version）跨复位保持——`flash-persist-a4.log` 0 FAIL。
 - 磨损注记：flush 时机归装配层（试用事件稀疏——meta 乒乓可接受；
   产品磨损策略随 D05 细节）。
+
+## D 批（2026-11-09）：最小工厂闭环（SDK→Forge→设备）
+
+owner 授权 §10.4-D1/D2（SDK 接入+真云付费调用）执行记录。
+
+### D-1 SDK 栈（已交付）
+
+- venv：`/home/emb/project/workspace/openhands-venv`（Python
+  **3.12.13**，uv 管理独立安装；不触碰冻结 .venv）。Python 3.14
+  实测 pip 解析器对该依赖树回溯 >20min 不可用——3.12+uv 秒级解析。
+- pin：openhands-sdk==**1.60.2** + openhands-tools（terminal/
+  file_editor）+ PyNaCl 1.6.2——`build-support/factory-tools.json`。
+- LLM 链路冒烟：SDK LLM.completion → litellm `openai/` 前缀 +
+  base_url → router（glm-5.3-flash）content='ok'（台账已记）。
+
+### D-2 Forge 工作区（已交付）
+
+`/home/emb/project/workspace/forge`（两仓库之外）：章程 README
+（边界：不动两仓库/密钥纪律/凭据只经 0600 json/额度台账）+
+`packer/tsap_pack.py`（TSAP v2+COSE_Sign1 ed25519 打包签名——与
+设备 R05 验签管线字节对齐；产 .tsap/factory_pkg.h/candidate.json）
++ `packer/selftest.py`（**独立复刻设备 verify 逻辑**做字节级自证：
+头/摘要/COSE 精确子集/内嵌副本一致/ed25519——不共享构造代码路径）
++ `tasks/factory-brief.md`（SDK 任务书）。
+
+### D-3 最小工厂闭环（终态：双闸 11/11 PASS）
+
+链：SDK 产 wasm → tsap_pack 签名 → 设备闸 `hw_factory_intake`
+（新 app）：
+
+1. **工厂 provisioning**：`entelea_prov_write_maint`（生产维护通道：
+   校验先行+per-boot 一次窗）注入工厂根 pk0 → prov_load 装载 ✓
+2. stage（begin+512B chunks）→ 3. `pkg_verify`（显式工厂根）✓
+4. **D-4 设备半边对拍**：slot 全量字节 sha256 == Forge
+   candidate.package_digest（构建注入）✓
+5. factory_intake → PENDING_CONFIRM ✓ → 6. confirm → ACTIVE ✓
+7. wasm load（内部复核验签=默认信任集=prov pk0——与步骤 0 闭环）✓
+8. run/spin 调用 → 9. **hang 真死循环 → E_TIMEOUT 有界停止+实例
+   销毁**（R-V1 夹具——替代 wasm 测试"预算 0"技巧证据）
+10. trial_end+flush 清槽收尾（无人值守安全态）。
+
+闸失败纪律：任一 CHK 失败 → system_fail(FAIL_BOOT(7))（fail-safe
+循环——不假 PASS）。
+
+### SDK 迭代记录（工厂产物质量——如实）
+
+- run001（84B，~1M token 估）：verify/digest/intake/confirm 全过；
+  wasm load 拒（spin br_if 分支栈型不匹配）。
+- run002（94B，1.02M token=¥4.10）：仍拒（hang 尾缺 i32.const 0
+  ——wasm 验证器静态栈型要求）；另 run 语义 3N+1≠2N+1、spin 回边
+  不减计数（闸 N=0 面不可判别——wasm_call argv 硬编码 0 限制，
+  如实注记）。
+- run003（三缺陷反馈+逐函数 wat 模板）：30min 未交付终止（usage 估
+  ~0.5M）；**产物线转 forge `packer/wasm_gen.py` 确定性组装**（R12
+  合同"Forge 掌握产物约束"——LLM 产码→确定性组装→签名；wabt 不入
+  依赖）。组装器自身亦经闸反例修正一处 opcode（0x4E=ge_s 误作
+  gt_s——0≥0 恒真回边=死循环，闸 E_TIMEOUT 判定面捕获）。
+- **终态（run003 终产物 91B）：native_sim + ESP32-P4 真机双闸
+  11/11 PASS**——provisioning/stage/verify/digest 对拍/intake/
+  PENDING/confirm→ACTIVE/load/run/spin/**hang 真死循环 E_TIMEOUT
+  有界停止（R-V1）**/end+flush/"factory loop closed"。证据：
+  build/d3-gate-{nsim,board}/gate-factory-loop.log。
+- 板级教训（真机实测）：①main 栈 8K（pkg_verify+tweetnacl 深栈
+  ——默认栈溢出=PC 落 z_main_stack Illegal instruction）；
+  ②WAMR target=RISCV32_ILP32F（rv32imafc ABI ilp32f）。
+- **闸即主机校验器**：SDK 产物两轮被设备管线拦截=闭环防线工作的
+  证据；额度台账逐笔（~2M/18M 工厂软分配）。
+
+### 复现（D 批闸——gate_run.sh 两相；工件=forge artifacts/run003）
+
+```sh
+# native_sim sim-flash 全链
+RUN=run003 bash /home/emb/project/workspace/forge/gate/gate_run.sh nsim
+# 板级（ESP32-P4）：构建（-DFACTORY_PKG_HEADER 默认=run003）+烧录+监听
+RUN=run003 bash /home/emb/project/workspace/forge/gate/gate_run.sh board
+# 证据：build/d3-gate-{nsim,board}/gate-factory-loop.log
+```
+
+### E-2 关联（wasm 错误面收窄——B 批 review P3 项）
+
+`wasm_call` 异常面收窄：配额到期（WAMR 异常串 "instruction
+limit"）=E_TIMEOUT；其余 trap=E_IO——实例两者皆销毁。新增
+test_trap_vs_quota_error_split（unreachable 模块→E_IO ≠ 配额 0
+→E_TIMEOUT 判别对照）3/3 绿。
