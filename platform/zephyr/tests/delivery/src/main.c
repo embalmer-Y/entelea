@@ -3,6 +3,7 @@
 #include <string.h>
 #include <zephyr/ztest.h>
 #include <entelea/delivery.h>
+#include <entelea/storage.h>
 
 static void *trial_setup(void)
 {
@@ -125,6 +126,82 @@ ZTEST(framework_trial, test_factory_intake_gates)
 	bad.payload_kind = 1;
 	zassert_equal(entelea_factory_intake(&bad), ENTELEA_OK,
 		      "Lua payload 合法（不默认解释为 wasm）");
+}
+
+/* ---- 跨重启持久（A-4）：flush/restore 往返+fail-closed+约束态保持 ---- */
+ZTEST(framework_trial, test_persistence_roundtrip_and_fail_closed)
+{
+	entelea_trial_test_reset();
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+
+	/* 无记录：restore=幂等 NONE。 */
+	zassert_equal(entelea_trial_restore(), ENTELEA_OK);
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_NONE);
+
+	/* PENDING 往返：模拟重启=模块态清零后 restore。 */
+	entelea_trial_candidate_t c;
+
+	memset(&c, 0, sizeof(c));
+	c.digest[7] = 0x5A;
+	c.permissions = 0x0301;
+	c.version = 9;
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
+	zassert_equal(entelea_trial_flush(), ENTELEA_OK);
+	entelea_trial_test_reset(); /* 模拟重启丢内存态 */
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_NONE);
+	zassert_equal(entelea_trial_restore(), ENTELEA_OK);
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_PENDING_CONFIRM,
+		      "PENDING 跨重启存活");
+	entelea_trial_candidate_t cur;
+
+	entelea_trial_current(&cur);
+	zassert_equal(cur.digest[7], 0x5A);
+	zassert_equal(cur.permissions, 0x0301);
+	zassert_equal(cur.version, 9);
+	/* 恢复后的约束语义仍在：confirm 可达（唯一晋升）；PENDING 期
+	 * submit=BUSY 保持。 */
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_E_BUSY,
+		      "恢复后约束语义不放宽");
+	zassert_equal(entelea_trial_confirm(), ENTELEA_OK);
+
+	/* TIMEOUT 约束态跨重启：confirm 拒保持。 */
+	zassert_equal(entelea_trial_end(), ENTELEA_OK);
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
+	zassert_equal(entelea_trial_timeout(), ENTELEA_OK);
+	zassert_equal(entelea_trial_flush(), ENTELEA_OK);
+	entelea_trial_test_reset();
+	zassert_equal(entelea_trial_restore(), ENTELEA_OK);
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_TIMEOUT,
+		      "TIMEOUT 跨重启保持");
+	zassert_equal(entelea_trial_confirm(), ENTELEA_E_STATE,
+		      "跨重启不可绕过 fail-closed 撤销");
+
+	/* 坏记录（域外 state）→ fail-closed NONE。 */
+	uint8_t bad[4 + 2 + 32];
+
+	zassert_equal(entelea_storage_meta_read(bad, NULL), ENTELEA_E_PARAM);
+	{
+		uint16_t blen = 0;
+
+		zassert_equal(entelea_storage_meta_read(bad, &blen), ENTELEA_OK);
+		zassert_equal(blen, 4 + 2 + 32);
+		bad[1] = 0x77; /* 域外 state */
+		zassert_equal(entelea_storage_meta_write(bad, blen), ENTELEA_OK);
+	}
+	entelea_trial_test_reset();
+	zassert_equal(entelea_trial_restore(), ENTELEA_OK);
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_NONE,
+		      "坏记录 fail-closed 归 NONE");
+	/* 清槽也持久：end→flush→restore=NONE。 */
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
+	zassert_equal(entelea_trial_confirm(), ENTELEA_OK);
+	zassert_equal(entelea_trial_end(), ENTELEA_OK);
+	zassert_equal(entelea_trial_flush(), ENTELEA_OK);
+	entelea_trial_test_reset();
+	zassert_equal(entelea_trial_restore(), ENTELEA_OK);
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_NONE, "清槽持久");
+	entelea_storage_test_reset();
+	entelea_trial_test_reset();
 }
 
 ZTEST_SUITE(framework_trial, NULL, trial_setup, NULL, NULL, NULL);

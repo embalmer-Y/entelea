@@ -9,5 +9,8 @@ zephyr_include_directories(${ENTELEA_ROOT}/framework/include
 target_sources(app PRIVATE
   src/main.c
   ${ENTELEA_ROOT}/framework/services/delivery/delivery.c
+  # A-4 持久面（meta 经存储端口；RAM 后端即测语义）。
+  ${ENTELEA_ROOT}/framework/services/storage/part.c
+  ${ENTELEA_ROOT}/framework/services/storage/meta.c
 )
 target_compile_definitions(app PRIVATE ENTELEA_TEST=1)

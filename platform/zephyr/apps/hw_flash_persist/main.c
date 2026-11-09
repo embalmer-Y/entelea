@@ -16,6 +16,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/drivers/hwinfo.h>
+#include <entelea/delivery.h>
 #include <entelea/kv.h>
 #include <entelea/safety.h>
 #include <entelea/storage.h>
@@ -74,10 +75,12 @@ int main(void)
 		uint8_t rb[64];
 		uint16_t rlen = 0;
 
+		/* meta=单槽"最新记录"语义：P1 模式串往返已验；其后的
+		 * trial flush 合法接管该槽（38B 记录）——本相位经 trial
+		 * restore 验证 meta 面跨复位（含 CRC/版本域校验）。 */
 		CHK(entelea_storage_meta_read(rb, &rlen) == ENTELEA_OK &&
-			    rlen == sizeof(META_PAT) &&
-			    memcmp(rb, META_PAT, rlen) == 0,
-		    "P2 meta round-trip across reset");
+			    rlen == 4 + 2 + 32,
+		    "P2 meta holds trial record (single-slot latest)");
 		printk("[hw-flash] P2 PASS: meta persists (len=%u fnv=%08x)\n",
 		       rlen, fnv1a(rb, rlen));
 		entelea_storage_audit_entry_t ae[4];
@@ -89,6 +92,17 @@ int main(void)
 				      n * sizeof(ae[0])) : 0);
 		CHK(present && reason == ENTELEA_FAIL_BOOT(7),
 		    "P2 noinit reason survived SW reset (0x00010007)");
+		CHK(entelea_trial_restore() == ENTELEA_OK &&
+			    entelea_trial_state() == ENTELEA_TRIAL_PENDING_CONFIRM,
+		    "P2 trial PENDING survives reset");
+		{
+			entelea_trial_candidate_t tc;
+
+			entelea_trial_current(&tc);
+			CHK(tc.digest[11] == 0xA5 && tc.permissions == 0x0202 &&
+				    tc.version == 4,
+			    "P2 trial candidate content bound");
+		}
 		CHK(entelea_kv_save(PHASE_APP, "P2", 2) == ENTELEA_OK,
 		    "P2 kv phase=P2");
 		printk("[hw-flash] gate complete: parking resident\n");
@@ -120,7 +134,17 @@ int main(void)
 
 		CHK(entelea_storage_audit_append(&e, 0) == ENTELEA_OK,
 		    "P1 audit append");
-		printk("[hw-flash] P1: kv/audit written; system_fail -> SW reset <=~5s\n");
+		/* A-4：R12 试用状态持久（meta 面）。 */
+		entelea_trial_candidate_t tc;
+
+		memset(&tc, 0, sizeof(tc));
+		tc.digest[11] = 0xA5;
+		tc.permissions = 0x0202;
+		tc.version = 4;
+		CHK(entelea_trial_submit(&tc) == ENTELEA_OK &&
+			    entelea_trial_flush() == ENTELEA_OK,
+		    "P1 trial submit+flush");
+		printk("[hw-flash] P1: kv/audit/trial written; system_fail -> SW reset <=~5s\n");
 		entelea_safety_system_fail(ENTELEA_FAIL_BOOT(7));
 	}
 	for (;;) {

@@ -8,6 +8,7 @@
  */
 #include <string.h>
 #include <entelea/delivery.h>
+#include <entelea/storage.h>
 
 static entelea_trial_state_t state;
 static entelea_trial_candidate_t current;
@@ -101,6 +102,45 @@ entelea_result_t entelea_factory_intake(const entelea_factory_candidate_t *fc)
 	tc.permissions = fc->permissions;
 	tc.version = fc->runtime_version;
 	return entelea_trial_submit(&tc);
+}
+
+/* ---- 跨重启持久（板级批 A-4）：记录布局（小端）
+ * u8 ver=1 | u8 state | u8 cand_version | u8 rsv | u16 permissions |
+ * digest[32]。恢复 fail-closed：任意不符 → NONE。 */
+#define TRIAL_PERSIST_VER 1U
+
+entelea_result_t entelea_trial_flush(void)
+{
+	uint8_t rec[4 + 2 + 32];
+
+	rec[0] = TRIAL_PERSIST_VER;
+	rec[1] = (uint8_t)state;
+	rec[2] = current.version;
+	rec[3] = 0;
+	rec[4] = (uint8_t)current.permissions;
+	rec[5] = (uint8_t)(current.permissions >> 8);
+	memcpy(rec + 6, current.digest, sizeof(current.digest));
+	return entelea_storage_meta_write(rec, sizeof(rec));
+}
+
+entelea_result_t entelea_trial_restore(void)
+{
+	uint8_t rec[4 + 2 + 32];
+	uint16_t len = 0;
+
+	if (entelea_storage_meta_read(rec, &len) != ENTELEA_OK ||
+	    len != sizeof(rec) || rec[0] != TRIAL_PERSIST_VER ||
+	    rec[1] > ENTELEA_TRIAL_TIMEOUT) {
+		/* 无记录/坏记录：fail-closed 归 NONE（不复活垃圾）。 */
+		state = ENTELEA_TRIAL_NONE;
+		memset(&current, 0, sizeof(current));
+		return ENTELEA_OK;
+	}
+	state = (entelea_trial_state_t)rec[1];
+	current.version = rec[2];
+	current.permissions = (uint16_t)(rec[4] | ((uint16_t)rec[5] << 8));
+	memcpy(current.digest, rec + 6, sizeof(current.digest));
+	return ENTELEA_OK;
 }
 
 #ifdef ENTELEA_TEST

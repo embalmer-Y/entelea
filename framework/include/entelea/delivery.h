@@ -68,6 +68,16 @@ typedef struct {
  * 权限/预算域外拒；payload_kind 未知拒（不默认解释）。 */
 entelea_result_t entelea_factory_intake(const entelea_factory_candidate_t *fc);
 
+/* ---- 跨重启持久（板级批 A-4；经 R03 meta 双副本） ---- */
+
+/** [thread] 状态落盘（含 NONE 态——清槽也持久）。调用时机归装配层
+ * （试用事件稀疏：meta 乒乓磨损可接受；产品磨损策略随 D05 细节）。 */
+entelea_result_t entelea_trial_flush(void);
+
+/** [boot] 恢复（幂等）：无记录/坏记录（CRC/版本/域外）→ fail-closed
+ * 置 NONE（不复活垃圾态——TIMEOUT/REJECTED 等约束态跨重启保持）。 */
+entelea_result_t entelea_trial_restore(void);
+
 #ifdef ENTELEA_TEST
 void entelea_trial_test_reset(void);
 #endif

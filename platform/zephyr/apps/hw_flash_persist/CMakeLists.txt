@@ -21,6 +21,7 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/services/storage/noinit.c
   ${ENTELEA_ROOT}/framework/services/storage/audit.c
   ${ENTELEA_ROOT}/framework/services/storage/kv.c
+  ${ENTELEA_ROOT}/framework/services/delivery/delivery.c
   ${ENTELEA_ROOT}/framework/runtime/supervision/events.c
   ${ENTELEA_ROOT}/framework/runtime/supervision/wdt.c
   ${ENTELEA_ROOT}/framework/runtime/supervision/boot.c

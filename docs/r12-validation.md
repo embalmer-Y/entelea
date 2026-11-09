@@ -36,3 +36,17 @@ python3 tools/build_zephyr.py --app platform/zephyr/tests/delivery \
   --python ../entelea-legacy/.venv/bin/python3 --build
 ./build/r12-tdelivery/zephyr/zephyr.exe
 ```
+
+## 板级批 A-4（2026-11-09）：试用状态跨重启持久
+
+- `entelea_trial_flush/restore`（meta 单槽；记录 38B：ver/state/
+  version/permissions/digest）。恢复 **fail-closed**：无记录/坏记录
+  （CRC/版本/域外 state）→ NONE 不复活垃圾；TIMEOUT/REJECTED 约束态
+  跨重启保持（confirm 仍拒）；清槽持久。
+- delivery 套件新增 test_persistence_roundtrip_and_fail_closed
+  （往返/约束语义不放宽/坏记录/清槽）。
+- **真机证据（hw_flash_persist A-4 相位）**：P1 submit+flush →
+  生产 SW 复位 → P2 restore=PENDING + 候选内容绑定（digest/
+  permissions/version）跨复位保持——`flash-persist-a4.log` 0 FAIL。
+- 磨损注记：flush 时机归装配层（试用事件稀疏——meta 乒乓可接受；
+  产品磨损策略随 D05 细节）。
