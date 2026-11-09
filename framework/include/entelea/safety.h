@@ -168,6 +168,10 @@ bool entelea_safety_estop_latched(void);
  * 无锁原子读。 */
 uint32_t entelea_safety_estop_latched_at(void);
 
+/** estop 引脚原始物理电平（0/1；-1=未绑定或读失败）——接线诊断/
+ * 现场观测面（r14：区分"接线未变"与"电平变而沿未触发"）。 */
+int entelea_safety_estop_level_raw(void);
+
 /* ---- 事件 payload（本模块发布） ---- */
 
 typedef struct {

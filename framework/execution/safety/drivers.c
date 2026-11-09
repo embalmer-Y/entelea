@@ -268,17 +268,41 @@ entelea_result_t entelea_safety_estop_init(void)
 	if (gpio_add_callback_dt(&estop_spec, &estop_cb) != 0) {
 		return ENTELEA_E_IO;
 	}
-	/* 触发边沿：R02 固定缺省上升（prov 化配置面归 R03；
-	 * 边沿映射纯函数另经 entelea_safety_estop_edge_of 供测试守卫）。 */
-	if (gpio_pin_interrupt_configure_dt(&estop_spec,
-			entelea_safety_estop_edge_of(0)) != 0) {
-		return ENTELEA_E_IO;
+	/* 触发边沿：R02 固定缺省=按下沿（逻辑上升；prov 化配置面归 R03；
+	 * 边沿映射纯函数另经 entelea_safety_estop_edge_of 供测试守卫）。
+	 * r14 真机实证（GPIO20 按压不触发）：Zephyr 中断标志缺省按
+	 * **物理**电平解释——仅显式 GPIO_INT_LEVELS_LOGICAL 才按引脚
+	 * ACTIVE_LOW 翻账（gpio.h z_impl 只翻 LEVELS_LOGICAL 面）。
+	 * 故在此按 spec 的 ACTIVE_LOW 把逻辑沿翻译成物理沿（按下=物理
+	 * falling）；EDGE_BOTH 双沿对称不翻。 */
+	{
+		int trig = entelea_safety_estop_edge_of(0);
+
+		if ((estop_spec.dt_flags & GPIO_ACTIVE_LOW) != 0 &&
+		    trig == GPIO_INT_EDGE_RISING) {
+			trig = GPIO_INT_EDGE_FALLING;
+		}
+		if (gpio_pin_interrupt_configure_dt(&estop_spec, trig) != 0) {
+			return ENTELEA_E_IO;
+		}
 	}
 #endif
 	return ENTELEA_OK; /* 无节点板（native_sim/测试）空操作；生产板必须提供 */
 }
 
-/* estop 边沿映射（0=上升缺省/1=下降/2=双沿；未知 fail-safe 上升）。 */
+/* estop 引脚原始电平（0/1；-1=未绑定）——接线诊断/现场观测面。 */
+int entelea_safety_estop_level_raw(void)
+{
+#if DT_NODE_HAS_PROP(ESTOP_GPIO_NODE, estop_gpios)
+	return gpio_pin_get_raw(estop_spec.port, estop_spec.pin);
+#else
+	return -1;
+#endif
+}
+
+/* estop 边沿映射——**逻辑**边沿语义（0=上升缺省=按下沿/1=下降=松开沿
+ * /2=双沿；未知 fail-safe 上升）。物理沿翻译归 drivers.c 装配点
+ * （r14：ACTIVE_LOW 下逻辑上升=物理下降）。 */
 int entelea_safety_estop_edge_of(uint8_t flags)
 {
 	switch (flags) {

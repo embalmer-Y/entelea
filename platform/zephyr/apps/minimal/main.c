@@ -48,9 +48,10 @@ int main(void)
 
 		if (entelea_safety_summary(&sum) == ENTELEA_OK) {
 			printk("[entelea] safety: ch=%u safe_fault=%u estop=%s"
-			       " at=%ums\n",
+			       " at=%ums lvl=%d\n",
 			       sum.channels, sum.by_state[ENTELEA_ST_SAFE_FAULT],
-			       latched ? "LATCHED" : "clear", latched ? at : 0U);
+			       latched ? "LATCHED" : "clear", latched ? at : 0U,
+			       entelea_safety_estop_level_raw());
 		}
 		k_sleep(K_SECONDS(5));
 	}

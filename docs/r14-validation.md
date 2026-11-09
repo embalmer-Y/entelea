@@ -88,9 +88,8 @@ v3 NC：六属性各 `<0xffffffff>`；均经 `--cmake-arg=-DEXTRA_DTC_OVERLAY_FI
 timeout）+ CTest 6/6×2 + Linux host + check_migration(800 sources) +
 check_dependencies + source-policy（69→70，tf_probe/main.c 入清单）。
 
-## 4. 待 owner 到场项（estop 按压实测）
+## 4. estop 按压实测（已完成）
 
-接线：动合按键（或导线碰触）一端 **J4-31（GPIO20）**，另一端 **GND**
-（J4-1/2/3/4 任一）。接好并告知后：监听串口（115200，EN 复位），按压
-即应出现 `estop=LATCHED at=<ms>` 心跳行；松开保持 LATCHED（闩语义，
-clear 命令面归后续批次）。
+接线=杜邦线 GPIO20(J4-31)↔GND(J4-3/4)；判据与结果见 §2 按压实测节
+（PASS，闩语义实证）。clear 释放命令面归后续批次；到场电平测量项
+（万用表复核 J4 走线）仍可按原计划独立执行。
