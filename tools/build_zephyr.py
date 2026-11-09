@@ -21,11 +21,17 @@ import os
 import re
 import shutil
 import subprocess
+import json
 import sys
 from pathlib import Path
 
 NATIVE_BOARDS = ("native_sim", "native_sim/native/64", "native_sim/native/32")
-PINNED_MODULES = {"zephyr", "wamr", "hal_espressif"}
+# 模块白名单=dependencies.json 单一来源（F 批起含 nanopb/mbedtls/
+# tf_psa_crypto——真网/真云面模块；commit pin 由 check_dependencies.py
+# 交叉校验，防 json 自改）。
+PINNED_MODULES = {dep["id"] for dep in json.loads(
+    (Path(__file__).resolve().parents[1]
+     / "build-support/dependencies.json").read_text())["dependencies"]}
 # Managed CMake variables: set only by this tool after verification. Extra
 # --cmake-arg values must not override them (review defect 6: a later
 # -DBOARD=... silently repointed the build while the SDK stayed verified

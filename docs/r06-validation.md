@@ -66,3 +66,25 @@ python3 tools/build_zephyr.py --app platform/zephyr/tests/net \
   限/拒新/顺序/送达后弹/参数负测——5 用例全绿。
 - 归属提醒：媒体外发**决策面**仍归 R09 闸（D11 未冻结）；本交付=
   传输机制（R-V 表外原"本批后续"欠条闭合）。
+
+## F 批（2026-11-09）：真网批
+
+### F-1 WiFi 关联+netmon 联动闸（就绪；板级 BLOCKED——到场项）
+
+- 闸 `platform/zephyr/apps/hw_wifi_netmon/`（+forge `gate/wifi_inject.py`
+  凭据串口注入驱动——P4C1 协议=旧树 E1 纪律：凭据不入镜像不入仓库，
+  用后 zeroize）：connect→DHCP→**dep_report(NET,good)×2→UP（防抖）**
+  →disconnect→**dep bad→DOWN（立即）** 两轮；观测源实装=R06 合同
+  "真机批替换观测源"。
+- 模块面：nanopb 入 pin 台账（dependencies.json+PINS；esp_hosted RPC
+  编解码）；build_zephyr.py 模块白名单改**从 dependencies.json 动态读**
+  （单一来源）。
+- **板级 BLOCKED（如实）**：esp_hosted SDIO 枚举 -134（C5 无 CMD5
+  应答）。已排除本迁移引入——**旧树自身的扫描诊断镜像（同板历史
+  2/2 PASS）同构建同烧录复跑同样失败**；复位脉冲 50→500ms 无效；
+  CHIP_PU（GPIO54）前置长复位实验亦无应答。C5 UART/GPIO0 未引出
+  （核心板）——软件诊断面已尽。**归到场项**（与真实断电 VBUS 同批：
+  断电重启 C5 是下一恢复实验；若仍无应答=固件/硬件故障，需 owner
+  裁决：C5 固件重刷=旧树"经授权写入 Kaleido 留存 esp-hosted 3.0.10
+  v661 成套镜像"路径——该镜像在旧树备份私有保存，重刷需另行授权）。
+- 板已恢复 minimal 安全常驻态。

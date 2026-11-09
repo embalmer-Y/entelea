@@ -73,7 +73,10 @@
     "platform/zephyr/tests/memory/src/main.c",
     "platform/zephyr/tests/affect/src/main.c",
     "platform/zephyr/tests/delivery/src/main.c",
-    "platform/zephyr/tests/r13/src/main.c"
+    "platform/zephyr/tests/r13/src/main.c",
+    "platform/linux/https_chat.c",
+    "platform/linux/cloud_main.c",
+    "platform/zephyr/apps/hw_wifi_netmon/main.c"
   ],
   "diagnostics": {},
   "protected_output_sources": [

@@ -65,3 +65,29 @@ python3 tools/build_zephyr.py --app platform/zephyr/tests/assist \
   value_u 透传受理门；task_ret 前导置 0 仅成功写 id；反馈=effect 域）。
   test_task_acceptance_wiring（受理/重复 E_BUSY/反馈/无名拒/deadline
   不可知 E_STATE 透传）。
+
+## F 批（2026-11-09）：模型真传输（Linux host 面）
+
+### F-2 真云闸（已交付：HOST CLOUD PASS）
+
+- `platform/linux/https_chat.c`：`entelea_model_transport_t.chat` 的
+  **真实现**——mbedtls 4.1.1（pin 同 Zephyr 模块树，GEN_FILES=OFF
+  绕开发脚本子模块）+TLS1.3（DigiCert 链验证 REQUIRED+hostname）+
+  HTTP/1.1 POST chat/completions+**值感知**最小 JSON 键查找（模型
+  可在 reasoning 文本里写字面 `"content":`——纯 strstr 会命中字符串
+  值内部；引号段+冒号结构位识别。实测教训：该误配曾致长 reasoning
+  被当作 content→显式截断拒）。usage prompt/completion 提取；状态码
+  首行解析；401/403→E_PERM、429→E_BUSY（不自动重试——额度纪律）；
+  1s 量子+整体 deadline 超时界。
+  TLS1.3 NewSessionTicket 后握手消息显式续读。
+- `platform/linux/cloud_main.c`+`build-support/build-f2-cloud.sh`：
+  凭据运行时读 0600 json（不入二进制/日志——打印仅长度）；链：
+  model_bind → dep NET/MODEL 双 good×2（防抖）→ ready → **真调用
+  router** → out='ok'/usage 断言 → 失联对照（NET bad → ask=E_STATE
+  且 touched 计数不变=**不触传输**）→ 1 次 good=DEGRADED 中间态 →
+  双 good 恢复 UP。
+- 实测：`HOST CLOUD PASS`（两轮：usage 17+46 / 17+59；台账已记）。
+- 诚实边界：host 面兑现 B-2 合同"真传输接入同一形状"；**MCU 面
+  BLOCKED 于 C5**（r06-validation F 批节——到场项）。E_IO 重试 3 次
+  面在调试轮实测（read ticket 误判期）；E_RANGE（无 content）不重试
+  面同轮实测。

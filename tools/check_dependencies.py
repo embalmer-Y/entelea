@@ -11,6 +11,11 @@ PINS = {
     "zephyr": "41d10b59730406bbab4ca9f1fbbe9e96aafb4966",
     "wamr": "25bd7eb63e828e4bd242cc9b38d260b4b31c6605",
     "hal_espressif": "cc81db00233af6020f2fea9fbb0d0098fb3d0d86",
+    # F 批真网/真云模块（esp_hosted RPC 编解码；host TLS 库——
+    # Zephyr 模块树同源）；新增模块须同步此处+json。
+    "nanopb": "0f6d088e777a33dd7b54297f137ef10d745c5da8",
+    "mbedtls": "c43f34b93797e81fd0257c30004dcd0ae332ae51",
+    "tf_psa_crypto": "765af96a20a2b408474dcd950372ba9af4d26b62",
 }
 APPROVED = [
     "patches/zephyr-p4-dsi-frame-size.patch",

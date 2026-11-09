@@ -1,0 +1,10 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* 板级 flash 布局（同 hw_flash_persist——storage 1MB@0x120000；
+ * 本闸无包槽需求但保持同板纪律）。 */
+&slot0_partition {
+	reg = <0x00020000 0x00100000>;
+};
+
+&storage_partition {
+	reg = <0x00120000 0x00100000>;
+};
