@@ -130,7 +130,7 @@ entelea_result_t entelea_trial_restore(void)
 
 	if (entelea_storage_meta_read(rec, &len) != ENTELEA_OK ||
 	    len != sizeof(rec) || rec[0] != TRIAL_PERSIST_VER ||
-	    rec[1] > ENTELEA_TRIAL_TIMEOUT) {
+	    rec[1] > ENTELEA_TRIAL_TIMEOUT || rec[3] != 0) {
 		/* 无记录/坏记录：fail-closed 归 NONE（不复活垃圾）。 */
 		state = ENTELEA_TRIAL_NONE;
 		memset(&current, 0, sizeof(current));

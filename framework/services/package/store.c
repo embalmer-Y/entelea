@@ -14,6 +14,7 @@
 #include <zephyr/kernel.h>
 #include <entelea/appstore.h>
 #include <entelea/prov.h>
+#include <entelea/kv.h>
 #include <entelea/storage.h>
 #include <entelea/trust.h>
 #include "../storage/internal.h"
@@ -372,16 +373,20 @@ entelea_result_t entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
 	return ENTELEA_OK;
 }
 
-/* active 事实：meta 记录 "ACTV<slot>"（显式小态面；正式 meta 键空间
- * 归 R03 meta 消费约定——本层单键使用）。 */
+/* active 事实：KV 记录（app_hash 键空间="PAGA"，1B=slot）。
+ * 板级批 review P1-1 修复：原与 trial_flush 共用 meta 单槽——两消费者
+ * 互相销毁持久事实（activate 后 trial_flush 顶掉激活记录/反向亦然）。
+ * KV=R03 多消费者面（键空间=app_hash）；meta 单槽归 R12 trial 独占。 */
+#define PKG_ACTIVE_KV_TAG 0x50414741U /* "PAGA" */
+
 entelea_result_t entelea_pkg_activate(uint8_t slot)
 {
 	if (slot >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_PARAM;
 	}
-	uint8_t rec[5] = {'A', 'C', 'T', 'V', (uint8_t)('0' + slot)};
+	uint8_t rec = slot;
 
-	return entelea_storage_meta_write(rec, sizeof(rec));
+	return entelea_kv_save(PKG_ACTIVE_KV_TAG, &rec, 1);
 }
 
 entelea_result_t entelea_pkg_active(uint8_t *slot)
@@ -389,21 +394,20 @@ entelea_result_t entelea_pkg_active(uint8_t *slot)
 	if (slot == NULL) {
 		return ENTELEA_E_PARAM;
 	}
-	uint8_t rec[ENTELEA_STORAGE_META_MAX];
-	uint16_t len = 0;
+	uint8_t rec = 0;
+	int32_t n = entelea_kv_load(PKG_ACTIVE_KV_TAG, &rec, 1);
 
-	if (entelea_storage_meta_read(rec, &len) != ENTELEA_OK || len != 5 ||
-	    memcmp(rec, "ACTV", 4) != 0 || rec[4] < '0' ||
-	    rec[4] >= (uint8_t)('0' + ENTELEA_APP_SLOT_COUNT)) {
+	if (n != 1 || rec >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_UNINIT;
 	}
-	*slot = (uint8_t)(rec[4] - '0');
+	*slot = rec;
 	return ENTELEA_OK;
 }
 
 #ifdef ENTELEA_TEST
 entelea_result_t entelea_pkg_test_reset(void)
 {
+	entelea_kv_test_reset(); /* review P1-1：active 事实迁 KV——重置连键空间态 */
 	for (uint8_t s = 0; s < ENTELEA_APP_SLOT_COUNT; s++) {
 		entelea_result_t r = entelea_storage_erase(
 			(entelea_store_part_t)(ENTELEA_PART_SLOT_A + s));

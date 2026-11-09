@@ -672,4 +672,24 @@ ZTEST(framework_store, test_boot_table_has_storage_step)
 	zassert_not_null(entelea_platform_boot_steps[4].fn);
 }
 
+/* ---- META 跨逻辑副本边界（板级批 review P2-1）：分段翻译正确 ---- */
+ZTEST(framework_store, test_meta_boundary_cross_rw)
+{
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	uint8_t w[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+	uint8_t r[8] = {0};
+
+	zassert_equal(
+		entelea_store_backend.write(ENTELEA_PART_META, 508, w, 8),
+		ENTELEA_OK, "跨界写（copy0 尾 4B+copy1 头 4B）");
+	zassert_equal(entelea_store_backend.read(ENTELEA_PART_META, 508, r, 8),
+		      ENTELEA_OK);
+	zassert_ok(memcmp(r, w, 8),
+		   "跨界读回=逻辑连续语义（flash 分段翻译不落垫片）");
+	/* copy1 头部独立读（物理 4096 处，逻辑 512）。 */
+	zassert_equal(entelea_store_backend.read(ENTELEA_PART_META, 512, r, 4),
+		      ENTELEA_OK);
+	zassert_equal(r[0], 5, "copy1 头=写序第二段");
+}
+
 ZTEST_SUITE(framework_store, NULL, store_setup, NULL, NULL, NULL);

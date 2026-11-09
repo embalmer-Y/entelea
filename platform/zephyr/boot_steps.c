@@ -40,8 +40,15 @@ static entelea_result_t step_storage_init(void)
 {
 	/* R03 尾部追加：存储初始化 + noinit 消费；上次异常复位留痕经
 	 * entelea_storage_last_reset 由装配/观测面上报（打印留在平台层）。
-	 * 板级批：先挂 flash 后端（弱桩=RAM 直通）再 init。 */
-	(void)entelea_platform_storage_mount_flash();
+	 * 板级批：先挂 flash 后端。挂载约定（review P2-2 修复）：弱桩
+	 * E_UNINIT=目标无 flash 面（合法直通 RAM）；强实现返回其它错误
+	 * =**配置了 flash 却不可用**——持久化承诺失效，boot 步骤失败
+	 * fail-safe（不再静默退化 RAM 空转）。 */
+	entelea_result_t m = entelea_platform_storage_mount_flash();
+
+	if (m != ENTELEA_OK && m != ENTELEA_E_UNINIT) {
+		return m;
+	}
 	return entelea_storage_init();
 }
 

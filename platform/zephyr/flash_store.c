@@ -60,12 +60,29 @@ static entelea_result_t bounds(entelea_store_part_t part, uint32_t off,
 }
 
 static entelea_result_t f_read(entelea_store_part_t part, uint32_t off,
+			       void *buf, uint32_t len);
+
+/* META 跨逻辑副本边界（review P2-1）：拆两段各自翻译——原实现只重
+ * 映射起始偏移，跨 512 边界的读写会把 copy1 头落进物理垫片（读得
+ * 0xFF/写静默丢）。 */
+static entelea_result_t f_read(entelea_store_part_t part, uint32_t off,
 			       void *buf, uint32_t len)
 {
 	entelea_result_t r = bounds(part, off, len);
 
 	if (r != ENTELEA_OK) {
 		return r;
+	}
+	if (part == ENTELEA_PART_META && off < ENTELEA_STORAGE_META_REC &&
+	    off + len > ENTELEA_STORAGE_META_REC) {
+		uint32_t head = ENTELEA_STORAGE_META_REC - off;
+
+		r = f_read(part, off, buf, head);
+		if (r != ENTELEA_OK) {
+			return r;
+		}
+		return f_read(part, ENTELEA_STORAGE_META_REC,
+			      (uint8_t *)buf + head, len - head);
 	}
 	int rc = flash_area_read(fa, part_off[part] + phys_off(part, off), buf,
 				 len);
@@ -114,6 +131,9 @@ static entelea_result_t aligned_write(uint32_t addr, const uint8_t *src,
 }
 
 static entelea_result_t f_write(entelea_store_part_t part, uint32_t off,
+				const void *buf, uint32_t len);
+
+static entelea_result_t f_write(entelea_store_part_t part, uint32_t off,
 				const void *buf, uint32_t len)
 {
 	entelea_result_t r = bounds(part, off, len);
@@ -123,6 +143,17 @@ static entelea_result_t f_write(entelea_store_part_t part, uint32_t off,
 	}
 	if (len == 0) {
 		return ENTELEA_OK;
+	}
+	if (part == ENTELEA_PART_META && off < ENTELEA_STORAGE_META_REC &&
+	    off + len > ENTELEA_STORAGE_META_REC) {
+		uint32_t head = ENTELEA_STORAGE_META_REC - off;
+
+		r = f_write(part, off, buf, head);
+		if (r != ENTELEA_OK) {
+			return r;
+		}
+		return f_write(part, ENTELEA_STORAGE_META_REC,
+			       (const uint8_t *)buf + head, len - head);
 	}
 	return aligned_write(part_off[part] + phys_off(part, off), buf, len);
 }

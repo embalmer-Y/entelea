@@ -4,3 +4,8 @@
 &storage_partition {
 	reg = <0x000fc000 0x00104000>;
 };
+&flash0 {
+	/* review P2-3：写块=4（真机同值）——激活对齐垫片头/尾分支
+	 * （sim 默认 1B 时垫片直通不执行）。 */
+	write-block-size = <4>;
+};

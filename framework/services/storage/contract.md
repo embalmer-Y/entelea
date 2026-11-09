@@ -8,9 +8,15 @@
 - 每个分区是**隔离命名空间**（ENTELEA_PART_*，编号只追加）；后端不可知
   （ops 表为模块私有）。越界（含 off+len u32 回绕）与未启用分区显式
   `E_RANGE`，不静默截断。
-- 本子闭环仅 RAM 后端（native_sim/主机测试；0xFF 抹除语义，test_reset
-  模拟掉电后全新镜像）。flash 后端（DT fixed-partitions + 写对齐垫片）
-  与宿主文件后端随板级批迁移——**不宣称持久介质已验证**。
+- 后端=可挂载（板级批 2026-11-09 交付）：公共 ops 类型+
+  `entelea_storage_mount`（默认 RAM 模板；`ENTELEA_NO_RAM_BACKEND`
+  惰性档省 540KB SRAM）；platform flash_store（flash_map 布局映射/
+  META 双副本分扇区重映射/写块垫片/超集 erase_off）。挂载失败（配置
+  了 flash 而不可用）=boot 步骤 fail-safe；无 flash 面（弱桩
+  E_UNINIT）=RAM 直通。RAM 后端 0xFF 抹除语义不变（test_reset 模拟
+  掉电后全新镜像）。**meta 单槽唯一消费者=R12 trial；多消费者小状态
+  走 KV（app_hash 键空间——pkg active 已迁入，板级批 review P1-1）**。
+  宿主文件后端仍延后（D02 环境）。
 - 后续子闭环按枚举尾部追加：PROV（配置）、AUDIT（审计）、KV（App 状态）、
   TRUST（信任材料）；SLOT 归 R05 包事实批次。
 
@@ -67,6 +73,7 @@
 
 ## 未测与边界
 
-RAM 后端为进程内隔离面，不证明 flash 持久性/掉电半写（板级闸 D12）；
-`noinit_put` 失败不可返回（静默丢弃，读取面如实无留痕）；flash 上下文
-可写性（system_fail 语境）随板级后端复核。
+真断电（VBUS）半写域=到场项（真机 SW/POWERON 域持久化已证——
+r03-validation 板级批节）；`noinit_put` 失败不可返回（静默丢弃，
+读取面如实无留痕）；槽级尾损仅 magic/seq 断尾可检（旧格式迁移
+保真——audit/kv 无槽 CRC，真撕裂归到场断电实测）。
