@@ -22,19 +22,8 @@ static inline uint16_t entelea_crc16(const uint8_t *data, size_t len)
 	return crc;
 }
 
-/* 后端 ops（part.c 实现；上层不感知后端）。 */
-typedef struct {
-	entelea_result_t (*read)(entelea_store_part_t part, uint32_t off, void *buf,
-				 uint32_t len);
-	entelea_result_t (*write)(entelea_store_part_t part, uint32_t off,
-				  const void *buf, uint32_t len);
-	entelea_result_t (*erase)(entelea_store_part_t part);
-	entelea_result_t (*erase_off)(entelea_store_part_t part, uint32_t off,
-				       uint32_t len);
-	uint32_t (*size)(entelea_store_part_t part);
-} entelea_store_ops_t;
-
-extern const entelea_store_ops_t entelea_store_backend;
+/* 后端 ops 类型与当前后端符号在公共头（板级 flash 后端挂载面）。
+ * 模块内部仍经 internal.h 统一取用。 */
 
 /* 小端读写（内部分区本机序）。 */
 static inline void entelea_put_le16(uint8_t *p, uint16_t v)

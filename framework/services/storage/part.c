@@ -119,13 +119,39 @@ static uint32_t ram_size(entelea_store_part_t part)
 	return part_ram(part, &size) == NULL ? 0 : size;
 }
 
-const entelea_store_ops_t entelea_store_backend = {
+static const entelea_store_ops_t ram_ops_template = {
 	.read = ram_read,
 	.write = ram_write,
 	.erase = ram_erase,
 	.erase_off = ram_erase_off,
 	.size = ram_size,
 };
+
+/* 当前后端（默认 RAM；非 const——板级 flash 经 entelea_storage_mount
+ * 挂载。符号名保留：模块内 32 处引用零改动）。 */
+entelea_store_ops_t entelea_store_backend = {
+	.read = ram_read,
+	.write = ram_write,
+	.erase = ram_erase,
+	.erase_off = ram_erase_off,
+	.size = ram_size,
+};
+
+entelea_result_t entelea_storage_mount(const entelea_store_ops_t *ops)
+{
+	if (ops == NULL) {
+		entelea_store_backend = ram_ops_template; /* 恢复默认 */
+		return ENTELEA_OK;
+	}
+	if (ops->read == NULL || ops->write == NULL || ops->erase == NULL ||
+	    ops->erase_off == NULL || ops->size == NULL) {
+		return ENTELEA_E_PARAM;
+	}
+	/* 尺寸表权威性：挂载后 size() 必须与 RAM 模板一致（逻辑分区
+	 * 尺寸不随后端变）——由挂载方保证（flash_store 按模板映射）。 */
+	entelea_store_backend = *ops;
+	return ENTELEA_OK;
+}
 
 #ifdef ENTELEA_TEST
 /* 越界/回绕负测探针：直通后端 read（端口边界合同）。 */
@@ -159,27 +185,31 @@ entelea_result_t entelea_storage_test_reset(void)
 }
 #endif
 
-/* 公共端口原语（后端表保持模块私有；跨模块消费经此窄面）。 */
+/* 公共端口原语（跨模块消费经此窄面）。板级批 A-1 修复：经**当前
+ * 后端**转发——原实现硬编码 ram_*，挂载 flash 后模块外消费者
+ * （prov/pkg/上层）仍静默走 RAM（计划符合性板级批发现：prov 在
+ * flash 变体读到上一用例的 RAM 残影）。未挂载时后端=RAM 模板，
+ * 行为不变。 */
 entelea_result_t entelea_storage_read(entelea_store_part_t part, uint32_t off,
 				      void *buf, uint32_t len)
 {
-	return ram_read(part, off, buf, len);
+	return entelea_store_backend.read(part, off, buf, len);
 }
 
 entelea_result_t entelea_storage_write(entelea_store_part_t part, uint32_t off,
 				       const void *buf, uint32_t len)
 {
-	return ram_write(part, off, buf, len);
+	return entelea_store_backend.write(part, off, buf, len);
 }
 
 entelea_result_t entelea_storage_erase(entelea_store_part_t part)
 {
-	return ram_erase(part);
+	return entelea_store_backend.erase(part);
 }
 
 uint32_t entelea_storage_part_size(entelea_store_part_t part)
 {
-	return ram_size(part);
+	return entelea_store_backend.size(part);
 }
 
 /* ---- SHA-256 流式（R05 包验签；FIPS 180-4，与 R01 一次性接口同算法）----

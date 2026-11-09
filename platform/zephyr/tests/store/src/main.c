@@ -14,8 +14,18 @@
 #include <entelea/wdt.h>
 #include "boot_steps.h"
 
+#ifdef CONFIG_FLASH_MAP
+#include "flash_store.h"
+#endif
+
 static void *store_setup(void)
 {
+#ifdef CONFIG_FLASH_MAP
+	/* 板级批变体：先挂 flash 后端（RAM 模板尺寸冻结→布局映射），
+	 * 再整区擦=净基线（test_reset 不卸载后端——擦除即隔离）。 */
+	zassert_equal(entelea_platform_storage_mount_flash(), ENTELEA_OK,
+		      "flash backend mount");
+#endif
 	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK, "backend reset");
 	return NULL;
 }
@@ -231,9 +241,15 @@ ZTEST(framework_store, test_audit_ring_flip_and_recovery)
 	n = entelea_storage_audit_read(out, 130);
 	zassert_equal(out[n - 1].seq, 131, "reboot 后 seq 续接");
 
-	/* 半写断尾：破坏活动页槽0（seq129）→ 该页断尾，仅另一页可见。 */
-	uint8_t garbage[64] = {0xDE};
+	/* 半写断尾：破坏活动页槽0（seq129）→ 该页断尾，仅另一页可见。
+	 * 注入手法=先 erase_off 再写坏槽（NOR 纪律：裸覆写已编程区会被
+	 * 擦除纪律拒——RAM 后端等价：64B 置 FF 后覆写）。 */
+	uint8_t garbage[64] = {0xDE, 0xAD};
 
+	zassert_equal(
+		entelea_store_backend.erase_off(ENTELEA_PART_AUDIT, 0, 64),
+		ENTELEA_OK,
+		"注入预擦（flash=页0 扇区超集；RAM=64B 清——双后端等价）");
 	zassert_equal(
 		entelea_storage_test_backend_write(ENTELEA_PART_AUDIT, 0, garbage,
 						   64),
@@ -462,13 +478,25 @@ ZTEST(framework_store, test_prov_v2_domain_and_schema)
 	/* CRC 失败：破坏 CBOR 一字节（头仍自洽）→ E_IO。 */
 	build_prov(&c, "n-c", "c-c", "tcp/x:1", 1, 1, 0, 0, -1, NULL);
 	zassert_equal(entelea_prov_write_test(c.b, c.n), ENTELEA_OK);
-	uint8_t scratch[8];
+	/* CRC 破坏注入（NOR 合法）：擦区后写"头自洽+错 CRC+真 CBOR"
+	 * 记录——就地翻位在擦除纪律下不可编程（一擦一写）；RAM 等价。 */
+	{
+		static uint8_t rec[4096];
+		uint32_t n = c.n;
 
-	zassert_equal(entelea_storage_read(ENTELEA_PART_PROV, 10, scratch, 1),
-		      ENTELEA_OK);
-	scratch[0] ^= 0xFF;
-	zassert_equal(entelea_storage_write(ENTELEA_PART_PROV, 10, scratch, 1),
-		      ENTELEA_OK);
+		zassert_equal(entelea_storage_erase(ENTELEA_PART_PROV),
+			      ENTELEA_OK);
+		rec[0] = (uint8_t)n;
+		rec[1] = (uint8_t)(n >> 8);
+		rec[2] = (uint8_t)(n >> 16);
+		rec[3] = (uint8_t)(n >> 24);
+		rec[4] = 0xBEEF & 0xFF; /* 任意非匹配 CRC */
+		rec[5] = 0xDE;
+		memcpy(rec + 6, c.b, n);
+		zassert_equal(
+			entelea_storage_write(ENTELEA_PART_PROV, 0, rec, 6 + n),
+			ENTELEA_OK);
+	}
 	zassert_equal(entelea_prov_load(), ENTELEA_E_IO, "CRC 失败拒");
 }
 

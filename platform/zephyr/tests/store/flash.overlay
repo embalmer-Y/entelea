@@ -1,0 +1,6 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* 板级批 flash 变体：native_sim 默认 storage 仅 16KB（八区需 544K）。
+ * 扩为尾段（0xFC000..2MB 末=1064KB）——默认布局最后分区，无重叠。 */
+&storage_partition {
+	reg = <0x000fc000 0x00104000>;
+};

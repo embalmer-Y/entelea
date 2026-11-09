@@ -28,6 +28,31 @@ typedef enum {
 	ENTELEA_PART_SLOT_B, /* APP 包槽 B（R05） */
 	ENTELEA_PART_COUNT,
 } entelea_store_part_t;
+/* ---- 后端端口（板级批：flash 后端经此挂载；上层不感知后端） ---- */
+
+typedef struct {
+	entelea_result_t (*read)(entelea_store_part_t part, uint32_t off, void *buf,
+				 uint32_t len);
+	entelea_result_t (*write)(entelea_store_part_t part, uint32_t off,
+				  const void *buf, uint32_t len);
+	entelea_result_t (*erase)(entelea_store_part_t part);
+	entelea_result_t (*erase_off)(entelea_store_part_t part, uint32_t off,
+				       uint32_t len);
+	uint32_t (*size)(entelea_store_part_t part);
+} entelea_store_ops_t;
+
+#define ENTELEA_STORAGE_META_REC 512U /* meta 双副本步长（副本各自
+* 完整记录；flash 后端按此把两副本排进各自擦除扇区） */
+
+/* 当前后端（默认=进程内 RAM 后端；非 const——挂载点可换）。 */
+extern entelea_store_ops_t entelea_store_backend;
+
+/** [boot] 挂载后端（ops 全函数非空；NULL=恢复默认 RAM 后端）。
+ * 挂载点=storage_init 前（boot 步骤内）；换后端后各分逻辑尺寸不变
+ * （尺寸由 RAM 模板给定=权威），物理布局（擦块对齐/垫片）归后端。
+ * 返回 E_PARAM=ops 残缺。 */
+entelea_result_t entelea_storage_mount(const entelea_store_ops_t *ops);
+
 
 /** [boot] 存储初始化（后端就绪 + noinit 消费 + 审计游标）。失败显式
  * 返回；上层按 fail-safe 处置。 */

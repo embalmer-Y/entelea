@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 cmake_minimum_required(VERSION 3.20.0)
+if(TEST_FLASH_BACKEND)
+  # 须在 find_package 前（DT 处理时序）：flash 变体 storage 扩容。
+  set(DTC_OVERLAY_FILE ${CMAKE_CURRENT_SOURCE_DIR}/flash.overlay)
+endif()
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(entelea_tests_store)
 
@@ -28,3 +32,8 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/execution/safety/drivers.c
 )
 target_compile_definitions(app PRIVATE ENTELEA_TEST=1)
+if(TEST_FLASH_BACKEND)
+  # 板级批 A-1/A-2：同一套件走 flash 后端（native_sim=sim-flash
+  # 真擦除语义）。EXPLICIT_ERASE 变体再强制 NOR 擦后写纪律。
+  target_sources(app PRIVATE ${ENTELEA_ROOT}/platform/zephyr/flash_store.c)
+endif()

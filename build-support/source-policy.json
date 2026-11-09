@@ -46,6 +46,7 @@
   "platform_zephyr": [
     "platform/zephyr/clock.c",
     "platform/zephyr/boot_steps.c",
+    "platform/zephyr/flash_store.c",
     "platform/zephyr/apps/minimal/main.c",
     "platform/zephyr/apps/hw_fault_stop/main.c",
     "platform/zephyr/tests/core/src/main.c",
