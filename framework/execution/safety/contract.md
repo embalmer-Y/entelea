@@ -93,6 +93,10 @@
   （pwm-uid+pwms；u 低16=permille、高16=hz/100），`ENTELEA_DRV_GPIO`/
   `ENTELEA_DRV_PWM` 编译定义启用；缺 DT 绑定 init = -ENODEV。PWM 后端
   失败进 `pwm_err` 计数（void 写函数不报告成功）。native_sim/CI 为桩。
-- estop DT 绑定走 aliases `ts-estop-gpio`；无节点板（native_sim/测试）
-  init 空操作成功，生产板必须提供（板级断言随参考板冻结）。触发边沿
-  R02 固定缺省上升（prov 化归 R03）；通用 GPIO 输入后端未迁入。
+- estop DT 绑定走 `/zephyr,user` 具名属性 `estop-gpios`（phandle-array
+  类型推断；r14 真机落地时由 aliases `ts-estop-gpio` 改绑——无 compatible
+  裸节点在 v4.5 不发射 gpios 宏）；无属性板（native_sim/测试）init 空操作
+  成功，生产板必须提供（minimal overlay 已绑 GPIO20=J4-31）。触发边沿
+  R02 固定缺省上升（logical，ACTIVE_LOW 下=按下）；prov 化归 R03；
+  通用 GPIO 输入后端未迁入。观测面 getter：estop_latched/_latched_at
+  （r14，原子读）。

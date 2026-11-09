@@ -112,13 +112,22 @@
 &sdhc {
 	sdhc0: sdhc@0 {
 		status = "okay";
-		/* Dev-board TF slot (schematic text layer): CLK=GPIO44,
-		 * CMD=GPIO43, D3..D0=GPIO42..39. SD_DET net exists but its P4
-		 * GPIO is unmapped in the text layer — polled detection. */
+		/* Dev-board TF slot P1 (TF-123-ARP9H17)。P4 SDMMC slot0 无
+		 * GPIO matrix（LL：仅 slot1 支持）——sdhc_esp32 走
+		 * configure_pin_iomux 对本组焊盘套 SDMMC func0；焊盘**角色**
+		 * 由 func0 硬连线决定（CLK=GPIO43=SD1_CCLK、CMD=GPIO44=
+		 * SD1_CCMD、D3..D0=GPIO42..39，与原理图 600DPI 直读、核心板
+		 * 88-pin 焊盘复用表一致）。r14 真机对拍：clk/cmd 值互换两轮
+		 * sd_init 均 PASS（角色不随属性标签走）、属性全删即
+		 * INIT_FAIL(-ENOTSUP=焊盘未使能)——即属性决定"使能哪组焊盘"
+		 * （必须正确），clk/cmd 语义标签不路由信号；标签保持与物理
+		 * 一致防误读。SD_DET=GPIO45（外部 10K 上拉+插卡开关断开）
+		 * 无 binding cd 面——应用层读（ACTIVE_HIGH：卡在位=1，r14
+		 * 真机实证）。 */
 		bus-width = <4>;
 		max-bus-freq = <DT_FREQ_M(40)>;
-		clk-pin = <44>;
-		cmd-pin = <43>;
+		clk-pin = <43>;
+		cmd-pin = <44>;
 		d0-pin = <39>;
 		d1-pin = <40>;
 		d2-pin = <41>;

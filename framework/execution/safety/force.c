@@ -73,6 +73,16 @@ void entelea_safety_force_all_fault(void)
 	 * 发布（ISR 内不提交工作项——队列禁令）；响应上界 = 巡检周期 + 调度延迟。 */
 }
 
+bool entelea_safety_estop_latched(void)
+{
+	return atomic_get(&entelea_forced) != 0;
+}
+
+uint32_t entelea_safety_estop_latched_at(void)
+{
+	return (uint32_t)atomic_get(&entelea_forced_at);
+}
+
 void entelea_safety_system_fail(uint32_t reason)
 {
 	fail_reason_store = reason;

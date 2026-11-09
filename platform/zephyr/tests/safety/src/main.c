@@ -217,6 +217,10 @@ ZTEST(framework_safety, test_safety_full_scenario)
 
 	/* ---- 7. estop 直达 + 锁存与释放（clear 是唯一释放路径） ---- */
 	entelea_safety_force_all_fault();
+	/* 观测面 getter（r14）：闩位与触发时刻（virt_now=1021 段）。 */
+	zassert_true(entelea_safety_estop_latched(), "estop latched observable");
+	zassert_equal(entelea_safety_estop_latched_at(), 1021,
+		      "estop latched_at observable");
 	zassert_equal(entelea_safety_channel_state("pwm1", &st), ENTELEA_OK);
 	zassert_equal(st, ENTELEA_ST_SAFE_FAULT);
 	zassert_equal(entelea_safety_commit("pwm1", v), ENTELEA_E_STATE,
@@ -229,6 +233,9 @@ ZTEST(framework_safety, test_safety_full_scenario)
 
 	/* estop-clear：释放锁存 → 条件恢复（link up → ACTIVE）→ 写路径恢复。 */
 	zassert_equal(entelea_safety_clear_fault(), ENTELEA_OK);
+	zassert_false(entelea_safety_estop_latched(), "clear releases latch");
+	zassert_equal(entelea_safety_estop_latched_at(), 1021,
+		      "clear keeps last-trigger record (forced_at)");
 	zassert_equal(entelea_safety_channel_state("pwm1", &st), ENTELEA_OK);
 	zassert_equal(st, ENTELEA_ST_ACTIVE, "conditional recovery to ACTIVE");
 	zassert_equal(entelea_safety_readback("pwm1", &rb), ENTELEA_OK);

@@ -1,0 +1,14 @@
+/*
+ * Copyright (c) 2026 Tessera Project
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * r14 TF 探针 DET 绑定：GPIO45（88-pin 表 pad 73；底板 TF 卡座 SWITCH
+ * pin9，外部 10K 上拉）。gpio1 13 = GPIO45（gpio1 控制器 32 基编号）。
+ * ACTIVE_HIGH：真机实证（r14 两轮）卡在位=开关断开=物理高=逻辑 1。
+ */
+/ {
+	zephyr,user {
+		sd-det-gpios = <&gpio1 13 GPIO_ACTIVE_HIGH>;
+	};
+};

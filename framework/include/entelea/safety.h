@@ -159,6 +159,15 @@ entelea_result_t entelea_safety_poweron_init(void);
  * prov 化配置面归 R03；R02 固定缺省。 */
 int entelea_safety_estop_edge_of(uint8_t flags);
 
+/** estop 直达触发闩（ISR 置位、clear_fault 复位）——观测面，无锁原子读
+ *（r14 真机闸观测）。 */
+bool entelea_safety_estop_latched(void);
+
+/** 最近一次 estop 触发时刻（绑定时钟 ms；未触发=0）。事实记录——
+ * clear_fault 只释放闩不清时刻（EVT_ESTOP 边沿发布依赖），观测面
+ * 无锁原子读。 */
+uint32_t entelea_safety_estop_latched_at(void);
+
 /* ---- 事件 payload（本模块发布） ---- */
 
 typedef struct {

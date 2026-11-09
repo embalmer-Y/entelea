@@ -229,13 +229,16 @@ size_t entelea_driver_sim_writes(const char *uid, entelea_write_rec_t *out,
 	return n;
 }
 
-/* estop DT 绑定与 ISR 粘合。绑定机制沿旧板级八实证：v4.4 起 chosen 非
- * zephyr 前缀属性不发射宏——走 aliases（DT_ALIAS(ts_estop_gpio) ←
- * overlay aliases { ts-estop-gpio = &node; }），语义与 DR-11 等价。 */
-#define ESTOP_GPIO_NODE DT_ALIAS(ts_estop_gpio)
+/* estop DT 绑定与 ISR 粘合。绑定机制（r14 真机首次落地面）：/zephyr,user
+ * 具名属性 estop-gpios（类型推断 phandle-array，无需自写 binding；原
+ * aliases ts-estop-gpio 方案在 v4.5 实测不生成裸节点 gpios 宏——无
+ * compatible 的节点不发射 phandle-array 属性）。无属性板（native_sim/
+ * 测试）空操作。 */
+#define ESTOP_GPIO_NODE DT_PATH(zephyr_user)
 
-#if DT_NODE_EXISTS(ESTOP_GPIO_NODE)
-static const struct gpio_dt_spec estop_spec = GPIO_DT_SPEC_GET(ESTOP_GPIO_NODE, gpios);
+#if DT_NODE_HAS_PROP(ESTOP_GPIO_NODE, estop_gpios)
+static const struct gpio_dt_spec estop_spec =
+	GPIO_DT_SPEC_GET(ESTOP_GPIO_NODE, estop_gpios);
 static struct gpio_callback estop_cb;
 
 /* estop ISR：直达安全态，不经协议栈/调度排队（调用图纪律见 force.c）。 */
@@ -251,8 +254,14 @@ static void estop_isr(const struct device *dev, struct gpio_callback *cb,
 
 entelea_result_t entelea_safety_estop_init(void)
 {
-#if DT_NODE_EXISTS(ESTOP_GPIO_NODE)
+#if DT_NODE_HAS_PROP(ESTOP_GPIO_NODE, estop_gpios)
 	if (!gpio_is_ready_dt(&estop_spec)) {
+		return ENTELEA_E_IO;
+	}
+	/* 输入+上拉先于中断配置（r14 首次真机绑定前补：dt_flags 携带
+	 * overlay 的 ACTIVE_LOW|PULL_UP；未配置输入直接使能中断在部分
+	 * 驱动上行为未定义）。 */
+	if (gpio_pin_configure_dt(&estop_spec, GPIO_INPUT) != 0) {
 		return ENTELEA_E_IO;
 	}
 	gpio_init_callback(&estop_cb, estop_isr, BIT(estop_spec.pin));

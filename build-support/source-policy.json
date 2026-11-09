@@ -76,7 +76,8 @@
     "platform/zephyr/tests/r13/src/main.c",
     "platform/linux/https_chat.c",
     "platform/linux/cloud_main.c",
-    "platform/zephyr/apps/hw_wifi_netmon/main.c"
+    "platform/zephyr/apps/hw_wifi_netmon/main.c",
+    "platform/zephyr/apps/tf_probe/main.c"
   ],
   "diagnostics": {},
   "protected_output_sources": [

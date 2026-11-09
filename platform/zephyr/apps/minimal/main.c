@@ -40,7 +40,19 @@ int main(void)
 		}
 	}
 	for (;;) {
-		k_sleep(K_FOREVER); /* main 转常驻监督空闲 */
+		/* r14 真机观测面：5s 心跳打印安全汇总 + estop 闩（estop
+		 * 闸判据行；事件本体仍经 WDT 巡检补发 EVT_ESTOP）。 */
+		entelea_safety_summary_t sum;
+		bool latched = entelea_safety_estop_latched();
+		uint32_t at = entelea_safety_estop_latched_at();
+
+		if (entelea_safety_summary(&sum) == ENTELEA_OK) {
+			printk("[entelea] safety: ch=%u safe_fault=%u estop=%s"
+			       " at=%ums\n",
+			       sum.channels, sum.by_state[ENTELEA_ST_SAFE_FAULT],
+			       latched ? "LATCHED" : "clear", latched ? at : 0U);
+		}
+		k_sleep(K_SECONDS(5));
 	}
 	return 0;
 }

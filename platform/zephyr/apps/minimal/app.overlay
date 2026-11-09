@@ -1,0 +1,18 @@
+/*
+ * Copyright (c) 2026 Tessera Project
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * r14 estop 真机绑定（owner 2026-11-09 裁决：GPIO20 = J4-31）：
+ * 底板 V1.3 原理图 GPIO20 唯一网络=J4-31（无任何板上消费者；复用
+ * ADC1_CH4，非 strap/JTAG/USB/SD 面）。按键动合接地 + 内部上拉 →
+ * ACTIVE_LOW：按下=逻辑上升沿（缺省边沿 entelea_safety_estop_edge_of(0)
+ * =GPIO_INT_EDGE_RISING 即按下触发）；GPIO_PULL_UP 经
+ * gpio_pin_configure_dt(INPUT) 生效（drivers.c r14 补前置）。
+ * 绑定面=/zephyr,user estop-gpios（类型推断，无 binding 依赖）。
+ */
+/ {
+	zephyr,user {
+		estop-gpios = <&gpio0 20 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+	};
+};
