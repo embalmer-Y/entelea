@@ -1,0 +1,12 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* 板级 flash 布局（板级批）：默认 16M 布局 slot0=7936K/storage=192K——
+ * 镜像（≤~150K+WAMR 余量）缩 slot0 至 1MB，storage 扩为 1MB@0x120000。
+ * 与默认 slot1（image-1，simple-boot 单槽配置不使用）区间重叠：OTA
+ * 布局归 D04 兼容策略评审——本批如实注记，不启用 slot1。 */
+&slot0_partition {
+	reg = <0x00020000 0x00100000>;
+};
+
+&storage_partition {
+	reg = <0x00120000 0x00100000>;
+};

@@ -19,6 +19,21 @@
 #define KV_SIZE 8192U
 #define SLOT_SIZE 262144U
 
+#ifdef ENTELEA_NO_RAM_BACKEND
+/* flash 目标（板级批）：RAM 镜像数组不编（省 ~540KB SRAM）。RAM ops
+ * 退化为惰性（读/写/擦=E_UNINIT、整擦=OK），尺寸表保持**权威**——
+ * flash_store 挂载期经 part_size 采样。挂载前的安全留痕（system_fail
+ * 早于 storage_init）无持久面=RAM 后端进程内语义本也不跨复位。 */
+static uint8_t ram_meta[1];
+static uint8_t ram_noinit[1];
+static uint8_t ram_audit[1];
+static uint8_t ram_prov[1];
+static uint8_t ram_trust[1];
+static uint8_t ram_kv[1];
+static uint8_t ram_slot_a[1];
+static uint8_t ram_slot_b[1];
+#define RAM_BACKEND_INERT 1
+#else
 static uint8_t ram_meta[META_SIZE];
 static uint8_t ram_noinit[NOINIT_SIZE];
 static uint8_t ram_audit[AUDIT_SIZE];
@@ -27,6 +42,14 @@ static uint8_t ram_trust[TRUST_SIZE];
 static uint8_t ram_kv[KV_SIZE];
 static uint8_t ram_slot_a[SLOT_SIZE];
 static uint8_t ram_slot_b[SLOT_SIZE];
+#endif
+
+#ifdef RAM_BACKEND_INERT
+/* 惰性短路：无 RAM 数组（尺寸表仍权威）。 */
+#define RAM_INERT_GUARD() return ENTELEA_E_UNINIT
+#else
+#define RAM_INERT_GUARD() do { } while (0)
+#endif
 
 static uint8_t *part_ram(entelea_store_part_t part, uint32_t *size)
 {
@@ -67,6 +90,7 @@ static entelea_result_t ram_read(entelea_store_part_t part, uint32_t off, void *
 	uint32_t size;
 	uint8_t *base = part_ram(part, &size);
 
+	RAM_INERT_GUARD();
 	if (base == NULL || off > size || len > size - off) {
 		return ENTELEA_E_RANGE;
 	}
@@ -79,6 +103,8 @@ static entelea_result_t ram_write(entelea_store_part_t part, uint32_t off,
 {
 	uint32_t size;
 	uint8_t *base = part_ram(part, &size);
+
+	RAM_INERT_GUARD();
 
 	if (base == NULL || off > size || len > size - off) {
 		return ENTELEA_E_RANGE;
@@ -93,6 +119,8 @@ static entelea_result_t ram_erase_off(entelea_store_part_t part, uint32_t off,
 	uint32_t size;
 	uint8_t *base = part_ram(part, &size);
 
+	RAM_INERT_GUARD();
+
 	if (base == NULL || off > size || len > size - off) {
 		return ENTELEA_E_RANGE;
 	}
@@ -104,6 +132,10 @@ static entelea_result_t ram_erase(entelea_store_part_t part)
 {
 	uint32_t size;
 	uint8_t *base = part_ram(part, &size);
+
+#ifdef RAM_BACKEND_INERT
+	return ENTELEA_OK; /* 无数组=无事可擦（不报错） */
+#endif
 
 	if (base == NULL) {
 		return ENTELEA_E_PARAM;
