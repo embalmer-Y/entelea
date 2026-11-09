@@ -55,3 +55,14 @@ python3 tools/build_zephyr.py --app platform/zephyr/tests/net \
   --python ../entelea-legacy/.venv/bin/python3 --build
 ./build/r06-tnet/zephyr/zephyr.exe
 ```
+
+## B 批（2026-11-09）：B-1 传输队列补交付
+
+- avq=drop-oldest 媒体帧环（4×512B 静态池拷贝；溢出丢最旧+计数；
+  帧超限整笔拒）；pubq=拒新发布环（8 条；满=E_BUSY；弹出仅 sink
+  送达后=at-least-once 至传输面）。传输面=可注册 sink（假传输闭环；
+  真传输随真网批同形状）；无定时器（flush 调用方驱动）。
+- net 套件 test_avq_pubq_bounded_queues：drop-oldest 序/计数/帧超
+  限/拒新/顺序/送达后弹/参数负测——5 用例全绿。
+- 归属提醒：媒体外发**决策面**仍归 R09 闸（D11 未冻结）；本交付=
+  传输机制（R-V 表外原"本批后续"欠条闭合）。

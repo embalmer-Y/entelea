@@ -52,3 +52,12 @@ python3 tools/build_zephyr.py --app platform/zephyr/tests/assist \
   ——review P1 修复三分支零负测的证据缺口消除。
 - 如实点名（处置归计划修订/轨道 2）：计划步骤"Task 执行+来源化
   反馈"未实现（ACT_TASK 无分支→E_PERM；contract 称上层组装）。
+
+## B 批（2026-11-09）
+
+- **B-2 模型适配层**：framework/services/assistant/model.c+model.h
+  （策略层——依赖联动/有界 E_IO 重试/用量累计/输出下限）；assist
+  套件 test_model_adapter_policy（联动门零调用/重试封顶/超时不重试/
+  用量累计/参数域）7 用例全绿。主机真调用：tools/model_smoke.py
+  （glm-5.3-flash 46t content='ok'/finish=stop/4.7s——台账已记）。
+  推理模型特性（先耗 reasoning）入合同与输出下限语义。

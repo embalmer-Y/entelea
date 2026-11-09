@@ -7,8 +7,10 @@
 #include <entelea/events.h>
 #include <entelea/netmon.h>
 #include <entelea/principal.h>
+#include <entelea/model.h>
 #include <entelea/resource.h>
 #include <entelea/safety.h>
+#include <entelea/task.h>
 
 static void *assist_setup(void)
 {
@@ -295,4 +297,165 @@ ZTEST(framework_assist, test_output_domain_gates)
 		      ENTELEA_OK, "POWER 经 power_request 放行");
 	zassert_equal(entelea_safety_readback("apwr", &rb), ENTELEA_OK);
 	zassert_true(rb.b, "POWER 经预算门落值");
+}
+
+
+/* ---- B-2 模型适配层：依赖联动/有界重试/用量累计/参数域 ---- */
+static uint32_t mock_calls;
+static entelea_result_t mock_next_rc[8];
+static uint32_t mock_tokens_per_call;
+static char mock_answer[32];
+
+static entelea_result_t mock_chat(void *user,
+				  const entelea_model_msg_t *msgs, uint8_t n,
+				  char *out, size_t out_max,
+				  uint32_t timeout_ms,
+				  entelea_model_usage_t *usage)
+{
+	ARG_UNUSED(user);
+	ARG_UNUSED(msgs);
+	ARG_UNUSED(n);
+	ARG_UNUSED(timeout_ms);
+	if (mock_calls < 8) {
+		entelea_result_t r = mock_next_rc[mock_calls];
+
+		mock_calls++;
+		if (r == ENTELEA_OK) {
+			strncpy(out, mock_answer, out_max - 1);
+			out[out_max - 1] = '\0';
+			if (usage != NULL) {
+				usage->prompt_tokens = mock_tokens_per_call;
+				usage->completion_tokens = mock_tokens_per_call;
+			}
+			return ENTELEA_OK;
+		}
+		return r;
+	}
+	return ENTELEA_E_IO;
+}
+
+static const entelea_model_transport_t mock_transport = {.chat = mock_chat};
+
+static void deps_up(void)
+{
+	/* 防抖 2 连 good（R06 合同）。 */
+	for (int i = 0; i < 2; i++) {
+		zassert_equal(entelea_dep_report(ENTELEA_DEP_MODEL, true, 600),
+			      ENTELEA_OK);
+		zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 600),
+			      ENTELEA_OK);
+	}
+}
+
+ZTEST(framework_assist, test_model_adapter_policy)
+{
+	char out[128];
+	entelea_model_msg_t msgs[1] = {
+		{.role = "user", .content = "ping"}};
+	entelea_model_usage_t u;
+
+	entelea_model_test_reset();
+	entelea_net_test_reset();
+	mock_calls = 0;
+	memset(mock_next_rc, 0, sizeof(mock_next_rc));
+	strcpy(mock_answer, "pong");
+	mock_tokens_per_call = 10;
+
+	/* 未绑传输：E_UNINIT；参数域：out 过小 E_RANGE。 */
+	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
+		      ENTELEA_E_UNINIT);
+	entelea_model_bind(&mock_transport, NULL);
+	zassert_equal(entelea_model_ask(msgs, 1, out, 16, 5000, &u),
+		      ENTELEA_E_RANGE, "推理模型输出面下限拒");
+
+	/* 依赖 DOWN：E_STATE 且零调用（联动门先于传输）。 */
+	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
+		      ENTELEA_E_STATE);
+	zassert_equal(mock_calls, 0, "依赖门不触传输");
+	deps_up();
+	zassert_true(entelea_model_ready());
+
+	/* E_IO 重试至封顶：3 次全 E_IO → 失败；usage 逐调用累计。 */
+	mock_calls = 0;
+	mock_next_rc[0] = mock_next_rc[1] = mock_next_rc[2] = ENTELEA_E_IO;
+	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
+		      ENTELEA_E_IO);
+	zassert_equal(mock_calls, 3, "首发+2 重试封顶");
+	zassert_equal(entelea_model_usage_total().prompt_tokens, 0,
+		      "失败调用不虚计");
+
+	/* 第 2 次成功：恰一次重试。 */
+	mock_calls = 0;
+	mock_next_rc[0] = ENTELEA_E_IO;
+	mock_next_rc[1] = ENTELEA_OK;
+	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
+		      ENTELEA_OK);
+	zassert_equal(mock_calls, 2);
+	zassert_equal(strcmp(out, "pong"), 0);
+	zassert_equal(entelea_model_usage_total().prompt_tokens, 10,
+		      "成功调用用量累计");
+	zassert_equal(entelea_model_usage_total().completion_tokens, 10);
+
+	/* E_TIMEOUT 不自动重试（成本不可知——显式上抛）。 */
+	mock_calls = 0;
+	mock_next_rc[0] = ENTELEA_E_TIMEOUT;
+	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
+		      ENTELEA_E_TIMEOUT);
+	zassert_equal(mock_calls, 1, "超时不重试");
+
+	/* 依赖再 DOWN：回到联动门。 */
+	entelea_dep_report(ENTELEA_DEP_NET, false, 0);
+	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
+		      ENTELEA_E_STATE);
+	entelea_model_test_reset();
+	entelea_net_test_reset();
+}
+
+
+/* ---- B-3 任务受理面：接线 R04 任务机+来源化反馈 ---- */
+ZTEST(framework_assist, test_task_acceptance_wiring)
+{
+	entelea_task_test_reset();
+	entelea_perm_test_reset();
+	entelea_perm_table_t t;
+
+	entelea_perm_table_init(&t);
+	zassert_equal(entelea_perm_parse("gpio:read:0", &t), ENTELEA_OK);
+	entelea_principal_t actor;
+
+	zassert_equal(entelea_principal_bind(&actor, 21, &t), ENTELEA_OK);
+	entelea_candidate_t cand = {
+		.kind = ENTELEA_ACT_TASK,
+		.source = {.id = 77, .kind = ENTELEA_SOURCE_MODEL},
+		.target_uid = "demo-task",
+		.value_u = 0, /* 无截止 */
+	};
+	int32_t ret = -1;
+
+	zassert_equal(entelea_assistant_execute(actor, &cand, &ret),
+		      ENTELEA_OK);
+	zassert_true(ret >= 1 && ret <= 4, "task_ret=任务 id");
+	entelea_task_id_t id = (entelea_task_id_t)ret; /* 独立持有（执行
+	 * 前导置 0 语义：失败调用后 ret 不可复用） */
+	entelea_task_t view;
+
+	zassert_equal(entelea_task_get(id, &view), ENTELEA_OK);
+	zassert_equal(view.state, ENTELEA_TASK_ACCEPTED);
+	zassert_equal(view.seq, 77, "来源回合序=受理序（幂等键）");
+	/* 重复候选（同 seq 非终态）=E_BUSY——模型重放不静默双受理。 */
+	zassert_equal(entelea_assistant_execute(actor, &cand, &ret),
+		      ENTELEA_E_BUSY,
+		      "同 seq 重复候选可检测（执行前导置 0 不复用旧 id）");
+	/* 来源化反馈：task_get effect 域（取消=NONE 起点语义）。 */
+	zassert_equal(entelea_task_cancel(actor, id), ENTELEA_OK);
+	zassert_equal(entelea_task_get(id, &view), ENTELEA_OK);
+	zassert_equal(view.effect, ENTELEA_EFFECT_NONE, "反馈面=effect 域");
+	/* 无名任务拒。 */
+	entelea_candidate_t anon = cand;
+
+	anon.target_uid = NULL;
+	zassert_equal(entelea_assistant_execute(actor, &anon, &ret),
+		      ENTELEA_E_PARAM);
+	entelea_task_test_reset();
+	entelea_perm_test_reset();
 }

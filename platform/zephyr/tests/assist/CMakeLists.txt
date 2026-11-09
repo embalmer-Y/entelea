@@ -9,6 +9,7 @@ zephyr_include_directories(${ENTELEA_ROOT}/framework/include
 target_sources(app PRIVATE
   src/main.c
   ${ENTELEA_ROOT}/framework/services/assistant/assistant.c
+  ${ENTELEA_ROOT}/framework/services/assistant/model.c
   ${ENTELEA_ROOT}/framework/services/net/netmon.c
   ${ENTELEA_ROOT}/framework/services/storage/part.c
   ${ENTELEA_ROOT}/framework/services/storage/meta.c
@@ -27,6 +28,7 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/execution/capability/perm.c
   ${ENTELEA_ROOT}/framework/execution/capability/desc.c
   ${ENTELEA_ROOT}/framework/execution/resource/power.c
+  ${ENTELEA_ROOT}/framework/execution/task/task.c
   ${ENTELEA_ROOT}/framework/runtime/supervision/wdt.c
   ${ENTELEA_ROOT}/framework/common/time.c
 )

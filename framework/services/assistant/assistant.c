@@ -13,6 +13,7 @@
 #include <entelea/events.h>
 #include <entelea/netmon.h>
 #include <entelea/resource.h>
+#include <entelea/task.h>
 #include <entelea/safety.h>
 
 /* ---- 上下文汇聚（有界窗） ---- */
@@ -81,6 +82,27 @@ entelea_result_t entelea_assistant_execute(entelea_principal_t actor,
 		return ENTELEA_OK; /* 无动作（通知类候选由上层消费） */
 	case ENTELEA_ACT_NOTIFY:
 		return ENTELEA_OK; /* 无副作用——不留执行回执面 */
+	case ENTELEA_ACT_TASK: {
+		/* B-3：任务受理接线（计划 R08 步骤"权限批准->Task 执行->
+		 * 来源化反馈"）。受理面=R04 任务机（有界表/受理去重/
+		 * deadline 门全复用）；seq=candidate 来源回合序（同
+		 * principal+seq 非终态=E_BUSY——重复候选可检测）；
+		 * deadline=value_u（0=无截止）。执行驱动（start/succeed/
+		 * fail）归上层执行器；**来源化反馈**=task_get 的 effect
+		 * 域（R04 合同——本层不复制回执）。task_ret=任务 id。 */
+		if (cand->target_uid == NULL) {
+			return ENTELEA_E_PARAM; /* target_uid=任务名 */
+		}
+		entelea_task_id_t id = 0;
+		entelea_result_t r = entelea_task_submit(
+			actor, cand->target_uid, cand->source.id, cand->value_u,
+			&id);
+
+		if (r == ENTELEA_OK && task_ret != NULL) {
+			*task_ret = (int32_t)id;
+		}
+		return r;
+	}
 	case ENTELEA_ACT_OUTPUT: {
 		if (cand->target_uid == NULL || cand->value_kind > 2) {
 			return ENTELEA_E_PARAM; /* 域外 value_kind 拒（review

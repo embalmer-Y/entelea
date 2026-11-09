@@ -5,6 +5,7 @@
 #include <zephyr/ztest.h>
 #include <entelea/events.h>
 #include <entelea/netmon.h>
+#include <entelea/netqueue.h>
 #include <entelea/safety.h>
 #include <entelea/wdt.h>
 
@@ -252,3 +253,65 @@ ZTEST(framework_net, test_dep_state_machine_and_storm)
 }
 
 ZTEST_SUITE(framework_net, NULL, net_setup, NULL, NULL, NULL);
+
+
+/* ---- B-1 传输队列：容量/背压/顺序/送达后弹 ---- */
+static uint8_t sink_log[64];
+static uint32_t sink_n;
+
+static void test_sink(void *user, const char *topic, const uint8_t *payload,
+		      uint8_t len)
+{
+	ARG_UNUSED(user);
+	ARG_UNUSED(topic);
+	sink_log[sink_n % sizeof(sink_log)] = payload[0];
+	sink_n++;
+}
+
+ZTEST(framework_net, test_avq_pubq_bounded_queues)
+{
+	entelea_netqueue_test_reset();
+	sink_n = 0;
+	memset(sink_log, 0, sizeof(sink_log));
+
+	/* avq drop-oldest：5 帧入 4 槽→丢最旧（1），序=2,3,4,5。 */
+	for (uint8_t i = 1; i <= 5; i++) {
+		zassert_equal(entelea_avq_push(&i, 1), ENTELEA_OK);
+	}
+	zassert_equal(entelea_avq_dropped(), 1, "溢出丢最旧计数");
+	uint8_t b[ENTELEA_AVQ_FRAME_MAX];
+	uint32_t len = 0;
+
+	zassert_equal(entelea_avq_pop(b, sizeof(b), &len), ENTELEA_OK);
+	zassert_equal(b[0], 2, "最旧被丢——次旧为头");
+	/* 帧超限整笔拒。 */
+	zassert_equal(entelea_avq_push(b, ENTELEA_AVQ_FRAME_MAX + 1),
+		      ENTELEA_E_RANGE);
+	/* 空后 pop=E_BUSY（非失败）。 */
+	zassert_equal(entelea_netqueue_flush(), 0, "无 sink 空排");
+	entelea_netqueue_bind_sink(test_sink, NULL);
+	zassert_equal(entelea_netqueue_flush(), 3, "avq 余 3 帧经 sink");
+	zassert_equal(sink_log[0], 3, "顺序保持");
+	zassert_equal(entelea_netqueue_test_av_delivered(), 3);
+	zassert_equal(entelea_avq_pop(b, sizeof(b), &len), ENTELEA_E_BUSY);
+
+	/* pubq 拒新：满 8 后 E_BUSY；送达后弹（at-least-once）。 */
+	for (uint8_t i = 0; i < ENTELEA_PUBQ_ENTRIES; i++) {
+		uint8_t pl[1] = {i};
+
+		zassert_equal(entelea_pubq_post("evt", pl, 1), ENTELEA_OK);
+	}
+	uint8_t one[1] = {9};
+
+	zassert_equal(entelea_pubq_post("evt", one, 1), ENTELEA_E_BUSY,
+		      "满=拒新（不静默丢）");
+	zassert_equal(entelea_pubq_depth(), 8);
+	zassert_equal(entelea_netqueue_flush(), 8, "排空 8 条");
+	zassert_equal(entelea_netqueue_test_pub_delivered(), 8);
+	zassert_equal(entelea_pubq_depth(), 0, "送达后弹");
+	zassert_false(entelea_pubq_peek(NULL), "空 peek=false");
+	/* 参数负测。 */
+	zassert_equal(entelea_pubq_post(NULL, one, 1), ENTELEA_E_PARAM);
+	zassert_equal(entelea_pubq_post("t", NULL, 1), ENTELEA_E_PARAM);
+	entelea_netqueue_test_reset();
+}

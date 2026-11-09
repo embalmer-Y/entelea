@@ -20,6 +20,7 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/services/config/prov.c
   ${ENTELEA_ROOT}/framework/services/config/prov_maint.c
   ${ENTELEA_ROOT}/framework/services/net/netmon.c
+  ${ENTELEA_ROOT}/framework/services/net/queue.c
   ${ENTELEA_ROOT}/framework/runtime/supervision/events.c
   ${ENTELEA_ROOT}/framework/runtime/supervision/wdt.c
   ${ENTELEA_ROOT}/framework/runtime/supervision/boot.c
