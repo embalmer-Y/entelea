@@ -94,8 +94,12 @@ entelea_result_t entelea_assistant_execute(entelea_principal_t actor,
 			return ENTELEA_E_PARAM; /* target_uid=任务名 */
 		}
 		entelea_task_id_t id = 0;
+		/* seq=source.id 低 16 位（review P2-1 显式化）：任务幂等键
+		 * 域=uint16；全序去重政策归上层（回合序回绕 65536 后的
+		 * 伪 E_BUSY 方向安全——拒而非静默双受理）。 */
 		entelea_result_t r = entelea_task_submit(
-			actor, cand->target_uid, cand->source.id, cand->value_u,
+			actor, cand->target_uid,
+			(uint16_t)(cand->source.id & 0xFFFFU), cand->value_u,
 			&id);
 
 		if (r == ENTELEA_OK && task_ret != NULL) {

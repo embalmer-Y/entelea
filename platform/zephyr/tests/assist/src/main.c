@@ -320,14 +320,14 @@ static entelea_result_t mock_chat(void *user,
 		entelea_result_t r = mock_next_rc[mock_calls];
 
 		mock_calls++;
+		if (usage != NULL) {
+			/* 失败尝试也报用量（合同：成本如实累计）。 */
+			usage->prompt_tokens = mock_tokens_per_call;
+			usage->completion_tokens = mock_tokens_per_call;
+		}
 		if (r == ENTELEA_OK) {
 			strncpy(out, mock_answer, out_max - 1);
 			out[out_max - 1] = '\0';
-			if (usage != NULL) {
-				usage->prompt_tokens = mock_tokens_per_call;
-				usage->completion_tokens = mock_tokens_per_call;
-			}
-			return ENTELEA_OK;
 		}
 		return r;
 	}
@@ -381,8 +381,8 @@ ZTEST(framework_assist, test_model_adapter_policy)
 	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
 		      ENTELEA_E_IO);
 	zassert_equal(mock_calls, 3, "首发+2 重试封顶");
-	zassert_equal(entelea_model_usage_total().prompt_tokens, 0,
-		      "失败调用不虚计");
+	zassert_equal(entelea_model_usage_total().prompt_tokens, 30,
+		      "失败尝试用量如实累计（3x10，review P3-4 激活）");
 
 	/* 第 2 次成功：恰一次重试。 */
 	mock_calls = 0;
@@ -392,12 +392,15 @@ ZTEST(framework_assist, test_model_adapter_policy)
 		      ENTELEA_OK);
 	zassert_equal(mock_calls, 2);
 	zassert_equal(strcmp(out, "pong"), 0);
-	zassert_equal(entelea_model_usage_total().prompt_tokens, 10,
-		      "成功调用用量累计");
-	zassert_equal(entelea_model_usage_total().completion_tokens, 10);
+	zassert_equal(entelea_model_usage_total().prompt_tokens, 50,
+		      "累计=3 失败+1 成功+1 成功（连续累计）");
+	zassert_equal(entelea_model_usage_total().completion_tokens, 50);
 
 	/* E_TIMEOUT 不自动重试（成本不可知——显式上抛）。 */
+	entelea_model_test_reset();
+	entelea_model_bind(&mock_transport, NULL); /* reset 解绑——重绑 */
 	mock_calls = 0;
+	memset(mock_next_rc, 0, sizeof(mock_next_rc));
 	mock_next_rc[0] = ENTELEA_E_TIMEOUT;
 	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
 		      ENTELEA_E_TIMEOUT);
@@ -456,6 +459,12 @@ ZTEST(framework_assist, test_task_acceptance_wiring)
 	anon.target_uid = NULL;
 	zassert_equal(entelea_assistant_execute(actor, &anon, &ret),
 		      ENTELEA_E_PARAM);
+	/* deadline≠0 而时钟未绑=E_STATE 透传（受理门）。 */
+	entelea_candidate_t dl = cand;
+
+	dl.value_u = 12345;
+	zassert_equal(entelea_assistant_execute(actor, &dl, &ret),
+		      ENTELEA_E_STATE, "deadline 不可知不受理（透传）");
 	entelea_task_test_reset();
 	entelea_perm_test_reset();
 }

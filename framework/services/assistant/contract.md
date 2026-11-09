@@ -41,7 +41,8 @@
   ENTELEA_MODEL_RETRIES=2；E_TIMEOUT/E_RANGE 不自动重试——成本/语义
   不可知归调用方）；用量累计（预算/台账观测）；输出缓冲下限
   （ENTELEA_MODEL_OUT_MIN=64——推理模型实测先耗 reasoning tokens，
-  过小必截断）。
+  过小必截断）。失败尝试若传输报用量亦计入（成本如实）；依赖门
+  逐尝试重查（重试中途 DOWN=E_STATE 停触传输）。
 - 传输层=可插拔 ops（mock 测试闭环；真传输随真网批/SDK 批接入同一
   形状——框架不含网络栈/TLS，无新依赖）。主机真调用冒烟：
   tools/model_smoke.py（凭据在工作区外，台账逐笔记）。

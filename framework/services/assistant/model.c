@@ -49,6 +49,11 @@ entelea_result_t entelea_model_ask(const entelea_model_msg_t *msgs, uint8_t n,
 	for (uint32_t attempt = 0; attempt <= ENTELEA_MODEL_RETRIES; attempt++) {
 		entelea_model_usage_t u = {0};
 
+		if (attempt > 0 && !entelea_model_ready()) {
+			/* review P3-5：依赖逐尝试重查——传输回调上报依赖
+			 * DOWN 后不再重试触传输（严格 D08 联动）。 */
+			return ENTELEA_E_STATE;
+		}
 		r = transport->chat(transport_user, msgs, n, out, out_max,
 				    timeout_ms, &u);
 		total_usage.prompt_tokens += u.prompt_tokens;

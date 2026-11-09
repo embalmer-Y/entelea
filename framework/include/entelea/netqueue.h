@@ -64,7 +64,8 @@ uint32_t entelea_pubq_depth(void);
 typedef void (*entelea_netqueue_sink_t)(void *user, const char *topic,
 					const uint8_t *payload, uint8_t len);
 
-/** [boot] 注册传输 sink（NULL=注销——flush 变为仅 avq 侧消费）。 */
+/** [boot] 注册传输 sink（NULL=注销——flush 不消费任何侧：avq 停
+ *  排、pubq 保持待传输不弹不丢）。 */
 void entelea_netqueue_bind_sink(entelea_netqueue_sink_t sink, void *user);
 
 /** [thread] 排空：avq 逐帧经 sink（topic="av"）→pubq 队头经 sink

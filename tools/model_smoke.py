@@ -7,6 +7,7 @@
 随真网批。用法：tools/model_smoke.py [--model M] [--prompt P]
 """
 import argparse
+import os
 import datetime
 import json
 import ssl
@@ -24,6 +25,7 @@ def main():
     ap.add_argument("--max-tokens", type=int, default=512)
     args = ap.parse_args()
 
+    os.makedirs(os.path.dirname(LEDGER), exist_ok=True)
     cfg = json.load(open(CREDS))
     if args.model not in cfg["allowed_models"]:
         raise SystemExit(f"model not allowed: {args.model}")

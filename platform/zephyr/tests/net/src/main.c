@@ -288,10 +288,33 @@ ZTEST(framework_net, test_avq_pubq_bounded_queues)
 	zassert_equal(entelea_avq_push(b, ENTELEA_AVQ_FRAME_MAX + 1),
 		      ENTELEA_E_RANGE);
 	/* 空后 pop=E_BUSY（非失败）。 */
-	zassert_equal(entelea_netqueue_flush(), 0, "无 sink 空排");
 	entelea_netqueue_bind_sink(test_sink, NULL);
 	zassert_equal(entelea_netqueue_flush(), 3, "avq 余 3 帧经 sink");
-	zassert_equal(sink_log[0], 3, "顺序保持");
+	zassert_equal(sink_log[0], 3, "顺序保持 1/3");
+	zassert_equal(sink_log[1], 4, "顺序保持 2/3");
+	zassert_equal(sink_log[2], 5, "顺序保持 3/3");
+	/* avq_pop 调用方缓冲不足：整帧语义。 */
+	uint8_t one0[1] = {0};
+	uint8_t tiny[2] = {0};
+
+	entelea_netqueue_bind_sink(NULL, NULL);
+	zassert_equal(entelea_avq_push(one0, 1), ENTELEA_OK);
+	zassert_equal(entelea_avq_pop(tiny, 0, &(uint32_t){0}),
+		      ENTELEA_E_RANGE, "缓冲不足整帧拒");
+	uint32_t l2 = 0;
+
+	zassert_equal(entelea_avq_pop(tiny, 1, &l2), ENTELEA_OK);
+	/* 参数负测：topic/payload 域外。 */
+	char long_topic[ENTELEA_PUBQ_TOPIC_MAX + 2];
+
+	memset(long_topic, 'a', sizeof(long_topic) - 1);
+	long_topic[sizeof(long_topic) - 1] = '\0';
+	zassert_equal(entelea_pubq_post(long_topic, one0, 1), ENTELEA_E_PARAM);
+	uint8_t big[ENTELEA_PUBQ_PAYLOAD_MAX + 1] = {0};
+
+	zassert_equal(entelea_pubq_post("t", big, sizeof(big)),
+		      ENTELEA_E_PARAM);
+	zassert_equal(entelea_pubq_post("t", one0, 0), ENTELEA_E_PARAM);
 	zassert_equal(entelea_netqueue_test_av_delivered(), 3);
 	zassert_equal(entelea_avq_pop(b, sizeof(b), &len), ENTELEA_E_BUSY);
 
@@ -306,6 +329,7 @@ ZTEST(framework_net, test_avq_pubq_bounded_queues)
 	zassert_equal(entelea_pubq_post("evt", one, 1), ENTELEA_E_BUSY,
 		      "满=拒新（不静默丢）");
 	zassert_equal(entelea_pubq_depth(), 8);
+	entelea_netqueue_bind_sink(test_sink, NULL); /* 前段注销——重绑 */
 	zassert_equal(entelea_netqueue_flush(), 8, "排空 8 条");
 	zassert_equal(entelea_netqueue_test_pub_delivered(), 8);
 	zassert_equal(entelea_pubq_depth(), 0, "送达后弹");

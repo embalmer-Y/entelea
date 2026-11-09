@@ -50,8 +50,7 @@ python3 tools/build_zephyr.py --app platform/zephyr/tests/assist \
   传感器类描述符 READ 即 acquire 可跳类检）/POWER 路由（无
   power:write=E_PERM 零输出；有权限+预算内经 power_request 落值）
   ——review P1 修复三分支零负测的证据缺口消除。
-- 如实点名（处置归计划修订/轨道 2）：计划步骤"Task 执行+来源化
-  反馈"未实现（ACT_TASK 无分支→E_PERM；contract 称上层组装）。
+- ~~计划步骤“Task 执行+来源化反馈”未实现~~——B-3 已交付销项（下文）。
 
 ## B 批（2026-11-09）
 
@@ -61,3 +60,8 @@ python3 tools/build_zephyr.py --app platform/zephyr/tests/assist \
   用量累计/参数域）7 用例全绿。主机真调用：tools/model_smoke.py
   （glm-5.3-flash 46t content='ok'/finish=stop/4.7s——台账已记）。
   推理模型特性（先耗 reasoning）入合同与输出下限语义。
+- **B-3 任务受理面（销 R08 旧欠条）**：assistant ACT_TASK 接线 R04
+  任务机（幂等键=source.id 低 16 位显式截窄——review P2-1；deadline=
+  value_u 透传受理门；task_ret 前导置 0 仅成功写 id；反馈=effect 域）。
+  test_task_acceptance_wiring（受理/重复 E_BUSY/反馈/无名拒/deadline
+  不可知 E_STATE 透传）。
