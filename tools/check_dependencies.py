@@ -14,6 +14,7 @@ PINS = {
     # F 批真网/真云模块（esp_hosted RPC 编解码；host TLS 库——
     # Zephyr 模块树同源）；新增模块须同步此处+json。
     "nanopb": "0f6d088e777a33dd7b54297f137ef10d745c5da8",
+    "esp_hosted_mcu": "2e3f6c8bd717d67698319a6a24f9f4218d8db068",
     "mbedtls": "c43f34b93797e81fd0257c30004dcd0ae332ae51",
     "tf_psa_crypto": "765af96a20a2b408474dcd950372ba9af4d26b62",
 }

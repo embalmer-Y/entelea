@@ -79,12 +79,46 @@ python3 tools/build_zephyr.py --app platform/zephyr/tests/net \
 - 模块面：nanopb 入 pin 台账（dependencies.json+PINS；esp_hosted RPC
   编解码）；build_zephyr.py 模块白名单改**从 dependencies.json 动态读**
   （单一来源）。
-- **板级 BLOCKED（如实）**：esp_hosted SDIO 枚举 -134（C5 无 CMD5
-  应答）。已排除本迁移引入——**旧树自身的扫描诊断镜像（同板历史
-  2/2 PASS）同构建同烧录复跑同样失败**；复位脉冲 50→500ms 无效；
-  CHIP_PU（GPIO54）前置长复位实验亦无应答。C5 UART/GPIO0 未引出
-  （核心板）——软件诊断面已尽。**归到场项**（与真实断电 VBUS 同批：
-  断电重启 C5 是下一恢复实验；若仍无应答=固件/硬件故障，需 owner
-  裁决：C5 固件重刷=旧树"经授权写入 Kaleido 留存 esp-hosted 3.0.10
-  v661 成套镜像"路径——该镜像在旧树备份私有保存，重刷需另行授权）。
+- **板级 BLOCKED 已解除（2026-11-09 晚，owner 到场+授权）**：
+  诊断链：断电重启无效 → switch key 切换后 esptool 直连 C5
+  （MAC `cc:68:c7:…`——芯片完好）→ 全片备份后读出 **flash 被整片
+  擦除**（仅 1 页测试图案；固件/bootloader/分区表全无——解释自
+  D12 起的一切无应答；旧树镜像同败因此）。owner 指示走**官方源
+  自编译**（放弃第三方预编译）+资源管理体系（见上节）：官方
+  esp-hosted-mcu v3.0.10+IDF v5.5.4+官方 SDIO cap patch → 四件套
+  烧录（switch key C5 侧）→ C5 slave 启动 log 确认 → 切回 P4
+  复烧本闸。
+- **F-1 真机终态：ALL PASS**（gate-wifi-allpass.log）：WiFi 关联
+  （cemetery）+DHCP（192.168.2.120）+**依赖联动防抖真测**
+  （DEGRADED 中间态可见→2 good→UP）+断链 bad→DOWN（立即）×2 轮
+  +`wifi/netmon loop closed (net dep live)`。
 - 板已恢复 minimal 安全常驻态。
+
+### F-1 续（2026-11-09 晚）：C5 诊断定案与官方自编译路径
+
+**诊断**（owner 到场断电+switch key 切换+重烧授权后）：
+- C5 芯片完好（下载模式 MAC `cc:68:c7:…` 可读，CH343 经 switch key
+  直连 C5 UART0）；
+- **flash 被整片擦除**（4MB 中仅 1 页测试图案 `5a00ffa5`——固件/
+  bootloader/分区表全无；解释了自 D12 起的一切无应答现象）；
+  原状全片备份：`/home/emb/project/c5-reflash/c5-flash-backup-4M.bin`。
+
+**C5 固件资源管理体系**（owner 指示"对这类资源合理管理"落地）：
+
+- **源码**：`/home/emb/project/deps/`（工作区级依赖根——两仓库外；
+  与冻结 legacy/.deps 并列但独立）。esp-hosted-mcu **v3.0.10**
+  （=Zephyr esp_hosted_mcu 驱动期望 major 3=C5 原固件同版）；
+  **pin 入 dependencies.json**（id=esp_hosted_mcu，commit 锚
+  2e3f6c8b；check_dependencies 交叉校验防漂移）。
+- **工具链**：`deps/esp-idf`（v5.5.4=官方 CI 同版；GitHub 直连仅
+  ~18KB/s 实测——经 gh-proxy.com 镜像加速 ~1.9MB/s，公开镜像在
+  D1 外发授权面内）。
+- **构建**：`build-support/build-c5-firmware.sh`（入仓库=可复现）：
+  pin 校验→IDF 环境→cp 工程（transport=SDIO 为 esp32c5 Kconfig
+  缺省）→三件套产物。
+- **产物**：`deps/c5-firmware-dist/`（bootloader@0x0 / partition
+  -table@0x8000 / network_adapter@0x10000=ota_0，4M OTA 双槽分区表）。
+  **二进制不入 git**——sha256 回写 `build-support/c5-firmware.json`
+  （机器可查复现链：源 commit+IDF 版本+sdkconfig 基准+产物哈希）。
+- **烧录**：switch key C5 侧经 esptool（--chip esp32c5）三地址
+  write_flash；烧毕切回、复烧 P4 WiFi 闸全链验证。

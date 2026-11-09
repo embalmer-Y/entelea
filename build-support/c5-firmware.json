@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "note": "C5 协处理器 slave 固件产物清单（机器可查复现链）。源 pin=dependencies.json esp_hosted_mcu；构建脚本=build-support/build-c5-firmware.sh；产物存放=/home/emb/project/deps/c5-firmware-dist/（仓库外——二进制不入 git，sha256 在此锚定）。原厂 flash 已整擦状态全片备份=/home/emb/project/c5-reflash/c5-flash-backup-4M.bin。",
+  "firmware": {
+    "chip": "esp32c5",
+    "transport": "sdio",
+    "source_repo": "espressif/esp-hosted-mcu",
+    "source_tag": "v3.0.10",
+    "source_commit": "2e3f6c8bd717d67698319a6a24f9f4218d8db068",
+    "idf_version": "v5.5.4",
+    "sdkconfig_base": "examples/wifi/sta/cp/sdkconfig.defaults(.esp32c5)",
+    "partition_table": "partitions_eh_cp_ota_4m.csv",
+    "artifacts": {
+      "bootloader": {
+        "offset": "0x2000",
+        "sha256": "32659a2b78518746f98a53a71723e45e06f256c9fb218d61cea0916cb648f3cf"
+      },
+      "partition-table": {
+        "offset": "0x8000",
+        "sha256": "73e7f5c6f83081380dbc044da3da17e97b4259524d6abf772f7905ee2f54a57d"
+      },
+      "ota_data_initial": {
+        "offset": "0xd000",
+        "sha256": "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f"
+      },
+      "eh_cp_wifi_sta_app": {
+        "offset": "0x10000",
+        "sha256": "6c9d9c87099aee70a3a45972bba532a1c05fb706f66d95757823933f7eccb222"
+      }
+    },
+    "flash_offsets_note": "官方 build/flash_args 布局：bootloader@0x2000, partition-table@0x8000, ota_data@0xd000, app@0x10000；esptool --no-stub --flash_mode dio --flash_freq 80m --flash_size 4MB 四地址 write_flash",
+    "idf_patch": "官方 eh.py patch-idf（SDIO 4092 上限解除——SW 聚合前提；IDF 工具链副本单文件 diff，已记录）"
+  },
+  "build": {
+    "verified": "2026-11-09 真机：C5 slave 启动 log + P4 WiFi 闸全链 ALL PASS",
+    "evidence": "build/f1-wifi-gate/gate-wifi-allpass.log"
+  }
+}
