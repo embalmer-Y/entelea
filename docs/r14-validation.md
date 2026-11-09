@@ -91,5 +91,22 @@ check_dependencies + source-policy（69→70，tf_probe/main.c 入清单）。
 ## 4. estop 按压实测（已完成）
 
 接线=杜邦线 GPIO20(J4-31)↔GND(J4-3/4)；判据与结果见 §2 按压实测节
-（PASS，闩语义实证）。clear 释放命令面归后续批次；到场电平测量项
-（万用表复核 J4 走线）仍可按原计划独立执行。
+（PASS，闩语义实证）。clear 释放命令面归后续批次。
+
+## 5. 输出通道物理电平测量（r02 遗留到场项闭环）
+
+- **背景**：r02 起输出通道（fault/linkloss 值落驱）只有 native_sim
+  PWM 真路径+影子面覆盖，物理电平从未实测（板无 LED、当时无仪器）。
+- **apps/hw_level_probe**（新）：安全通道 GPIO 输出后端
+  （ENTELEA_DRV_GPIO 真路径）首次板级绑定——输出=GPIO21（J4-32，
+  空闲，与 estop 相邻）/zephyr,user uid+io-gpios；串口节拍叙事
+  （P1 HIGH 30s → P2 LOW 30s → P3a HIGH 20s → P3b estop 窗 45s，
+  estop 闩后 LATCHED 保持）。无 WDT 启动（estop 只闩输出不触发
+  复位——测量窗口稳定）。
+- **owner 万用表实测（2026-11-10）PASS**：P2 低=0.161V（有效逻辑低
+  <<0.8V 线）；P3b 插线后 J4-32=低（**estop→输出物理坍缩**，核心
+  判据）；拔线后 J4-31=高（内部上拉 ≈3.3V）且 **J4-32 仍低**（闩
+  不随拔线释放——闩语义物理面）。读数记录与串口时间线见
+  build/r14-evidence/level-measure-*.{md,log}。
+- **结论**：软件安全语义（commit/force/fault 值）→ 物理电压的全链
+  首次板级闭环；r02 的"物理电平未测"遗留正式关闭。

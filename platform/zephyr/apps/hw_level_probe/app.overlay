@@ -1,0 +1,17 @@
+/*
+ * Copyright (c) 2026 Tessera Project
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * r14 电平测量绑定（/zephyr,user，同 estop 机制）：
+ *   io-gpios  = GPIO21（J4-32，空闲；安全输出通道 probe1 物理面）
+ *   estop-gpios = GPIO20（J4-31，r14 裁决引脚）
+ * 两脚相邻（J4 第 16 对左右），万用表探针好找。
+ */
+/ {
+	zephyr,user {
+		uid = "probe1";
+		io-gpios = <&gpio0 21 GPIO_ACTIVE_HIGH>;
+		estop-gpios = <&gpio0 20 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+	};
+};
