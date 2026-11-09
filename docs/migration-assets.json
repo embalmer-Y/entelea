@@ -246,16 +246,24 @@
       "depends_on": [
         "R01"
       ],
-      "status": "in_progress",
-      "note": "板级批 2026-11-09 执行：flash 后端挂载端口+store 双后端 12/12+真机持久化闸（SW/POWERON 双域四链证据）。剩余：真断电域=到场项；R10 持久 schema 依赖 D06；R12 试用持久（A-4）与 estop 别名随装配。证据 docs/r03-validation.md 板级批节。"
+      "status": "done",
+      "note": "板级批收口：flash 后端挂载端口+store 双后端 12/12+真机持久化闸（SW/POWERON 双域四链+试用跨重启，板级 review 修复后复跑 0 FAIL）。未决如实：真实断电域=到场挂起（owner 2026-11-09 择期）；D10 撤销/擦除具体边界随产品批；宿主文件后端随 D02。证据 docs/r03-validation.md 板级批节。",
+      "evidence_paths": [
+        "docs/r03-validation.md"
+      ],
+      "implementation_commit": "3af1db9"
     },
     {
       "id": "R04",
       "depends_on": [
         "R02"
       ],
-      "status": "in_progress",
-      "note": "软件面已交付（docs/r04-validation.md；r04 套件 5/5）。R02 硬件闸 2026-11-08 已实测关闭——阻塞解除转 in_progress；剩余：计划步骤『截止时间』条目零落点（处置归计划修订/轨道 2）。"
+      "status": "done",
+      "note": "软件面全交付（含 A1 决议补交付的截止时间面——受理门/惰性过期/去重让位，aebe4df）；锁序=单 mutex+write_lock 复用，公平性合同已立（多任务真并发评审延后有记录）。证据 docs/r04-validation.md。",
+      "evidence_paths": [
+        "docs/r04-validation.md"
+      ],
+      "implementation_commit": "4bc4a1d"
     },
     {
       "id": "R05",
@@ -263,8 +271,12 @@
         "R03",
         "R04"
       ],
-      "status": "pending",
-      "note": "软件面已交付（docs/r05-validation.md；pkg 8/8+wasm 5/5）。保持 pending：依赖 R03/R04 未 done；设备/Forge 字节对拍归 R12（计划文本未修订）；D03『宿主调用与可信身份』条款缺位（轨道 2）。"
+      "status": "done",
+      "note": "TSAP/验签/安装链/Wasm 闭环/Lua 机制合同全交付（pkg 8+wasm 6 用例绿；信任表非工厂键判别性测试 c04bf58 前序）；字节对拍经 R-V1 移 R12 工厂任务；D03 宿主调用条款已补（A3）。证据 docs/r05-validation.md。",
+      "evidence_paths": [
+        "docs/r05-validation.md"
+      ],
+      "implementation_commit": "9ac735e"
     },
     {
       "id": "R06",
@@ -272,8 +284,12 @@
         "R04",
         "R05"
       ],
-      "status": "pending",
-      "note": "软件面已交付（docs/r06-validation.md；net 4/4）。保持 pending：依赖 R04/R05 未 done；真网/真云未接（授权边界）；L338 授权有界日志读取/幂等分块未交付（轨道 2）。"
+      "status": "done",
+      "note": "心跳/租约/幂等/依赖状态机+B-1 avq/pubq 传输队列（ba1dc47）；真网实测归真网批（D2 已授权、凭据已备）；L338 日志读取/幂等分块经 R-V2 移真机命令面批。证据 docs/r06-validation.md。",
+      "evidence_paths": [
+        "docs/r06-validation.md"
+      ],
+      "implementation_commit": "44b4131"
     },
     {
       "id": "R07",
@@ -282,8 +298,12 @@
         "R04",
         "R05"
       ],
-      "status": "pending",
-      "note": "软件面已交付（docs/r07-validation.md；linux host PASS）。保持 pending：依赖 R04/R05 未 done；『仅合同测试』路线待计划文本修订（L350-351，轨道 2）；ARM64 实跑随 D02 环境冻结。"
+      "status": "done",
+      "note": "同源合同矩阵+Linux host PASS；'仅合同测试'路线经 R-V5 确认；ARM64 实跑随 D02 环境冻结。证据 docs/r07-validation.md。",
+      "evidence_paths": [
+        "docs/r07-validation.md"
+      ],
+      "implementation_commit": "cada3d8"
     },
     {
       "id": "R08",
@@ -293,8 +313,12 @@
         "R05",
         "R06"
       ],
-      "status": "pending",
-      "note": "软件面已交付（docs/r08-validation.md；assist 4/4+域门用例）。保持 pending：依赖 R03/R04/R05/R06 未 done；模型适配层随云授权；TASK 执行面未实现（轨道 2 点名）。"
+      "status": "done",
+      "note": "辅助闭环+模型适配层（B-2：依赖联动/有界重试/用量台账+主机真调用冒烟）+任务受理面（B-3）；模型真传输随真网批。证据 docs/r08-validation.md。",
+      "evidence_paths": [
+        "docs/r08-validation.md"
+      ],
+      "implementation_commit": "fc5d256"
     },
     {
       "id": "R09",
@@ -304,8 +328,12 @@
         "R05",
         "R06"
       ],
-      "status": "pending",
-      "note": "软件面已交付（docs/r09-validation.md；media 3/3 含按类独立）。保持 pending：依赖 R03/R04/R05/R06 未 done；播放/显示/多消费者/预算/avq 外发未交付（轨道 2 点名）；真后端板级批。"
+      "status": "done",
+      "note": "采集面+按类独立后端（P2 修复后）+生命周期/权限全绿；播放/显示/多消费者/预算经 R-V3 移媒体真后端板级批（D11）；媒体外发决策面同。证据 docs/r09-validation.md。",
+      "evidence_paths": [
+        "docs/r09-validation.md"
+      ],
+      "implementation_commit": "1d66348"
     },
     {
       "id": "R10",
@@ -313,8 +341,12 @@
         "R03",
         "R08"
       ],
-      "status": "pending",
-      "note": "软件面已交付（docs/r10-validation.md；memory 4/4 含墓碑容量边界）。保持 pending：依赖 R03/R08 未 done；持久化/巩固随板级批；D06/D07 真机决策。"
+      "status": "done",
+      "note": "同意/有界/墓碑不复活（容量边界负测）全绿；持久 schema 显式依赖 D06（合同注记——端口已备）；巩固事务/断电域随板级与到场。证据 docs/r10-validation.md。",
+      "evidence_paths": [
+        "docs/r10-validation.md"
+      ],
+      "implementation_commit": "d5feb7e"
     },
     {
       "id": "R11",
@@ -322,8 +354,12 @@
         "R08",
         "R10"
       ],
-      "status": "pending",
-      "note": "软件面已交付（docs/r11-validation.md；affect 3/3）。保持 pending：依赖 R08/R10 未 done；A-AFFECT/A-REFERENCE 输入未迁（轨道 2 点名）；长期轨迹真机批。"
+      "status": "done",
+      "note": "单写者/确定性/版本环+角色连续性（A7）全绿；长期轨迹/真实数月体验=闸文'不冒充'——加速回放机制已证；A-AFFECT/A-REFERENCE 已 reference 登记（A6）。证据 docs/r11-validation.md。",
+      "evidence_paths": [
+        "docs/r11-validation.md"
+      ],
+      "implementation_commit": "43b9162"
     },
     {
       "id": "R12",
@@ -332,8 +368,12 @@
         "R05",
         "R06"
       ],
-      "status": "pending",
-      "note": "软件面已交付（docs/r12-validation.md；delivery 3/3）。保持 pending：依赖 R03/R05/R06 未 done；SDK 接入随获批工厂任务（7.1）；跨重启试用随 D05/板级批。"
+      "status": "done",
+      "note": "D05 单候选/内容绑定/intake 域外拒全绿；跨重启持久（A-4：flush/restore fail-closed+真机证据）；SDK 实际接入=独立获批工厂任务（7.1 批外，D1 资源已齐待执行）；对拍随工厂任务（R-V1）。证据 docs/r12-validation.md。",
+      "evidence_paths": [
+        "docs/r12-validation.md"
+      ],
+      "implementation_commit": "4aa8ff1"
     },
     {
       "id": "R13",
@@ -344,7 +384,8 @@
         "R11",
         "R12"
       ],
-      "status": "pending"
+      "status": "pending",
+      "note": "软件面（配置矩阵+框架合同验收）已交付（e0eaa28）；保持 pending：产品闸未过——D11/D12 产品未决与量化门槛未冻结、首个完整伴侣真机验收未做（含到场三件套）。依赖批全部 done 后即为此批剩余面。"
     }
   ],
   "design_decisions": [
