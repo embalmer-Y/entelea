@@ -84,3 +84,35 @@ python3 tools/build_zephyr.py --app platform/zephyr/tests/store \
   --python ../entelea-legacy/.venv/bin/python3 --build
 ./build/r03-tstore/zephyr/zephyr.exe
 ```
+
+## 板级批（2026-11-09，owner 全权批准后执行；A-1/A-2/A-3）
+
+- **A-1 后端挂载端口**：ops 类型上移公共头；`entelea_storage_mount`
+  （默认 RAM 模板；NULL 复位）。**连带修复**：公共原语
+  （storage_read/write/erase/part_size）原硬编码 ram_*——挂载后
+  prov/pkg 等模块级消费静默走 RAM 残影（flash 变体下 prov 空读出
+  上一用例数据=实证）。新 `platform/zephyr/flash_store.c`：
+  flash_map 映射 storage_partition、扇区取整布局、写块对齐垫片、
+  超集 erase_off。**META 双副本分扇区重映射**（逻辑 512 步长→物理
+  各 4K 扇区）——否则 ping-pong erase_off 一次擦除双杀副本（板级
+  批实测发现）。惰性 RAM 档（ENTELEA_NO_RAM_BACKEND）：flash 目标
+  省 ~540KB SRAM，尺寸表保持权威。
+- **A-2 双后端验收**：store 套件 RAM+flash（native_sim sim-flash，
+  默认 EXPLICIT_ERASE=NOR 擦后写纪律）双变体 12/12。腐化注入手法
+  NOR 合法化（audit=擦后写坏槽；prov CRC=擦后构造错 CRC 记录——
+  RAM oracle 等价）。kv 满页压实复核=先擦对页再写（P3 顾虑在现行
+  代码不成立）。**槽级 CRC 决策（如实）**：audit/kv 槽体无 CRC
+  系旧格式迁移保真——槽内尾损仅 magic/seq 断尾可检；真实撕裂覆盖
+  归到场断电实测（非本批面）。
+- **A-3 真机持久化闸（无人值守，hw_flash_persist）**：P1 经公共
+  API 写 meta/kv/audit → 生产 system_fail(FAIL_BOOT(7)) → SW 复位；
+  P2 验证 meta fnv 字节级一致（9fd2c0a5）/audit 存活/noinit 原因
+  0x00010007 跨复位存活且一次性消费/kv 相位账本；再 EN 硬复位
+  （POWERON 域）→ P3 幂等常驻+kv 保留+无陈旧原因误报。证据：
+  build/hw-gate/flash-persist-run.log / flash-persist-poweron.log
+  （关键行已录于本节）。板级布局：slot0 缩 1MB、storage 1MB@
+  0x120000（与未用 slot1 重叠如实注记——OTA 归 D04 评审）。
+- **未测残留（如实）**：真断电（VBUS）域=到场项；MWDT 复位域 flash
+  保留未直接观测（MWDT 复位本身已证+flash 保持域已证，合取推定）；
+  estop 别名=引脚待 owner 指定（接口已备：app.overlay 加
+  ts-estop-gpio 即接 R02 estop 链）。

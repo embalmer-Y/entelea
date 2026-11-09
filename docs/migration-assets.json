@@ -247,7 +247,7 @@
         "R01"
       ],
       "status": "in_progress",
-      "note": "软件面已交付（docs/r03-validation.md；store 套件 12/12）。保持 in_progress：flash/宿主文件后端与板级持久化/断电恢复随板级批（计划闸+合同+验证三重显式）。"
+      "note": "板级批 2026-11-09 执行：flash 后端挂载端口+store 双后端 12/12+真机持久化闸（SW/POWERON 双域四链证据）。剩余：真断电域=到场项；R10 持久 schema 依赖 D06；R12 试用持久（A-4）与 estop 别名随装配。证据 docs/r03-validation.md 板级批节。"
     },
     {
       "id": "R04",
