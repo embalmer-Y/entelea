@@ -1,0 +1,20 @@
+/*
+ * Copyright (c) 2026 Tessera Project
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * 板级 flash 布局（同 hw_flash_persist/hw_wifi_netmon——storage
+ * 1MB@0x120000）+ r15：TF slot 禁用（P4 两 slot 共享一个 SDMMC
+ * 控制器，TF 枚举失败残留与 C5 slot1 TLS 大流量互扰=CPU exception
+ * 崩溃，r15 真机两轮实证；见 docs/r15-validation.md）。
+ */
+&slot0_partition {
+	reg = <0x00020000 0x00100000>;
+};
+
+&storage_partition {
+	reg = <0x00120000 0x00100000>;
+};
+
+&sdhc0 {
+	status = "disabled";
+};
