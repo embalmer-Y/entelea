@@ -12,6 +12,7 @@ zephyr_include_directories(${ENTELEA_ROOT}/framework/include
 target_sources(app PRIVATE
   src/main.c
   ${ENTELEA_ROOT}/platform/zephyr/boot_steps.c
+  ${ENTELEA_ROOT}/framework/services/config/d12.c
   ${ENTELEA_ROOT}/platform/zephyr/clock.c
   ${ENTELEA_ROOT}/framework/common/time.c
   ${ENTELEA_ROOT}/framework/services/storage/part.c

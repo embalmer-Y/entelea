@@ -667,9 +667,9 @@ ZTEST(framework_store, test_kv_roundtrip_compact_reload)
 ZTEST(framework_store, test_boot_table_has_storage_step)
 {
 	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
-	zassert_equal(ENTELEA_PLATFORM_BOOT_STEP_COUNT, 5);
-	zassert_ok(strcmp(entelea_platform_boot_steps[4].name, "storage_init"));
-	zassert_not_null(entelea_platform_boot_steps[4].fn);
+	zassert_equal(ENTELEA_PLATFORM_BOOT_STEP_COUNT, 6);
+	zassert_ok(strcmp(entelea_platform_boot_steps[5].name, "storage_init"));
+	zassert_not_null(entelea_platform_boot_steps[5].fn);
 }
 
 /* ---- META 跨逻辑副本边界（板级批 review P2-1）：分段翻译正确 ---- */

@@ -43,7 +43,8 @@
     "framework/services/memory/memory.c",
     "framework/services/affect/affect.c",
     "framework/services/delivery/delivery.c",
-    "framework/services/config/config_matrix.c"
+    "framework/services/config/config_matrix.c",
+    "framework/services/config/d12.c"
   ],
   "platform_zephyr": [
     "platform/zephyr/clock.c",
@@ -81,7 +82,9 @@
     "platform/zephyr/apps/hw_level_probe/main.c",
     "platform/zephyr/apps/hw_cloud_chat/main.c",
     "platform/zephyr/https_chat.c",
-    "platform/zephyr/ca_roots.c"
+    "platform/zephyr/ca_roots.c",
+    "platform/zephyr/d12_bootguard.c",
+    "platform/zephyr/tests/d12/src/main.c"
   ],
   "diagnostics": {},
   "protected_output_sources": [

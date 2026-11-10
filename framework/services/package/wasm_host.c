@@ -13,6 +13,7 @@
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <entelea/appstore.h>
+#include <entelea/d12.h>
 #include <entelea/wasm_host.h>
 #include <wasm_export.h>
 
@@ -215,6 +216,13 @@ entelea_result_t entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx,
 	if (fn == NULL) {
 		return ENTELEA_E_PARAM;
 	}
+	{ /* D12 冷却窗前置（异常复位后 60s——E_BUSY 拒执行） */
+		entelea_result_t gate = entelea_d12_wasm_allow();
+
+		if (gate != ENTELEA_OK) {
+			return gate;
+		}
+	}
 	wasm_function_inst_t f =
 		wasm_runtime_lookup_function(it->inst, fn);
 
@@ -231,8 +239,9 @@ entelea_result_t entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx,
 	 * （无界执行），入口 clamp 2e9 封顶。 */
 	uint32_t quota = timeout_ms;
 
-	if (quota > 2000000U) {
-		quota = 2000000U; /* 2e9 指令（int 域内） */
+	if (quota > 100000U) {
+		quota = 100000U; /* D12 默认配额 1e8 指令（owner v1；
+				  * 上限 2e9 clamp 保留——提额需随批修订） */
 	}
 	wasm_runtime_set_instruction_count_limit(it->env,
 						 (int)(quota * 1000U));

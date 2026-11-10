@@ -14,6 +14,7 @@ target_compile_definitions(app PRIVATE ENTELEA_NO_RAM_BACKEND=1)
 target_sources(app PRIVATE
   main.c
   ${ENTELEA_ROOT}/platform/zephyr/boot_steps.c
+  ${ENTELEA_ROOT}/framework/services/config/d12.c
   ${ENTELEA_ROOT}/platform/zephyr/clock.c
   ${ENTELEA_ROOT}/platform/zephyr/flash_store.c
   ${ENTELEA_ROOT}/framework/common/time.c

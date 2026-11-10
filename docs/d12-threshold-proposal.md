@@ -1,4 +1,4 @@
-# D12 产品验收阈值 · 保守建议值方案（v1，供 owner 裁决）
+# D12 产品验收阈值 · 保守方案 v1（owner 2026-11-10 已批准；[B] 项落地见 docs/r16-validation.md）
 
 > 依据：docs/board-osptek-p4c5-resource-budget.md 实测数据 + r02-r15
 > 真机验证记录。原则：**① 已验证实现值直接冻结（零改动最保守）

@@ -2,10 +2,32 @@
 /* R02 平台装配启动表：estop GPIO → 全通道安全起始态 → WDT 启动 →
  * 监督就绪（占位锚定顺序）。后续业务批次只在尾部追加步骤。 */
 #include <zephyr/toolchain.h> /* __weak */
+#include <entelea/d12.h>
 #include <entelea/safety.h>
 #include <entelea/storage.h>
 #include <entelea/wdt.h>
 #include "boot_steps.h"
+#include "clock.h"
+#include <entelea/time.h>
+
+/* D12 启动防护（板级强实现=d12_bootguard.c；无实现板=native_sim/
+ * 测试=空过）。SAFE-HALT 判定经 entelea_platform_d12_safe_halt 由
+ * 装配层消费（防护不进 system_fail——那会 MWDT 复位+1 反成风暴源）。 */
+__weak bool entelea_platform_d12_bootguard(void)
+{
+	return false;
+}
+
+static entelea_result_t step_d12_bootguard(void)
+{
+	static entelea_clock_t d12_clock; /* 独立实例（uptime 单调，幂等） */
+
+	(void)entelea_d12_bind_clock(
+		entelea_platform_clock_init(&d12_clock) == ENTELEA_OK
+			? &d12_clock : NULL);
+	(void)entelea_platform_d12_bootguard();
+	return ENTELEA_OK; /* SAFE-HALT 判定归装配层（见上注） */
+}
 
 /* 板级 flash 后端弱桩（R03 板级批）：默认无 flash 面（RAM 后端）；
  * 链接 platform/zephyr/flash_store.c 的目标获得强实现。 */
@@ -53,6 +75,7 @@ static entelea_result_t step_storage_init(void)
 }
 
 const entelea_boot_step_t entelea_platform_boot_steps[ENTELEA_PLATFORM_BOOT_STEP_COUNT] = {
+	{"d12_bootguard", step_d12_bootguard},
 	{"estop_gpio", step_estop_gpio},
 	{"safety_poweron", step_safety_poweron},
 	{"wdt_start", step_wdt_start},

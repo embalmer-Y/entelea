@@ -2,6 +2,27 @@
 /* R08 辅助闭环测试：有界窗/触发/候选权限门/保护层唯一路径/云停用。 */
 #include <string.h>
 #include <zephyr/ztest.h>
+#include <entelea/time.h>
+#include <entelea/d12.h>
+
+static entelea_result_t fake_read_ms(void *user, uint64_t *out)
+{
+	*out = *(uint64_t *)user; /* 测试时钟：显式推进 */
+	return ENTELEA_OK;
+}
+
+/* r16：d12 闸接入面——model_test_reset 不动 d12，各段 reset 后重绑。 */
+static void bind_d12_fake(void)
+{
+	static uint64_t fake_now;
+	static entelea_clock_t d12_clock;
+
+	fake_now = 0;
+	entelea_d12_test_reset();
+	zassert_ok(entelea_clock_init(&d12_clock, fake_read_ms,
+				      &fake_now, 0xD12));
+	zassert_ok(entelea_d12_bind_clock(&d12_clock));
+}
 #include <entelea/assistant.h>
 #include <entelea/capability.h>
 #include <entelea/events.h>
@@ -356,6 +377,7 @@ ZTEST(framework_assist, test_model_adapter_policy)
 
 	entelea_model_test_reset();
 	entelea_net_test_reset();
+	bind_d12_fake();
 	mock_calls = 0;
 	memset(mock_next_rc, 0, sizeof(mock_next_rc));
 	strcpy(mock_answer, "pong");
@@ -398,6 +420,7 @@ ZTEST(framework_assist, test_model_adapter_policy)
 
 	/* E_TIMEOUT 不自动重试（成本不可知——显式上抛）。 */
 	entelea_model_test_reset();
+	bind_d12_fake();
 	entelea_model_bind(&mock_transport, NULL); /* reset 解绑——重绑 */
 	mock_calls = 0;
 	memset(mock_next_rc, 0, sizeof(mock_next_rc));
@@ -407,6 +430,7 @@ ZTEST(framework_assist, test_model_adapter_policy)
 	zassert_equal(mock_calls, 1, "超时不重试");
 
 	/* 依赖再 DOWN：回到联动门。 */
+	bind_d12_fake();
 	entelea_dep_report(ENTELEA_DEP_NET, false, 0);
 	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
 		      ENTELEA_E_STATE);

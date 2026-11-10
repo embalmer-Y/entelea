@@ -7,6 +7,7 @@
  * RETRIES 封顶——成本可控；退避策略随真机批校准）。
  */
 #include <string.h>
+#include <entelea/d12.h>
 #include <entelea/model.h>
 #include <entelea/netmon.h>
 
@@ -44,6 +45,14 @@ entelea_result_t entelea_model_ask(const entelea_model_msg_t *msgs, uint8_t n,
 	if (!entelea_model_ready()) {
 		return ENTELEA_E_STATE; /* 依赖联动：不触传输（D08） */
 	}
+	{
+		/* D12 闸（冷却/频度/风暴）前置——被闸即不触传输。 */
+		entelea_result_t gate = entelea_d12_model_allow();
+
+		if (gate != ENTELEA_OK) {
+			return gate;
+		}
+	}
 	entelea_result_t r = ENTELEA_E_IO;
 
 	for (uint32_t attempt = 0; attempt <= ENTELEA_MODEL_RETRIES; attempt++) {
@@ -63,6 +72,7 @@ entelea_result_t entelea_model_ask(const entelea_model_msg_t *msgs, uint8_t n,
 		}
 		out[0] = '\0'; /* 重试前清残影（失败路径不留半答） */
 	}
+	entelea_d12_model_note(r); /* 终态上报（成功清风暴/E_BUSY 冷却） */
 	if (usage_out != NULL) {
 		*usage_out = total_usage;
 	}

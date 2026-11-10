@@ -360,12 +360,12 @@ ZTEST(framework_core, test_boot_step_order_is_spec)
 	 * R02 四步 = 旧 M1 四步（core_init 占位更名 supervision_ready）；
 	 * 后续业务批次只在尾部追加。 */
 	static const char *const expected[] = {
-		"estop_gpio", "safety_poweron", "wdt_start", "supervision_ready",
-		"storage_init",
+		"d12_bootguard", "estop_gpio", "safety_poweron", "wdt_start",
+		"supervision_ready", "storage_init",
 	};
 
-	zassert_equal(ENTELEA_PLATFORM_BOOT_STEP_COUNT, 5,
-		      "step count = R02 四步 + R03 storage_init 尾部追加");
+	zassert_equal(ENTELEA_PLATFORM_BOOT_STEP_COUNT, 6,
+		      "step count = r16 d12 首步 + R02 四步 + R03 尾部追加");
 	for (int i = 0; i < ENTELEA_PLATFORM_BOOT_STEP_COUNT; i++) {
 		zassert_ok(strcmp(entelea_platform_boot_steps[i].name, expected[i]),
 			   "boot step order changed at %d", i);

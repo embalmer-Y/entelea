@@ -5,6 +5,7 @@
 #include <string.h>
 #include <zephyr/ztest.h>
 #include <entelea/appstore.h>
+#include <entelea/d12.h>
 #include <entelea/package.h>
 #include <entelea/principal.h>
 #include <entelea/storage.h>
@@ -94,11 +95,26 @@ static void stage_signed(uint8_t slot, const uint8_t *wasm, uint32_t wlen)
 	zassert_equal(entelea_pkg_stage_chunk(slot,n+tn+plen+2,sb,64),ENTELEA_OK);
 }
 
+static uint64_t d12_fake_now; /* r16：d12 冷却窗面（wasm_allow） */
+
+static entelea_result_t d12_fake_read_ms(void *user, uint64_t *out)
+{
+	*out = *(uint64_t *)user;
+	return ENTELEA_OK;
+}
+
 static void *wasm_setup(void)
 {
+	static entelea_clock_t d12_clock;
+
 	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
 	entelea_wasm_test_reset();
 	entelea_perm_test_reset();
+	d12_fake_now = 0;
+	entelea_d12_test_reset();
+	zassert_ok(entelea_clock_init(&d12_clock, d12_fake_read_ms,
+				      &d12_fake_now, 0xD12));
+	zassert_ok(entelea_d12_bind_clock(&d12_clock));
 	return NULL;
 }
 
