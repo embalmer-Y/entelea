@@ -10,6 +10,8 @@
 #include <entelea/supervision.h>
 #include <entelea/wdt.h>
 #include "boot_steps.h"
+
+extern bool entelea_platform_d12_safe_halt(void); /* d12_bootguard.c */
 #include "clock.h"
 
 static entelea_clock_t platform_clock;
@@ -39,6 +41,21 @@ int main(void)
 			       reason);
 		}
 	}
+#ifdef ENTELEA_STORM_DEMO
+	/* r16 storm 演示变体（--cmake-arg=-DSTORM_DEMO=ON）：强制异常复位
+	 * 循环——system_fail→wdt 停喂→MWDT 复位（cause=WATCHDOG=异常）。
+	 * bootguard 计数 ≥3 后 SAFE-HALT 常驻（喂狗不 fail）。POR 可出。 */
+	if (entelea_platform_d12_safe_halt()) {
+		printk("[storm-demo] SAFE-HALT confirmed (business halted, "
+		       "feeding)\n");
+	} else {
+		printk("[storm-demo] forcing abnormal reset in 3s...\n");
+		k_sleep(K_SECONDS(3));
+		entelea_safety_system_fail(ENTELEA_FAIL_BOOT(7));
+	}
+	k_sleep(K_FOREVER);
+	return 0;
+#endif
 	for (;;) {
 		/* r14 真机观测面：5s 心跳打印安全汇总 + estop 闩（estop
 		 * 闸判据行；事件本体仍经 WDT 巡检补发 EVT_ESTOP）。 */

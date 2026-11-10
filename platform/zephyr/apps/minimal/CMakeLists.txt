@@ -27,3 +27,7 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/execution/safety/force.c
   ${ENTELEA_ROOT}/framework/execution/safety/drivers.c
 )
+
+if(STORM_DEMO)
+  target_compile_definitions(app PRIVATE ENTELEA_STORM_DEMO=1)
+endif()

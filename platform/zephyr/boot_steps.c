@@ -75,10 +75,10 @@ static entelea_result_t step_storage_init(void)
 }
 
 const entelea_boot_step_t entelea_platform_boot_steps[ENTELEA_PLATFORM_BOOT_STEP_COUNT] = {
-	{"d12_bootguard", step_d12_bootguard},
 	{"estop_gpio", step_estop_gpio},
 	{"safety_poweron", step_safety_poweron},
 	{"wdt_start", step_wdt_start},
 	{"supervision_ready", step_supervision_ready},
 	{"storage_init", step_storage_init},
+	{"d12_bootguard", step_d12_bootguard},
 };

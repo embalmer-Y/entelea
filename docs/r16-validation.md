@@ -24,9 +24,16 @@ platform d12_bootguard.c、tests/d12 套件、boot_steps 首步 d12_bootguard
 
 - r16-minimal 烧录：boot 6 步过、estop lvl=1、RAM 红线 PASS、
   常驻心跳=soak 启动。
-- **storm 触发链真机演示 defer**：需连续 3 次异常复位变体
-  （下批到场 5 分钟可验：连按 EN 无法造异常——用 estop 长按 +
-  WDT 或专用变体镜像；逻辑面 ztest 已覆盖）。
+- **storm 触发链真机演示 PASS（2026-11-10/11）**：STORM_DEMO 变体
+  （minimal 条件编译：system_fail→WDT 停喂→MWDT 复位）自动循环——
+  abnormal #1/#2/#3 计数跨复位累加（LP retained RAM）→ #4 启动
+  RESET-STORM SAFE-HALT 常驻喂狗。证据
+  build/r16-evidence/storm-demo-RESET-STORM.log。
+  **攻坚副产物（三连坑，全真机实证）**：①__noinit 宏不达段
+  ②.dram0.noinit 带 load address=flash 装载恢复段（不跨复位，读值
+  固定=b9b6a4cd 证据）③storage noinit 槽与 last_reset 留痕单槽互踩
+  ——终解=LP 域 retained RAM（retained_mem API；POR 自然清=风暴窗
+  出）。变体经 --cmake-arg=-DSTORM_DEMO=ON（默认不编译）。
 
 ## 回归
 

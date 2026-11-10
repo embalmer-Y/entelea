@@ -19,3 +19,17 @@
 &storage_partition {
 	reg = <0x00120000 0x00100000>;
 };
+
+&retainedmem {
+	/* r16 storm 计数：LP 域 retained RAM（跨 soft/WDT 复位保留、POR
+	 * 清=天然风暴窗出；dram0.noinit 实证为 flash 装载恢复段不可用）。 */
+	status = "okay";
+	ranges;
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	d12retained: d12-retained {
+		compatible = "zephyr,retained-ram";
+		status = "okay";
+	};
+};
