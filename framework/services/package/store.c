@@ -276,11 +276,14 @@ entelea_result_t entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
 		return ENTELEA_E_IO;
 	}
 
-	/* COSE_Sign1 精确子集：tag18 + array4。 */
+	/* COSE_Sign1 精确子集：tag18 + array4。读失败 = E_IO，格式不符 =
+	 * E_INVALID_SIG（RF1：介质故障不得改写为包坏）。 */
 	uint8_t tag[2];
 
-	if (entelea_pkg_slot_read(slot, v->cose_off, tag, 2) != ENTELEA_OK ||
-	    tag[0] != 0xd2 || tag[1] != 0x84) {
+	if (entelea_pkg_slot_read(slot, v->cose_off, tag, 2) != ENTELEA_OK) {
+		return ENTELEA_E_IO;
+	}
+	if (tag[0] != 0xd2 || tag[1] != 0x84) {
 		return ENTELEA_E_INVALID_SIG;
 	}
 	uint32_t pos = v->cose_off + 2;
@@ -289,7 +292,10 @@ entelea_result_t entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
 	uint8_t hl;
 
 	r = read_head(slot, pos, 2, &el, &hl);
-	if (r != ENTELEA_OK || el != COSE_PHDR_LEN) {
+	if (r != ENTELEA_OK) {
+		return r;
+	}
+	if (el != COSE_PHDR_LEN) {
 		return ENTELEA_E_INVALID_SIG;
 	}
 	if (entelea_pkg_slot_read(slot, pos + hl, phdr, el) != ENTELEA_OK) {
@@ -303,20 +309,29 @@ entelea_result_t entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
 	pos += hl + el;
 
 	r = read_head(slot, pos, 5, &el, &hl);
-	if (r != ENTELEA_OK || el != 0 || hl != 1) {
+	if (r != ENTELEA_OK) {
+		return r;
+	}
+	if (el != 0 || hl != 1) {
 		return ENTELEA_E_INVALID_SIG;
 	}
 	pos += hl;
 
 	r = read_head(slot, pos, 2, &el, &hl);
-	if (r != ENTELEA_OK || el != v->manifest_len + v->wasm_len) {
+	if (r != ENTELEA_OK) {
+		return r;
+	}
+	if (el != v->manifest_len + v->wasm_len) {
 		return ENTELEA_E_INVALID_SIG;
 	}
 	const uint32_t payload_data = pos + hl;
 	pos += hl + el;
 
 	r = read_head(slot, pos, 2, &el, &hl);
-	if (r != ENTELEA_OK || el != 64) {
+	if (r != ENTELEA_OK) {
+		return r;
+	}
+	if (el != 64) {
 		return ENTELEA_E_INVALID_SIG;
 	}
 	const uint32_t sig_off = pos + hl;

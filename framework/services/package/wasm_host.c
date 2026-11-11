@@ -5,10 +5,11 @@
  * WAMR 编译面（CMake 消费方接线见 tests/wasm/CMakeLists.txt）：
  * fast 解释器 + INSTRUCTION_METERING（步预算）+ WASI 关 + 池模式
  * （旧 DEC-17/25/31/48③）。
- * 最小闭环：load（已验 slot）→ call（导出函数，步预算到期=E_TIMEOUT
- * 有界停止）→ stop（实例销毁，模块保留——换包重启路径）。
- * natives：本子闭环注册 1 个代表 native（host_read_clock——宿主注入
- * principal 的裁决证明）；全符号集随 R06+ 消费面扩展。
+ * 最小闭环：load（已验 slot；owner 此时绑定）→ call（仅 owner；导出
+ * ABI 白名单；步预算到期=E_TIMEOUT 有界停止）→ stop（实例销毁，模块
+ * 保留——换包重启路径）。
+ * natives：本子闭环注册 1 个代表 native（"entelea"."host_probe" (i)i
+ * ——按绑定 owner 裁决）；全符号集随 R06+ 消费面扩展。
  */
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -55,8 +56,8 @@ static int32_t native_host_probe(wasm_exec_env_t env,
 }
 
 #ifdef ENTELEA_TEST
-/* 裁决面直达钩子（sample.wasm 无导入——VM 内调用路径随工厂夹具；
- * 授权/E_PERM 两分支的判决函数在此直接验证，不冒充 VM 路径）。 */
+/* 裁决函数直达钩子（伪造/失效 principal 等难以经 load 构造的输入）；
+ * VM→native 真路径由 tests/wasm 的导入夹具覆盖。 */
 int32_t entelea_wasm_test_probe_decide(entelea_principal_t owner,
 				       uint32_t ignored)
 {
@@ -89,29 +90,35 @@ entelea_result_t entelea_wasm_init(void)
 	if (!wasm_runtime_full_init(&args)) {
 		return ENTELEA_E_IO;
 	}
-	if (wasm_runtime_register_natives("entelea", native_syms,
-					  sizeof(native_syms) /
-						  sizeof(native_syms[0])) < 0) {
+	/* RF1：返回 bool（原 `< 0` 恒假——失败被吞）。无 natives 的宿主
+	 * 不得报 OK：回滚运行时，未初始化态可重试。 */
+	if (!wasm_runtime_register_natives("entelea", native_syms,
+					   sizeof(native_syms) /
+						   sizeof(native_syms[0]))) {
+		wasm_runtime_destroy();
 		return ENTELEA_E_IO;
 	}
 	wamr_inited = true;
 	return ENTELEA_OK;
 }
 
-static uint8_t *load_bytes(uint8_t slot, const entelea_tsap_view_t *v,
-			   uint32_t *len_out)
+/* 装载缓冲：WAMR 要求可写且存活至 unload——仅在无模块引用时覆写。 */
+static entelea_result_t load_bytes(uint8_t slot, const entelea_tsap_view_t *v,
+				   uint8_t **bytes_out)
 {
 	static uint8_t buf[ENTELEA_APP_SLOT_SIZE / 4]; /* 64KB 装载上限 */
 
 	if (v->wasm_len > sizeof(buf)) {
-		return NULL;
+		return ENTELEA_E_RANGE;
 	}
-	if (entelea_pkg_slot_read(slot, v->wasm_off, buf, v->wasm_len) !=
-	    ENTELEA_OK) {
-		return NULL;
+	entelea_result_t rc =
+		entelea_pkg_slot_read(slot, v->wasm_off, buf, v->wasm_len);
+
+	if (rc != ENTELEA_OK) {
+		return rc;
 	}
-	*len_out = v->wasm_len;
-	return buf;
+	*bytes_out = buf;
+	return ENTELEA_OK;
 }
 
 static struct inst *find_free(void)
@@ -134,54 +141,80 @@ static struct inst *find_app(uint32_t app_id)
 	return NULL;
 }
 
-/* 模块缓存（单模块——V1 单实例；换包 = destroy+重 load）。 */
+/* 唯一模块（V1 单实例）：活实例引用它与装载缓冲，存活期间不得卸载/覆写。 */
 static wasm_module_t module;
-static uint8_t module_slot = 0xFF;
 
-entelea_result_t entelea_wasm_load(uint8_t slot, uint32_t *app_id_out)
+static bool same_principal(entelea_principal_t a, entelea_principal_t b)
+{
+	return a._handle == b._handle && a._gen == b._gen &&
+	       a.app_id == b.app_id;
+}
+
+/* 导出 ABI 白名单 ()->i32 | (i32)->i32：返回形参个数；不符 = -1。 */
+static int abi_params(wasm_function_inst_t f, wasm_module_inst_t mi)
+{
+	wasm_valkind_t k;
+
+	if (wasm_func_get_result_count(f, mi) != 1) {
+		return -1;
+	}
+	wasm_func_get_result_types(f, mi, &k);
+	if (k != WASM_I32) {
+		return -1;
+	}
+	uint32_t pc = wasm_func_get_param_count(f, mi);
+
+	if (pc == 0) {
+		return 0;
+	}
+	if (pc != 1) {
+		return -1;
+	}
+	wasm_func_get_param_types(f, mi, &k);
+	return k == WASM_I32 ? 1 : -1;
+}
+
+entelea_result_t entelea_wasm_load(uint8_t slot, entelea_principal_t owner,
+				   uint32_t *app_id_out)
 {
 	if (app_id_out == NULL || slot >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_PARAM;
 	}
-	if (!wamr_inited && entelea_wasm_init() != ENTELEA_OK) {
-		return ENTELEA_E_IO;
+	entelea_result_t rc = entelea_wasm_init();
+
+	if (rc != ENTELEA_OK) {
+		return rc;
+	}
+	/* RF1 P1-7：占用先拒且零副作用（原先卸模块后查空槽——活实例引用
+	 * 已释放模块）。 */
+	struct inst *it = find_free();
+
+	if (it == NULL || entelea_wasm_instance_count() != 0) {
+		return ENTELEA_E_BUSY;
 	}
 	entelea_tsap_view_t v;
 
-	if (entelea_pkg_verify(slot, NULL, &v, NULL) != ENTELEA_OK) {
-		return ENTELEA_E_INVALID_SIG;
+	rc = entelea_pkg_verify(slot, NULL, &v, NULL);
+	if (rc != ENTELEA_OK) {
+		return rc; /* RF1：原样传播（介质 E_IO ≠ 包坏 E_INVALID_SIG） */
 	}
-	uint32_t len = 0;
-	uint8_t *bytes = load_bytes(slot, &v, &len);
+	/* 每次 load 卸旧重建：同槽重暂存后旧缓存不得复活（验签对象与执行
+	 * 对象同为新字节）。先卸再覆写装载缓冲。 */
+	if (module != NULL) {
+		wasm_runtime_unload(module);
+		module = NULL;
+	}
+	uint8_t *bytes = NULL;
 
-	if (bytes == NULL) {
-		return ENTELEA_E_RANGE;
+	rc = load_bytes(slot, &v, &bytes);
+	if (rc != ENTELEA_OK) {
+		return rc;
 	}
 	char err[128];
 
-	if (module != NULL && module_slot != slot) {
-		wasm_runtime_unload(module);
-		module = NULL;
-	}
-	/* review P2 修复：同槽重暂存（re-stage）后旧缓存不得复活——
-	 * 验签对象是新字节，执行对象必须同为新字节。无 cheap digest 面
-	 * （本层不做哈希）——直接在每次 load 时卸载重建（最小闭环的
-	 * 单实例语义下成本可接受；缓存归后续需求）。 */
-	if (module != NULL && module_slot == slot) {
-		wasm_runtime_unload(module);
-		module = NULL;
-	}
+	module = wasm_runtime_load(bytes, v.wasm_len, err, sizeof(err));
 	if (module == NULL) {
-		module = wasm_runtime_load(bytes, len, err, sizeof(err));
-		if (module == NULL) {
-			return ENTELEA_E_IO;
-		}
-		module_slot = slot;
-	}
-	struct inst *it = find_free();
-
-	if (it == NULL) {
-		return ENTELEA_E_BUSY; /* 单实例占用（V1） */
+		return ENTELEA_E_IO;
 	}
 	it->inst = wasm_runtime_instantiate(module, ENTELEA_WASM_STACK_SIZE,
 					    8192, err, sizeof(err));
@@ -196,17 +229,15 @@ entelea_result_t entelea_wasm_load(uint8_t slot, uint32_t *app_id_out)
 	}
 	it->used = true;
 	it->app_id = (uint32_t)(it - insts) + 1;
-	it->owner = (entelea_principal_t){0};
+	it->owner = owner; /* RF1 P1-8：身份在 load 绑定，call 不可替换 */
 	wasm_runtime_set_user_data(it->env, it);
-	if (app_id_out != NULL) {
-		*app_id_out = it->app_id;
-	}
+	*app_id_out = it->app_id;
 	return ENTELEA_OK;
 }
 
 entelea_result_t entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx,
-				   const char *fn, uint32_t timeout_ms,
-				   int32_t *ret_out)
+				   const char *fn, int32_t arg,
+				   uint32_t timeout_ms, int32_t *ret_out)
 {
 	struct inst *it = find_app(app_id);
 
@@ -215,6 +246,10 @@ entelea_result_t entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx,
 	}
 	if (fn == NULL) {
 		return ENTELEA_E_PARAM;
+	}
+	/* RF1 P1-8：仅绑定 owner 可调用（拒绝不执行、不销毁实例）。 */
+	if (!same_principal(ctx, it->owner)) {
+		return ENTELEA_E_PERM;
 	}
 	{ /* D12 冷却窗前置（异常复位后 60s——E_BUSY 拒执行） */
 		entelea_result_t gate = entelea_d12_wasm_allow();
@@ -229,23 +264,27 @@ entelea_result_t entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx,
 	if (f == NULL) {
 		return ENTELEA_E_NOTFOUND;
 	}
-	it->owner = ctx; /* natives 裁决身份（注入） */
-	uint32_t argv[1] = {0};
-	uint32_t argc = 1;
+	/* RF1 P1-8：签名不在白名单 / 无参函数收到非零 arg = E_PARAM（不执行、
+	 * 不销毁；原硬编码 argv={0} 静默丢弃入参）。 */
+	int np = abi_params(f, it->inst);
 
-	/* 有界执行：timeout_ms 经步预算指令配额近似（指令/毫秒比率上限
-	 * ——DEC-48③ 语义；到期 = WAMR 配额异常 = E_TIMEOUT 有界停止）。
-	 * review P3-7：WAMR 形参 int——≥2^31 隐式截断为负=预算失效
-	 * （无界执行），入口 clamp 2e9 封顶。 */
+	if (np < 0 || (np == 0 && arg != 0)) {
+		return ENTELEA_E_PARAM;
+	}
+	uint32_t argv[1] = {(uint32_t)arg};
+
+	/* 有界执行：timeout_ms 经步预算指令配额近似（1000 指令/ms——DEC-48③
+	 * 语义；到期 = WAMR 配额异常 = E_TIMEOUT 有界停止）。WAMR 形参为
+	 * int，封顶 1e8（D12 owner v1 配额）远低于 INT_MAX，不会截断为负。
+	 * timeout_ms=0 = 零配额（首条指令即到期），不是“默认/无界”。 */
 	uint32_t quota = timeout_ms;
 
 	if (quota > 100000U) {
-		quota = 100000U; /* D12 默认配额 1e8 指令（owner v1；
-				  * 上限 2e9 clamp 保留——提额需随批修订） */
+		quota = 100000U; /* 提额需随批修订 D12 配额 */
 	}
 	wasm_runtime_set_instruction_count_limit(it->env,
 						 (int)(quota * 1000U));
-	bool ok = wasm_runtime_call_wasm(it->env, f, argc, argv);
+	bool ok = wasm_runtime_call_wasm(it->env, f, (uint32_t)np, argv);
 
 	if (!ok) {
 		/* 异常面（E-2 收窄）：配额到期 ≠ trap——到期=E_TIMEOUT
@@ -309,6 +348,9 @@ void entelea_wasm_test_reset(void)
 		wasm_runtime_unload(module);
 		module = NULL;
 	}
-	module_slot = 0xFF;
+	if (wamr_inited) { /* 运行时与 natives 一并回收：每用例从零 init */
+		wasm_runtime_destroy();
+		wamr_inited = false;
+	}
 }
 #endif

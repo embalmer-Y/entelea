@@ -68,7 +68,9 @@ typedef struct {
 	entelea_lua_fmt_t format;
 } entelea_lua_contract_t;
 
-/** 定序键确定性编码（map{version,mem_kb,steps,fmt}；域外=PARAM）。 */
+/** 确定性编码，与 Forge build_manifest 逐字节一致：map(4){0:version,
+ * 1:mem_kb, 2:steps, 3:fmt(lua=1)}，int 键升序、整数最短编码。域外/未知
+ * 版本或格式 = E_PARAM（拒绝时不写 out/out_len）。 */
 entelea_result_t entelea_lua_contract_encode(
 	const entelea_lua_contract_t *c,
 	uint8_t out[ENTELEA_LUA_CONTRACT_CBOR_MAX], uint32_t *out_len);

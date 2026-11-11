@@ -116,6 +116,34 @@ bool entelea_lua_exec_step(entelea_lua_exec_budget_t *b)
 
 /* ---- 工厂产物描述（接入合同结构体——R12 Forge 对拍面） ---- */
 
+/* CBOR 无符号整数（RFC 8949 首选序列化：最短编码）。 */
+static uint32_t put_uint(uint8_t *out, uint32_t v)
+{
+	if (v < 24U) {
+		out[0] = (uint8_t)v;
+		return 1;
+	}
+	if (v < 256U) {
+		out[0] = 0x18;
+		out[1] = (uint8_t)v;
+		return 2;
+	}
+	if (v < 65536U) {
+		out[0] = 0x19;
+		out[1] = (uint8_t)(v >> 8);
+		out[2] = (uint8_t)v;
+		return 3;
+	}
+	out[0] = 0x1a;
+	out[1] = (uint8_t)(v >> 24);
+	out[2] = (uint8_t)(v >> 16);
+	out[3] = (uint8_t)(v >> 8);
+	out[4] = (uint8_t)v;
+	return 5;
+}
+
+/* 与 Forge packer build_manifest 逐字节一致：map(4){0:version, 1:mem_kb,
+ * 2:steps, 3:fmt}，int 键按数值升序（RFC 8949 确定性编码）。 */
 entelea_result_t entelea_lua_contract_encode(
 	const entelea_lua_contract_t *c, uint8_t out[ENTELEA_LUA_CONTRACT_CBOR_MAX],
 	uint32_t *out_len)
@@ -123,8 +151,8 @@ entelea_result_t entelea_lua_contract_encode(
 	if (c == NULL || out == NULL || out_len == NULL) {
 		return ENTELEA_E_PARAM;
 	}
-	if (c->version != 1) {
-		return ENTELEA_E_PARAM; /* 未知合同版本 fail-closed */
+	if (c->version != 1 || c->format != ENTELEA_LUA_FMT_BINARY) {
+		return ENTELEA_E_PARAM; /* 未知合同版本/载荷格式 fail-closed */
 	}
 	if (c->mem_quota_kb == 0 || c->mem_quota_kb > 512 ||
 	    c->exec_budget_steps == 0 ||
@@ -132,27 +160,15 @@ entelea_result_t entelea_lua_contract_encode(
 		return ENTELEA_E_PARAM; /* 域外（建议上限：内存 512KB/步
 					 * 1e7——工厂生成侧约束面） */
 	}
+	const uint32_t val[4] = {c->version, c->mem_quota_kb,
+				 c->exec_budget_steps, (uint32_t)c->format};
 	uint32_t n = 0;
 
-	out[n++] = 0xa4; /* map(4) 定序键 */
-	memcpy(out + n, "\x67version", 8);
-	n += 8;
-	out[n++] = c->version;
-	memcpy(out + n, "\x67mem_kb", 8);
-	n += 8;
-	out[n++] = 0x19; /* u16 */
-	out[n++] = (uint8_t)(c->mem_quota_kb >> 8);
-	out[n++] = (uint8_t)c->mem_quota_kb;
-	memcpy(out + n, "\x65steps", 6);
-	n += 6;
-	out[n++] = 0x1a; /* u32 */
-	out[n++] = (uint8_t)(c->exec_budget_steps >> 24);
-	out[n++] = (uint8_t)(c->exec_budget_steps >> 16);
-	out[n++] = (uint8_t)(c->exec_budget_steps >> 8);
-	out[n++] = (uint8_t)c->exec_budget_steps;
-	memcpy(out + n, "\x63fmt", 4);
-	n += 4;
-	out[n++] = 0x01; /* binary */
-	*out_len = n;
+	out[n++] = 0xa4;
+	for (uint32_t k = 0; k < 4; k++) {
+		out[n++] = (uint8_t)k;
+		n += put_uint(out + n, val[k]);
+	}
+	*out_len = n; /* 上限 1(map)+4(键)+1+3+5+1 = 15 ≤ CBOR_MAX */
 	return ENTELEA_OK;
 }

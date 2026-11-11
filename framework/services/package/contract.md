@@ -17,7 +17,8 @@
   {1:-8}+map(0)+payload+sig(64)）→ 内嵌 payload 副本逐块比对裸段
   （签 A 装 B 防御）→ tweetnacl ed25519（逐字节未改上游；PROVENANCE
   登记）。多根信任集：工厂根（TEST=固定测试根 / 生产=prov pk0+pk1）
-  ∪ R03 信任表（去重），任一过即过。
+  ∪ R03 信任表（去重），任一过即过。读错误 = E_IO，格式/签名不符 =
+  E_INVALID_SIG，两者不互相改写（RF1）。
 - 装载前复核验签（wasm_load 双层纪律——本层不信任"曾经验证过"）。
 
 ## Wasm 宿主（最小闭环）
@@ -25,12 +26,17 @@
 - WAMR pinned 25bd7eb（DEC-17/25/31/48③ 编译面：fast 解释器+指令配额
   +WASI 关+池模式；256KB 池）。app 模式下 WAMR 源直接编入 app 目标
   （独立 zephyr 库不保序且不入链——上游 §878 语义）。
-- 生命周期：load（验签复核+64KB 装载上限）→ instantiate（模块对象
-  rt 级持有——换包重启路径语义）→ call（导出函数+**步预算指令配额**：
-  超限 → E_TIMEOUT 有界停止+实例销毁，不静默续跑）→ stop。
-- natives：仅信宿主注入 principal（user_data 注入面；Wasm 传入整数
-  不可转 principal——与 R04 同纪律）。本闭环 1 个代表 native
-  （host_probe：gpio:read:0 门证明）；全符号集随 R06+ 消费面扩展。
+- 生命周期：load(slot, owner)（V1 单实例：已有活实例 = E_BUSY 且零
+  副作用；验签复核，错误原样传播；64KB 装载上限 = E_RANGE；owner 此时
+  绑定）→ call → stop（实例销毁，模块保留至下次 load 卸旧重建）。
+- call：ctx ≠ owner = E_PERM；导出 ABI 仅 ()->i32 / (i32)->i32（前者
+  arg 必须为 0，后者收到 arg），其余 = E_PARAM——这些拒绝不执行、不销毁
+  实例。**步预算指令配额**（1000 指令/ms，封顶 1e8）：到期 → E_TIMEOUT
+  有界停止；其余 trap → E_IO；两者都销毁实例。
+- natives：只按 load 绑定的 owner 裁决（user_data；Wasm 传入整数不可转
+  principal；owner={0} 未绑定 = 一律拒）。natives 注册失败 = init E_IO 并
+  回滚运行时。代表 native "entelea"."host_probe" (i)i（gpio:read:0 门），
+  VM→native 真路径由导入夹具覆盖；全符号集随 R06+ 消费面扩展。
 
 ## D03 Lua 接入合同（关键可行性验证——不冒充正式支持）
 
@@ -50,13 +56,15 @@
   判定与内存/执行预算闸同序先行。机制面由 Wasm 代表 native
   （`entelea_wasm_test_probe_decide`）佐证；Lua 侧同一形状随正式
   运行支持批（D03 后续）落地实测。
-- **工厂产物描述**：合同结构体确定性编码（map{version,mem_kb,steps,
-  fmt}；域外=PARAM）——R12 Forge 对拍面。
+- **工厂产物描述**：确定性编码，与 Forge build_manifest 逐字节一致：
+  map(4){0:version,1:mem_kb,2:steps,3:fmt(lua=1)}，int 键升序、整数
+  最短编码；域外或未知版本/格式 = PARAM（RF1 前该编码为畸形 CBOR）。
 - **如实边界**：无解释器依赖（未批准新依赖）；真 Lua VM 停止延迟
   实测归正式支持批次；本验证证明接入合同的机制可行性。
 
 ## 未测与边界
 
-真实 Forge/设备字节对拍（工厂闭环归 R12）；多实例并发（V1 单实例）；
+Forge/设备字节对拍仅以同一组边界向量各自验证（Forge 无构建期自动
+对拍）；多实例并发（V1 单实例）；
 natives 全符号集（R06+ 消费面驱动）；线程/共享内存（DEC-55 面归
 后续）；Lua 正式运行支持交付批次（D03 建议=R08 前）。

@@ -176,23 +176,23 @@ int main(void)
 	    "trial confirm -> ACTIVE");
 
 	/* 6) 执行工厂产物：load + run（入参 0 → 2*0+1=1）+ spin（0 次空转
-	 *    → 0）。principal=空（无导入模块——natives 不触发）。 */
+	 *    → 0）。owner=未绑定（无导入模块——natives 不触发）。 */
+	entelea_principal_t ctx = {0};
 	uint32_t app = 0;
 	entelea_result_t wl = entelea_wasm_init() == ENTELEA_OK
-				     ? entelea_wasm_load(0, &app)
+				     ? entelea_wasm_load(0, ctx, &app)
 				     : ENTELEA_E_IO;
 
 	printk("[hw-fact] wasm load rc=%d app=%u\n", (int)wl, app);
 	CHK(wl == ENTELEA_OK && app == 1, "wasm load (verified slot, app=1)");
-	entelea_principal_t ctx = {0};
 	int32_t ret = -1;
 
-	CHK(entelea_wasm_call(app, ctx, "run", 2000, &ret) == ENTELEA_OK &&
+	CHK(entelea_wasm_call(app, ctx, "run", 0, 2000, &ret) == ENTELEA_OK &&
 		    ret == 1,
 	    "call run -> 2*0+1 == 1 (sdk artifact executes)");
 	ret = -1;
 	{
-		entelea_result_t sr = entelea_wasm_call(app, ctx, "spin",
+		entelea_result_t sr = entelea_wasm_call(app, ctx, "spin", 0,
 						       2000, &ret);
 
 		printk("[hw-fact] spin rc=%d ret=%d\n", (int)sr, ret);
@@ -201,7 +201,7 @@ int main(void)
 
 	/* 7) 真死循环有界停止（R-V1 夹具：hang 无条件循环，步预算到期 →
 	 *    E_TIMEOUT + 实例销毁——替代 wasm 测试"预算 0"技巧证据）。 */
-	CHK(entelea_wasm_call(app, ctx, "hang", 50, &ret) ==
+	CHK(entelea_wasm_call(app, ctx, "hang", 0, 50, &ret) ==
 		    ENTELEA_E_TIMEOUT &&
 		    entelea_wasm_instance_count() == 0,
 	    "call hang (real infinite loop) -> E_TIMEOUT bounded stop");

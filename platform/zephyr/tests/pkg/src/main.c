@@ -446,3 +446,61 @@ ZTEST(framework_pkg, test_lua_contract_encode)
 	bad.exec_budget_steps = 0;
 	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n), ENTELEA_E_PARAM);
 }
+
+/* RF1：与 Forge build_manifest 逐字节一致（int 键 0..3、RFC 8949 首选
+ * 最短整数编码）。向量由独立参考编码生成并经 RFC 8949 附录 A 自检，
+ * 覆盖 23/24、255/256、65535/65536 各边界。 */
+ZTEST(framework_pkg, test_rf1_lua_contract_bytes)
+{
+	static const struct {
+		uint16_t kb;
+		uint32_t steps;
+		uint32_t n;
+		uint8_t b[14];
+	} v[] = {
+		{1, 1, 9, {0xa4, 0x00, 0x01, 0x01, 0x01, 0x02, 0x01, 0x03, 0x01}},
+		{23, 23, 9, {0xa4, 0x00, 0x01, 0x01, 0x17, 0x02, 0x17, 0x03, 0x01}},
+		{24, 24, 11, {0xa4, 0x00, 0x01, 0x01, 0x18, 0x18, 0x02, 0x18, 0x18,
+			      0x03, 0x01}},
+		{255, 255, 11, {0xa4, 0x00, 0x01, 0x01, 0x18, 0xff, 0x02, 0x18, 0xff,
+				0x03, 0x01}},
+		{256, 256, 13, {0xa4, 0x00, 0x01, 0x01, 0x19, 0x01, 0x00, 0x02, 0x19,
+				0x01, 0x00, 0x03, 0x01}},
+		{512, 65535, 13, {0xa4, 0x00, 0x01, 0x01, 0x19, 0x02, 0x00, 0x02,
+				  0x19, 0xff, 0xff, 0x03, 0x01}},
+		{64, 65536, 14, {0xa4, 0x00, 0x01, 0x01, 0x18, 0x40, 0x02, 0x1a, 0x00,
+				 0x01, 0x00, 0x00, 0x03, 0x01}},
+		{64, 10000000, 14, {0xa4, 0x00, 0x01, 0x01, 0x18, 0x40, 0x02, 0x1a,
+				    0x00, 0x98, 0x96, 0x80, 0x03, 0x01}},
+		{64, 100000, 14, {0xa4, 0x00, 0x01, 0x01, 0x18, 0x40, 0x02, 0x1a, 0x00,
+				  0x01, 0x86, 0xa0, 0x03, 0x01}},
+	};
+	uint8_t buf[ENTELEA_LUA_CONTRACT_CBOR_MAX];
+
+	for (size_t i = 0; i < ARRAY_SIZE(v); i++) {
+		const entelea_lua_contract_t c = {
+			.version = 1, .mem_quota_kb = v[i].kb,
+			.exec_budget_steps = v[i].steps,
+			.format = ENTELEA_LUA_FMT_BINARY,
+		};
+		uint32_t n = 0;
+
+		zassert_equal(entelea_lua_contract_encode(&c, buf, &n), ENTELEA_OK,
+			      "case %u", (unsigned)i);
+		zassert_equal(n, v[i].n, "case %u len %u", (unsigned)i,
+			      (unsigned)n);
+		zassert_mem_equal(buf, v[i].b, v[i].n, "case %u bytes",
+				  (unsigned)i);
+	}
+	/* 未知载荷格式不得被编码成 Lua（此前 fmt 字节硬编码）。 */
+	entelea_lua_contract_t bad = {
+		.version = 1, .mem_quota_kb = 64, .exec_budget_steps = 100000,
+		.format = (entelea_lua_fmt_t)0,
+	};
+	uint32_t n = 0xAAAAAAAAU;
+
+	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n), ENTELEA_E_PARAM);
+	bad.format = (entelea_lua_fmt_t)2;
+	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n), ENTELEA_E_PARAM);
+	zassert_equal(n, 0xAAAAAAAAU, "拒绝时不写出长度");
+}
