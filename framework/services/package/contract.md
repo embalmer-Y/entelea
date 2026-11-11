@@ -20,6 +20,11 @@
   ∪ R03 信任表（去重），任一过即过。读错误 = E_IO，格式/签名不符 =
   E_INVALID_SIG，两者不互相改写（RF1）。
 - 装载前复核验签（wasm_load 双层纪律——本层不信任"曾经验证过"）。
+- 包事实（RF1）：verify 通过后记录 `pkg_len`=sig_off+64（签名末尾；
+  越 slot 界=E_INVALID_SIG）；`entelea_pkg_file_digest(slot, len, out)`=
+  sha256 覆盖 [0, len)，len 取 verify 的 pkg_len（与 Forge
+  `package_digest` 同域；读错误=E_IO，参数域外=E_PARAM）。`pkg_activate`
+  只记录事实，**不授予执行资格**——执行资格由 R12 试用门裁决。
 
 ## Wasm 宿主（最小闭环）
 
@@ -27,8 +32,11 @@
   +WASI 关+池模式；256KB 池）。app 模式下 WAMR 源直接编入 app 目标
   （独立 zephyr 库不保序且不入链——上游 §878 语义）。
 - 生命周期：load(slot, owner)（V1 单实例：已有活实例 = E_BUSY 且零
-  副作用；验签复核，错误原样传播；64KB 装载上限 = E_RANGE；owner 此时
-  绑定）→ call → stop（实例销毁，模块保留至下次 load 卸旧重建）。
+  副作用；验签复核，错误原样传播；64KB 装载上限 = E_RANGE；**试用门
+  在卸旧模块之前查询**，E_PERM/E_IO 零副作用；owner 此时绑定）→ call
+  → stop（实例销毁，模块保留至下次 load 卸旧重建）。
+- call 前**复查试用门**（按装载时记录的 slot+digest）：门已撤销（试用
+  结束后同槽新候选、未确认）= E_PERM，不执行、不销毁实例。
 - call：ctx ≠ owner = E_PERM；导出 ABI 仅 ()->i32 / (i32)->i32（前者
   arg 必须为 0，后者收到 arg），其余 = E_PARAM——这些拒绝不执行、不销毁
   实例。**步预算指令配额**（1000 指令/ms，封顶 1e8）：到期 → E_TIMEOUT

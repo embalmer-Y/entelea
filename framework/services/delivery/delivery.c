@@ -2,20 +2,28 @@
 /*
  * R12 试用状态机 + Forge 集成契约（新-only；合同见本目录 contract.md）。
  * 编程循环=OpenHands Software Agent SDK（owner 已确认）——SDK 侧循环
- * 不在固件内；本层=固件试用状态机（单候选/内容绑定确认/fail-closed
- * 超时）+ 工厂产物 intake（域外拒/未知 payload 拒）。
+ * 不在固件内；本层=固件试用状态机（单候选/对象绑定确认/执行门/
+ * fail-closed 超时与恢复）+ 工厂产物 intake（域外拒/未知 payload 拒）。
  * 工程通过≠用户验收：confirm 是唯一晋升路径（用户显式）。
+ * 单线程假设：全部入口 [thread]，无内部锁（与 wasm 宿主同线程）。
  */
 #include <string.h>
+#include <entelea/appstore.h>
 #include <entelea/delivery.h>
 #include <entelea/storage.h>
 
 static entelea_trial_state_t state;
 static entelea_trial_candidate_t current;
+static uint32_t last_epoch; /* 最近一次 submit 赋出的纪元（0=从未） */
+
+static void clear_candidate(void)
+{
+	memset(&current, 0, sizeof(current));
+}
 
 entelea_result_t entelea_trial_submit(const entelea_trial_candidate_t *cand)
 {
-	if (cand == NULL) {
+	if (cand == NULL || cand->slot >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_PARAM;
 	}
 	if (state == ENTELEA_TRIAL_ACTIVE) {
@@ -27,15 +35,32 @@ entelea_result_t entelea_trial_submit(const entelea_trial_candidate_t *cand)
 					 * 静默替换（内容绑定完整性）。
 					 * reject/timeout 先行释放。 */
 	}
+	if (state != ENTELEA_TRIAL_NONE &&
+	    current.slot != ENTELEA_TRIAL_SLOT_UNKNOWN &&
+	    cand->slot != current.slot) {
+		return ENTELEA_E_BUSY; /* 槽保留：被拒/超时字节仍受门拒，
+					 * 换槽会使其脱离试用门——重推须同槽 */
+	}
 	current = *cand;
+	last_epoch = (last_epoch == UINT32_MAX) ? 1U : last_epoch + 1U;
+	current.epoch = last_epoch;
 	state = ENTELEA_TRIAL_PENDING_CONFIRM;
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_trial_confirm(void)
+entelea_result_t entelea_trial_confirm(const entelea_trial_candidate_t *shown)
 {
+	if (shown == NULL) {
+		return ENTELEA_E_PARAM;
+	}
 	if (state != ENTELEA_TRIAL_PENDING_CONFIRM) {
 		return ENTELEA_E_STATE;
+	}
+	if (memcmp(shown->digest, current.digest, sizeof(current.digest)) != 0 ||
+	    shown->permissions != current.permissions ||
+	    shown->version != current.version || shown->slot != current.slot ||
+	    shown->epoch != current.epoch) {
+		return ENTELEA_E_PERM; /* 过期/不符的确认对象：保持 PENDING */
 	}
 	state = ENTELEA_TRIAL_ACTIVE; /* 用户显式确认——唯一晋升路径 */
 	return ENTELEA_OK;
@@ -64,7 +89,7 @@ entelea_result_t entelea_trial_end(void)
 	if (state != ENTELEA_TRIAL_ACTIVE) {
 		return ENTELEA_E_STATE;
 	}
-	memset(&current, 0, sizeof(current));
+	clear_candidate(); /* 纪元计数保留（跨候选单调） */
 	state = ENTELEA_TRIAL_NONE;
 	return ENTELEA_OK;
 }
@@ -81,11 +106,28 @@ void entelea_trial_current(entelea_trial_candidate_t *out)
 	}
 }
 
+entelea_result_t entelea_trial_gate(uint8_t slot, const uint8_t digest[32])
+{
+	if (digest == NULL) {
+		return ENTELEA_E_PARAM;
+	}
+	if (state == ENTELEA_TRIAL_NONE ||
+	    (current.slot != ENTELEA_TRIAL_SLOT_UNKNOWN && slot != current.slot)) {
+		return ENTELEA_OK; /* 试用政策不管辖（稳定集准入=D05） */
+	}
+	if (state == ENTELEA_TRIAL_ACTIVE &&
+	    memcmp(digest, current.digest, sizeof(current.digest)) == 0) {
+		return ENTELEA_OK; /* 仅用户已确认的那份字节 */
+	}
+	return ENTELEA_E_PERM;
+}
+
 /* ---- 工厂 intake（域外/未知 payload fail-closed） ---- */
 
-entelea_result_t entelea_factory_intake(const entelea_factory_candidate_t *fc)
+entelea_result_t entelea_factory_intake(const entelea_factory_candidate_t *fc,
+					uint8_t slot)
 {
-	if (fc == NULL) {
+	if (fc == NULL || slot >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_PARAM;
 	}
 	if (fc->payload_kind > 1) {
@@ -101,45 +143,74 @@ entelea_result_t entelea_factory_intake(const entelea_factory_candidate_t *fc)
 	memcpy(tc.digest, fc->package_digest, 32);
 	tc.permissions = fc->permissions;
 	tc.version = fc->runtime_version;
+	tc.slot = slot;
 	return entelea_trial_submit(&tc);
 }
 
-/* ---- 跨重启持久（板级批 A-4）：记录布局（小端）
- * u8 ver=1 | u8 state | u8 cand_version | u8 rsv | u16 permissions |
- * digest[32]。恢复 fail-closed：任意不符 → NONE。 */
-#define TRIAL_PERSIST_VER 1U
+/* ---- 跨重启持久（板级批 A-4；RF1 v2）：记录布局（小端）
+ * u8 ver=2 | u8 state | u8 cand_version | u8 slot | u16 permissions |
+ * u32 last_epoch | digest[32]（42B）。v1 不迁移（按坏记录处置）。 */
+#define TRIAL_PERSIST_VER 2U
+#define TRIAL_REC_LEN (10U + 32U)
 
 entelea_result_t entelea_trial_flush(void)
 {
-	uint8_t rec[4 + 2 + 32];
+	uint8_t rec[TRIAL_REC_LEN];
 
 	rec[0] = TRIAL_PERSIST_VER;
 	rec[1] = (uint8_t)state;
 	rec[2] = current.version;
-	rec[3] = 0;
+	rec[3] = current.slot;
 	rec[4] = (uint8_t)current.permissions;
 	rec[5] = (uint8_t)(current.permissions >> 8);
-	memcpy(rec + 6, current.digest, sizeof(current.digest));
+	rec[6] = (uint8_t)last_epoch;
+	rec[7] = (uint8_t)(last_epoch >> 8);
+	rec[8] = (uint8_t)(last_epoch >> 16);
+	rec[9] = (uint8_t)(last_epoch >> 24);
+	memcpy(rec + 10, current.digest, sizeof(current.digest));
 	return entelea_storage_meta_write(rec, sizeof(rec));
 }
 
 entelea_result_t entelea_trial_restore(void)
 {
-	uint8_t rec[4 + 2 + 32];
+	uint8_t rec[TRIAL_REC_LEN];
 	uint16_t len = 0;
+	const entelea_result_t r = entelea_storage_meta_read(rec, sizeof(rec), &len);
 
-	if (entelea_storage_meta_read(rec, &len) != ENTELEA_OK ||
-	    len != sizeof(rec) || rec[0] != TRIAL_PERSIST_VER ||
-	    rec[1] > ENTELEA_TRIAL_TIMEOUT || rec[3] != 0) {
-		/* 无记录/坏记录：fail-closed 归 NONE（不复活垃圾）。 */
+	clear_candidate();
+	if (r == ENTELEA_E_IO) {
+		/* 双副本皆不可读（与从未落盘不可区分）→ NONE（残余见合同）。 */
 		state = ENTELEA_TRIAL_NONE;
-		memset(&current, 0, sizeof(current));
 		return ENTELEA_OK;
 	}
+	const bool whole = r == ENTELEA_OK && len == sizeof(rec);
+	const uint32_t ep = whole ? (uint32_t)rec[6] | ((uint32_t)rec[7] << 8) |
+					    ((uint32_t)rec[8] << 16) |
+					    ((uint32_t)rec[9] << 24)
+				  : 0U;
+	const bool valid = whole && rec[0] == TRIAL_PERSIST_VER &&
+			   rec[1] <= ENTELEA_TRIAL_TIMEOUT &&
+			   (rec[1] == ENTELEA_TRIAL_NONE ||
+			    (rec[3] < ENTELEA_APP_SLOT_COUNT && ep != 0U));
+
+	if (!valid) {
+		/* 记录存在但超长/版本/域外/不自洽：fail-closed 约束态，候选槽
+		 * 不可知 → 两槽均受门拒，直至新候选提交并确认。 */
+		state = ENTELEA_TRIAL_TIMEOUT;
+		current.slot = ENTELEA_TRIAL_SLOT_UNKNOWN;
+		return ENTELEA_OK;
+	}
+	if (ep > last_epoch) {
+		last_epoch = ep; /* 单调：恢复不回退纪元计数 */
+	}
 	state = (entelea_trial_state_t)rec[1];
-	current.version = rec[2];
-	current.permissions = (uint16_t)(rec[4] | ((uint16_t)rec[5] << 8));
-	memcpy(current.digest, rec + 6, sizeof(current.digest));
+	if (state != ENTELEA_TRIAL_NONE) {
+		current.version = rec[2];
+		current.slot = rec[3];
+		current.permissions = (uint16_t)(rec[4] | ((uint16_t)rec[5] << 8));
+		current.epoch = ep;
+		memcpy(current.digest, rec + 10, sizeof(current.digest));
+	}
 	return ENTELEA_OK;
 }
 
@@ -147,6 +218,7 @@ entelea_result_t entelea_trial_restore(void)
 void entelea_trial_test_reset(void)
 {
 	state = ENTELEA_TRIAL_NONE;
-	memset(&current, 0, sizeof(current));
+	clear_candidate();
+	last_epoch = 0;
 }
 #endif

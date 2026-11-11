@@ -35,6 +35,7 @@ typedef struct {
 	uint32_t manifest_off;
 	uint32_t wasm_off;
 	uint32_t cose_off;
+	uint32_t pkg_len; /* 规范包长=COSE 签名末尾（仅验签成功后置位；否则 0） */
 } entelea_tsap_view_t;
 
 static inline uint32_t entelea_be32(const uint8_t *p)
@@ -72,6 +73,7 @@ static inline bool entelea_tsap_parse_fields(const uint8_t *hdr,
 	if (v->manifest_len == 0 || v->wasm_len == 0) {
 		return false;
 	}
+	v->pkg_len = 0;
 	v->manifest_off = ENTELEA_TSAP_CONTENT_OFF;
 	v->wasm_off = ENTELEA_TSAP_CONTENT_OFF + v->manifest_len;
 	v->cose_off = v->wasm_off + v->wasm_len;

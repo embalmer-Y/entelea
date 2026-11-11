@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # D-3 最小工厂闭环闸：WAMR 编译面同 tests/wasm（fast interp+配额+WASI
 # 关+池 256KB）；工厂产物头经 FACTORY_PKG_HEADER 注入（默认=forge
-# artifacts/run001）。板级 SRAM 预算：ENTELEA_NO_RAM_BACKEND=1（flash
+# artifacts/run004）。板级 SRAM 预算：ENTELEA_NO_RAM_BACKEND=1（flash
 # 后端为唯一持久面——同 hw_flash_persist 纪律）。
+# FACTORY_DEV_AUTOCONFIRM=ON：开发自动确认+执行夹具（无用户验收效力）。
 cmake_minimum_required(VERSION 3.20.0)
 
-set(FACTORY_PKG_HEADER "/home/emb/project/workspace/forge/artifacts/run003/factory_pkg.h"
+set(FACTORY_PKG_HEADER "/home/emb/project/workspace/forge/artifacts/run004/factory_pkg.h"
     CACHE STRING "Forge 工厂产物头（tsap_pack.py 生成）")
+option(FACTORY_DEV_AUTOCONFIRM "dev-only auto-confirm (no user acceptance)" OFF)
 if(NOT EXISTS ${FACTORY_PKG_HEADER})
   message(FATAL_ERROR "factory package header missing: ${FACTORY_PKG_HEADER}")
 endif()
@@ -66,6 +68,9 @@ zephyr_include_directories(${WAMR_DIR}/core/iwasm/include
                            ${CMAKE_CURRENT_SOURCE_DIR}
                            ${FACTORY_PKG_DIR})
 target_compile_definitions(app PRIVATE ENTELEA_NO_RAM_BACKEND=1)
+if(FACTORY_DEV_AUTOCONFIRM)
+  target_compile_definitions(app PRIVATE FACTORY_DEV_AUTOCONFIRM=1)
+endif()
 target_sources(app PRIVATE
   main.c
   ${WAMR_RUNTIME_LIB_SOURCE}

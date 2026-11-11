@@ -385,6 +385,38 @@ entelea_result_t entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
 	if (!verified) {
 		return ENTELEA_E_INVALID_SIG;
 	}
+	/* 规范包长 = 签名 bstr 末尾（COSE_Sign1 末元素；Forge package_digest
+	 * 的输入域）。签名读已受 slot 界约束，此处显式再界。 */
+	if ((uint64_t)sig_off + 64U > (uint64_t)SLOT_SZ) {
+		return ENTELEA_E_INVALID_SIG;
+	}
+	v->pkg_len = sig_off + 64U;
+	return ENTELEA_OK;
+}
+
+entelea_result_t entelea_pkg_file_digest(uint8_t slot, uint32_t len,
+					 uint8_t out[32])
+{
+	if (slot >= ENTELEA_APP_SLOT_COUNT || out == NULL || len == 0 ||
+	    len > SLOT_SZ) {
+		return ENTELEA_E_PARAM;
+	}
+	uint32_t st[8];
+	uint8_t buf[512];
+	uint32_t off = 0;
+
+	entelea_sha256_stream_init(st);
+	while (off < len) {
+		const uint32_t n = len - off > sizeof(buf) ? (uint32_t)sizeof(buf)
+							   : len - off;
+
+		if (entelea_pkg_slot_read(slot, off, buf, n) != ENTELEA_OK) {
+			return ENTELEA_E_IO;
+		}
+		entelea_sha256_stream_update(st, buf, n);
+		off += n;
+	}
+	entelea_sha256_stream_final(st, out);
 	return ENTELEA_OK;
 }
 

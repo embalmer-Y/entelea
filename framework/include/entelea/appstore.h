@@ -36,9 +36,15 @@ entelea_result_t entelea_pkg_stage_chunk(uint8_t slot, uint32_t off,
 entelea_result_t entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
 				    entelea_tsap_view_t *v, uint8_t digest_out[32]);
 
-/** 激活（meta 记录 active slot）。激活本身不做验签前置——它是包**事实
- * 记录**，安全由两层强制：装载链（wasm_host）装载前复核验签，未经
- * 验签的 active 不产生任何执行（pkg 测试如实呈现该分层）。 */
+/** 整文件摘要：sha256(slot[0, len))；len 取验签视图 pkg_len（=Forge
+ * package_digest 输入域）。slot/len 域外=E_PARAM，读失败=E_IO。
+ * 共享全局 sha256 流上下文——不可与其他流交错（单线程假设）。 */
+entelea_result_t entelea_pkg_file_digest(uint8_t slot, uint32_t len,
+					 uint8_t out[32]);
+
+/** 激活（KV "PAGA" 记录 active slot）。它只是包**事实记录**，不授予
+ * 执行权：装载链（wasm_host）装载前复核验签 + R12 试用门；稳定集
+ * 准入/晋升归 D05（未决）。 */
 entelea_result_t entelea_pkg_activate(uint8_t slot);
 
 /** 当前 active slot（无 = E_UNINIT；介质/初始化错误如实传播）。 */

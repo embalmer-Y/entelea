@@ -77,8 +77,11 @@ void entelea_storage_last_reset(uint32_t *reason, bool *present);
 entelea_result_t entelea_storage_meta_write(const void *buf, uint16_t len);
 
 /** [thread] 活动 = 序号较大且 CRC 通过者；单副本损毁可恢复；
- * 双副本皆损 = ENTELEA_E_IO（调用方按缺省安全态/fail-safe，不伪造）。 */
-entelea_result_t entelea_storage_meta_read(void *buf, uint16_t *len);
+ * 双副本皆损 = ENTELEA_E_IO（调用方按缺省安全态/fail-safe，不伪造）。
+ * cap = buf 容量：活动记录长于 cap = ENTELEA_E_RANGE 且 buf/len 不写
+ * （RF1：原按记录长写出，越界写调用方缓冲）。 */
+entelea_result_t entelea_storage_meta_read(void *buf, uint16_t cap,
+					   uint16_t *len);
 
 /* ---- noinit 留痕（一次性） ---- */
 

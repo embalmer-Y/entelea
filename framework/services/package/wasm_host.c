@@ -5,9 +5,9 @@
  * WAMR 编译面（CMake 消费方接线见 tests/wasm/CMakeLists.txt）：
  * fast 解释器 + INSTRUCTION_METERING（步预算）+ WASI 关 + 池模式
  * （旧 DEC-17/25/31/48③）。
- * 最小闭环：load（已验 slot；owner 此时绑定）→ call（仅 owner；导出
- * ABI 白名单；步预算到期=E_TIMEOUT 有界停止）→ stop（实例销毁，模块
- * 保留——换包重启路径）。
+ * 最小闭环：load（已验 slot + R12 试用门；owner 此时绑定）→ call（仅
+ * owner；试用门复核；导出 ABI 白名单；步预算到期=E_TIMEOUT 有界停止）
+ * → stop（实例销毁，模块保留——换包重启路径）。
  * natives：本子闭环注册 1 个代表 native（"entelea"."host_probe" (i)i
  * ——按绑定 owner 裁决）；全符号集随 R06+ 消费面扩展。
  */
@@ -15,6 +15,7 @@
 #include <zephyr/kernel.h>
 #include <entelea/appstore.h>
 #include <entelea/d12.h>
+#include <entelea/delivery.h>
 #include <entelea/wasm_host.h>
 #include <wasm_export.h>
 
@@ -26,6 +27,8 @@ struct inst {
 	wasm_module_inst_t inst;
 	wasm_exec_env_t env;
 	entelea_principal_t owner;
+	uint8_t slot;       /* 装载来源（试用门复核对象） */
+	uint8_t digest[32]; /* 装载时整文件 sha256 */
 };
 static struct inst insts[MAX_INST];
 static bool wamr_inited;
@@ -198,6 +201,18 @@ entelea_result_t entelea_wasm_load(uint8_t slot, entelea_principal_t owner,
 	if (rc != ENTELEA_OK) {
 		return rc; /* RF1：原样传播（介质 E_IO ≠ 包坏 E_INVALID_SIG） */
 	}
+	/* RF1 #9：R12 试用门——候选 slot 仅用户已确认的那份字节可装载
+	 * （摘要域=Forge package_digest 域）。拒绝先于卸旧模块（零副作用）。 */
+	uint8_t dg[32];
+
+	rc = entelea_pkg_file_digest(slot, v.pkg_len, dg);
+	if (rc != ENTELEA_OK) {
+		return rc;
+	}
+	rc = entelea_trial_gate(slot, dg);
+	if (rc != ENTELEA_OK) {
+		return rc;
+	}
 	/* 每次 load 卸旧重建：同槽重暂存后旧缓存不得复活（验签对象与执行
 	 * 对象同为新字节）。先卸再覆写装载缓冲。 */
 	if (module != NULL) {
@@ -230,6 +245,8 @@ entelea_result_t entelea_wasm_load(uint8_t slot, entelea_principal_t owner,
 	it->used = true;
 	it->app_id = (uint32_t)(it - insts) + 1;
 	it->owner = owner; /* RF1 P1-8：身份在 load 绑定，call 不可替换 */
+	it->slot = slot;
+	memcpy(it->digest, dg, sizeof(it->digest));
 	wasm_runtime_set_user_data(it->env, it);
 	*app_id_out = it->app_id;
 	return ENTELEA_OK;
@@ -250,6 +267,14 @@ entelea_result_t entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx,
 	/* RF1 P1-8：仅绑定 owner 可调用（拒绝不执行、不销毁实例）。 */
 	if (!same_principal(ctx, it->owner)) {
 		return ENTELEA_E_PERM;
+	}
+	{ /* RF1 #9：试用门复核（装载后同槽新候选/拒绝/超时 → E_PERM；
+	   * 不执行、不销毁实例） */
+		entelea_result_t tg = entelea_trial_gate(it->slot, it->digest);
+
+		if (tg != ENTELEA_OK) {
+			return tg;
+		}
 	}
 	{ /* D12 冷却窗前置（异常复位后 60s——E_BUSY 拒执行） */
 		entelea_result_t gate = entelea_d12_wasm_allow();

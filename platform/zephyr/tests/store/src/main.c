@@ -38,7 +38,7 @@ ZTEST(framework_store, test_meta_roundtrip_and_tear)
 	uint16_t len = 0;
 
 	/* 空：双副本皆无 → E_IO（不伪造缺省成功）。 */
-	zassert_equal(entelea_storage_meta_read(buf, &len), ENTELEA_E_IO);
+	zassert_equal(entelea_storage_meta_read(buf, sizeof(buf), &len), ENTELEA_E_IO);
 
 	/* 写读往返 ×6（seq 递增切换副本；MD1.1b 回归：第 3/5 轮后 copy0
 	 * 较新，旧实现共用读缓冲读回旧副本内容）。 */
@@ -51,7 +51,7 @@ ZTEST(framework_store, test_meta_roundtrip_and_tear)
 		zassert_equal(entelea_storage_meta_write(w, 32), ENTELEA_OK);
 		uint8_t r[64];
 
-		zassert_equal(entelea_storage_meta_read(r, &len), ENTELEA_OK);
+		zassert_equal(entelea_storage_meta_read(r, sizeof(r), &len), ENTELEA_OK);
 		zassert_equal(len, 32);
 		zassert_ok(memcmp(r, w, 32), "round %d", round);
 	}
@@ -60,19 +60,19 @@ ZTEST(framework_store, test_meta_roundtrip_and_tear)
 	zassert_equal(entelea_storage_meta_corrupt_test(1), ENTELEA_OK);
 	uint8_t r[64];
 
-	zassert_equal(entelea_storage_meta_read(r, &len), ENTELEA_OK,
+	zassert_equal(entelea_storage_meta_read(r, sizeof(r), &len), ENTELEA_OK,
 		      "单副本损坏可恢复");
 	zassert_equal(len, 32);
 
 	/* 双副本皆损 → E_IO（启动按缺省安全态，不自动"修复"）。 */
 	zassert_equal(entelea_storage_meta_corrupt_test(0), ENTELEA_OK);
-	zassert_equal(entelea_storage_meta_read(r, &len), ENTELEA_E_IO);
+	zassert_equal(entelea_storage_meta_read(r, sizeof(r), &len), ENTELEA_E_IO);
 
 	/* 撕裂后写恢复：单副本存活 → 写非活动副本继续。 */
 	uint8_t w2[8] = {1, 2, 3, 4, 5, 6, 7, 8};
 
 	zassert_equal(entelea_storage_meta_write(w2, 8), ENTELEA_OK);
-	zassert_equal(entelea_storage_meta_read(r, &len), ENTELEA_OK);
+	zassert_equal(entelea_storage_meta_read(r, sizeof(r), &len), ENTELEA_OK);
 	zassert_equal(len, 8);
 	zassert_ok(memcmp(r, w2, 8));
 }
@@ -90,8 +90,8 @@ ZTEST(framework_store, test_meta_params_and_bounds)
 		      ENTELEA_E_PARAM, "超容量拒绝");
 	zassert_equal(entelea_storage_meta_write(buf, ENTELEA_STORAGE_META_MAX),
 		      ENTELEA_OK, "恰满容量可写");
-	zassert_equal(entelea_storage_meta_read(NULL, &len), ENTELEA_E_PARAM);
-	zassert_equal(entelea_storage_meta_read(buf, NULL), ENTELEA_E_PARAM);
+	zassert_equal(entelea_storage_meta_read(NULL, sizeof(buf), &len), ENTELEA_E_PARAM);
+	zassert_equal(entelea_storage_meta_read(buf, sizeof(buf), NULL), ENTELEA_E_PARAM);
 	/* 分区端口越界（u32 回绕含在内）：off/len 越界拒绝。 */
 	uint8_t scratch[8];
 
@@ -1030,6 +1030,41 @@ ZTEST(framework_store, test_audit_torn_and_read_error)
 	zassert_equal(out[1].seq, 2);
 	zassert_equal(out[2].seq, 3, "重扫后 seq=有效最大+1（坏槽不可见、不复用）");
 	inj_end();
+}
+
+/* RF1 #9（G4）：meta_read 须按调用方容量收窄——活动记录长于目标缓冲 =
+ * 显式拒绝且零写出（原 API 无容量参数：按记录长 memcpy，越界写调用方栈）。 */
+ZTEST(framework_store, test_rf1_meta_read_respects_capacity)
+{
+	struct {
+		uint8_t small[16];
+		uint8_t guard[48];
+	} g;
+	uint8_t w[40];
+	uint16_t len = 0xBEEF;
+
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	memset(w, 0xC3, sizeof(w));
+	memset(&g, 0x5A, sizeof(g));
+	zassert_equal(entelea_storage_meta_write(w, sizeof(w)), ENTELEA_OK);
+	zassert_equal(entelea_storage_meta_read(g.small, sizeof(g.small), &len),
+		      ENTELEA_E_RANGE, "记录长于容量 = 显式拒绝");
+	for (size_t i = 0; i < sizeof(g.guard); i++) {
+		zassert_equal(g.guard[i], 0x5A, "越界写出 guard[%u]", (unsigned)i);
+	}
+	for (size_t i = 0; i < sizeof(g.small); i++) {
+		zassert_equal(g.small[i], 0x5A, "拒绝不截断写出 small[%u]",
+			      (unsigned)i);
+	}
+	zassert_equal(len, 0xBEEF, "拒绝不改写 len");
+	zassert_equal(entelea_storage_meta_read(g.small, 0, &len), ENTELEA_E_RANGE);
+
+	uint8_t exact[sizeof(w)];
+
+	zassert_equal(entelea_storage_meta_read(exact, sizeof(exact), &len),
+		      ENTELEA_OK, "恰等容量可读");
+	zassert_equal(len, sizeof(w));
+	zassert_mem_equal(exact, w, sizeof(w));
 }
 
 ZTEST_SUITE(framework_store, NULL, store_setup, NULL, store_after, NULL);

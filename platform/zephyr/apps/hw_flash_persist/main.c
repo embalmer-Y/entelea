@@ -72,14 +72,15 @@ int main(void)
 
 	if (kvn == 2 && memcmp(kvb, "P1", 2) == 0) {
 		/* ---- P2：复位后验证 ---- */
-		uint8_t rb[64];
+		uint8_t rb[ENTELEA_STORAGE_META_MAX];
 		uint16_t rlen = 0;
 
 		/* meta=单槽"最新记录"语义：P1 模式串往返已验；其后的
-		 * trial flush 合法接管该槽（38B 记录）——本相位经 trial
+		 * trial flush 合法接管该槽（v2 42B 记录）——本相位经 trial
 		 * restore 验证 meta 面跨复位（含 CRC/版本域校验）。 */
-		CHK(entelea_storage_meta_read(rb, &rlen) == ENTELEA_OK &&
-			    rlen == 4 + 2 + 32,
+		CHK(entelea_storage_meta_read(rb, sizeof(rb), &rlen) ==
+				    ENTELEA_OK &&
+			    rlen == 42,
 		    "P2 meta holds trial record (single-slot latest)");
 		printk("[hw-flash] P2 PASS: meta persists (len=%u fnv=%08x)\n",
 		       rlen, fnv1a(rb, rlen));
@@ -100,7 +101,8 @@ int main(void)
 
 			entelea_trial_current(&tc);
 			CHK(tc.digest[11] == 0xA5 && tc.permissions == 0x0202 &&
-				    tc.version == 4,
+				    tc.version == 4 && tc.slot == 0 &&
+				    tc.epoch != 0,
 			    "P2 trial candidate content bound");
 		}
 		CHK(entelea_kv_save(PHASE_APP, "P2", 2) == ENTELEA_OK,
@@ -113,10 +115,11 @@ int main(void)
 		CHK(entelea_storage_meta_write(META_PAT, sizeof(META_PAT)) ==
 			    ENTELEA_OK,
 		    "P1 meta write");
-		uint8_t rb[64];
+		uint8_t rb[ENTELEA_STORAGE_META_MAX];
 		uint16_t rlen = 0;
 
-		CHK(entelea_storage_meta_read(rb, &rlen) == ENTELEA_OK &&
+		CHK(entelea_storage_meta_read(rb, sizeof(rb), &rlen) ==
+				    ENTELEA_OK &&
 			    rlen == sizeof(META_PAT),
 		    "P1 meta readback");
 		printk("[hw-flash] P1: meta written (fnv=%08x)\n",
@@ -141,6 +144,7 @@ int main(void)
 		tc.digest[11] = 0xA5;
 		tc.permissions = 0x0202;
 		tc.version = 4;
+		tc.slot = 0;
 		CHK(entelea_trial_submit(&tc) == ENTELEA_OK &&
 			    entelea_trial_flush() == ENTELEA_OK,
 		    "P1 trial submit+flush");

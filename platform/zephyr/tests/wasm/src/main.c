@@ -6,6 +6,7 @@
 #include <zephyr/ztest.h>
 #include <entelea/appstore.h>
 #include <entelea/d12.h>
+#include <entelea/delivery.h>
 #include <entelea/package.h>
 #include <entelea/principal.h>
 #include <entelea/storage.h>
@@ -51,6 +52,11 @@ static const uint8_t WASM_PROBE[] = {
 };
 
 static const uint8_t MAN[] = {0xa1, 0x63, 'a', 'p', 'p', 0x01};
+
+/* 最近一次 stage_signed 写入字节的独立 sha256 与总长（整包文件身份 =
+ * Forge package_digest 口径；与被测 entelea_pkg_file_digest 对拍）。 */
+static uint8_t staged_dg[32];
+static uint32_t staged_len;
 
 static void stage_signed(uint8_t slot, const uint8_t *wasm, uint32_t wlen)
 {
@@ -99,6 +105,17 @@ static void stage_signed(uint8_t slot, const uint8_t *wasm, uint32_t wlen)
 
 	zassert_equal(entelea_pkg_stage_chunk(slot,n+tn+plen,sigh,2),ENTELEA_OK);
 	zassert_equal(entelea_pkg_stage_chunk(slot,n+tn+plen+2,sb,64),ENTELEA_OK);
+
+	uint32_t fs[8];
+
+	entelea_sha256_stream_init(fs);
+	entelea_sha256_stream_update(fs, pkg, n);
+	entelea_sha256_stream_update(fs, tail_b, tn);
+	entelea_sha256_stream_update(fs, payload, plen);
+	entelea_sha256_stream_update(fs, sigh, 2);
+	entelea_sha256_stream_update(fs, sb, 64);
+	entelea_sha256_stream_final(fs, staged_dg);
+	staged_len = n + tn + plen + 2 + 64;
 }
 
 static uint64_t d12_fake_now; /* r16：d12 冷却窗面（wasm_allow） */
@@ -246,6 +263,7 @@ static void wasm_before(void *fixture)
 	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
 	entelea_wasm_test_reset();
 	entelea_perm_test_reset();
+	entelea_trial_test_reset();
 	d12_fake_now = 0;
 	entelea_d12_test_reset();
 	zassert_ok(entelea_clock_init(&d12_clock, d12_fake_read_ms,
@@ -551,4 +569,123 @@ ZTEST(framework_wasm, test_rf1_quota_stops_real_infinite_loop)
 		      ENTELEA_E_TIMEOUT, "死循环 → 配额到期");
 	zassert_equal(ret, -77);
 	zassert_equal(entelea_wasm_instance_count(), 0, "到期销毁实例");
+}
+
+/* RF1 #9（G4）：执行闸——试用候选须经用户确认，且执行字节=确认对象。
+ * 未确认（PENDING）候选不得装载（原 load 不查试用态：推送即可执行）。 */
+ZTEST(framework_wasm, test_rf1_trial_pending_not_loadable)
+{
+	entelea_principal_t ctx = {0};
+	entelea_trial_candidate_t c;
+	uint32_t app = 0xAA;
+
+	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE));
+	memset(&c, 0, sizeof(c));
+	memcpy(c.digest, staged_dg, 32);
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
+	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_E_PERM,
+		      "未确认候选不得装载");
+	zassert_equal(app, 0xAA);
+	zassert_equal(entelea_wasm_instance_count(), 0);
+}
+
+/* 确认后同槽重暂存他字节：确认不得随槽沿用（原无内容绑定）。 */
+ZTEST(framework_wasm, test_rf1_trial_confirm_bound_to_bytes)
+{
+	entelea_principal_t ctx = {0};
+	entelea_trial_candidate_t c;
+	uint32_t app = 0;
+
+	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE));
+	memset(&c, 0, sizeof(c));
+	memcpy(c.digest, staged_dg, 32);
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
+	entelea_trial_current(&c); /* 展示对象（含 submit 赋的 epoch） */
+	zassert_equal(entelea_trial_confirm(&c), ENTELEA_OK);
+	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_OK,
+		      "已确认字节可装载");
+	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
+	stage_signed(0, WASM_PROBE, sizeof(WASM_PROBE));
+	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_E_PERM,
+		      "同槽换字节不得沿用确认");
+}
+
+/* 门摘要域 = 整包文件 sha256 [0, pkg_len)（= Forge package_digest 域）：
+ * 与测试侧独立计算的暂存字节摘要对拍；摘要读失败原样 E_IO、零副作用。 */
+ZTEST(framework_wasm, test_rf1_trial_digest_domain)
+{
+	entelea_principal_t ctx = {0};
+	entelea_tsap_view_t v;
+	uint8_t dg[32];
+	uint32_t app = 0xAA;
+
+	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE));
+	zassert_equal(entelea_pkg_verify(0, NULL, &v, NULL), ENTELEA_OK);
+	zassert_equal(v.pkg_len, staged_len, "规范包长=签名末尾");
+	zassert_equal(entelea_pkg_file_digest(0, v.pkg_len, dg), ENTELEA_OK);
+	zassert_mem_equal(dg, staged_dg, 32, "摘要域=整包文件");
+	zassert_equal(entelea_pkg_file_digest(2, v.pkg_len, dg), ENTELEA_E_PARAM);
+	zassert_equal(entelea_pkg_file_digest(0, 0, dg), ENTELEA_E_PARAM);
+	zassert_equal(entelea_pkg_file_digest(0, v.pkg_len, NULL), ENTELEA_E_PARAM);
+
+	zassert_equal(entelea_wasm_init(), ENTELEA_OK);
+	rd_mount(false, ENTELEA_PART_SLOT_A, 0, v.pkg_len);
+	zassert_equal(entelea_pkg_verify(0, NULL, &v, NULL), ENTELEA_OK);
+	zassert_equal(rd.hits, 0, "验签不读整包区间（注入只命中摘要读）");
+	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_E_IO, "摘要读错误");
+	zassert_equal(rd.hits, 1);
+	rd_unmount();
+	zassert_equal(app, 0xAA);
+	zassert_equal(entelea_wasm_instance_count(), 0);
+}
+
+/* call 复核门：装载后试用结束、同槽新候选待确认 → 旧实例 call=E_PERM
+ * （不执行、不销毁）；新候选确认后旧字节实例仍拒（摘要不符）。 */
+ZTEST(framework_wasm, test_rf1_trial_call_rechecks_gate)
+{
+	entelea_principal_t ctx = {0};
+	entelea_trial_candidate_t c;
+	uint32_t app = 0;
+	int32_t ret = -1;
+
+	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE));
+	memset(&c, 0, sizeof(c));
+	memcpy(c.digest, staged_dg, 32);
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
+	entelea_trial_current(&c);
+	zassert_equal(entelea_trial_confirm(&c), ENTELEA_OK);
+	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_OK);
+	zassert_equal(entelea_wasm_call(app, ctx, "health_ping", 0, 100, &ret),
+		      ENTELEA_OK, "ACTIVE+摘要相符可调用");
+
+	zassert_equal(entelea_trial_end(), ENTELEA_OK);
+	memset(&c, 0, sizeof(c));
+	memset(c.digest, 0x5C, 32); /* 同槽新候选（他字节） */
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
+	ret = -77;
+	zassert_equal(entelea_wasm_call(app, ctx, "health_ping", 0, 100, &ret),
+		      ENTELEA_E_PERM, "同槽新候选待确认：旧实例拒");
+	zassert_equal(ret, -77, "拒绝不执行");
+	zassert_equal(entelea_wasm_instance_count(), 1, "拒绝不销毁");
+	entelea_trial_current(&c);
+	zassert_equal(entelea_trial_confirm(&c), ENTELEA_OK);
+	zassert_equal(entelea_wasm_call(app, ctx, "health_ping", 0, 100, &ret),
+		      ENTELEA_E_PERM, "新候选已确认：旧字节实例仍拒");
+	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
+}
+
+/* 非候选 slot 不受试用政策管辖（稳定集准入归 D05——残余已登记）。 */
+ZTEST(framework_wasm, test_rf1_trial_other_slot_ungoverned)
+{
+	entelea_principal_t ctx = {0};
+	entelea_trial_candidate_t c;
+	uint32_t app = 0;
+
+	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE));
+	memset(&c, 0, sizeof(c));
+	c.slot = 1;
+	memset(c.digest, 0x11, 32);
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
+	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_OK);
+	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
 }

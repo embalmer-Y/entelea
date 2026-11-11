@@ -110,7 +110,8 @@ entelea_result_t entelea_storage_meta_write(const void *buf, uint16_t len)
 	return write_rec(inactive, cur_seq + 1, buf, len);
 }
 
-entelea_result_t entelea_storage_meta_read(void *buf, uint16_t *len)
+entelea_result_t entelea_storage_meta_read(void *buf, uint16_t cap,
+					   uint16_t *len)
 {
 	if (buf == NULL || len == NULL) {
 		return ENTELEA_E_PARAM;
@@ -127,13 +128,14 @@ entelea_result_t entelea_storage_meta_read(void *buf, uint16_t *len)
 	if (!ok0 && !ok1) {
 		return ENTELEA_E_IO; /* 双副本皆损：缺省安全态/fail-safe（不伪造） */
 	}
-	if (ok0 && (!ok1 || s0 >= s1)) {
-		memcpy(buf, data0, l0);
-		*len = l0;
-	} else {
-		memcpy(buf, data1, l1);
-		*len = l1;
+	const bool use0 = ok0 && (!ok1 || s0 >= s1);
+	const uint16_t l = use0 ? l0 : l1;
+
+	if (l > cap) {
+		return ENTELEA_E_RANGE; /* 不截断、不写出（调用方按坏记录处置） */
 	}
+	memcpy(buf, use0 ? data0 : data1, l);
+	*len = l;
 	return ENTELEA_OK;
 }
 

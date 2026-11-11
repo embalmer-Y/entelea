@@ -1,12 +1,14 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* D-3 最小工厂闭环硬件闸（D 批）：Forge（OpenHands SDK 产 wasm →
- * tsap_pack.py 测试根签名）→ 设备（stage → verify → digest 对拍 →
- * factory_intake → PENDING → confirm → ACTIVE → wasm 执行 → 真死循环
- * 有界停止 R-V1 夹具）。产物字节经构建期注入（factory_pkg.h——USB
- * 烧录交付路径；真网交付随 F 批）。
- * 单相位：闸链全绿后 trial_end+flush 清槽收尾（无人值守安全常驻态
- * ——同 hw_flash_persist P3 纪律）；任一环节失败 → system_fail。
- * trial 跨复位持久面已由 hw_flash_persist A-4 证明，本闸不重复。 */
+/* D-3 最小工厂闭环硬件闸（D 批；RF1 #9 修订）：Forge（wasm_gen 确定性
+ * 组装 → tsap_pack.py 测试根签名）→ 设备（stage → verify → digest 对拍
+ * → factory_intake → PENDING → 未确认装载被试用门拒）。产物字节经构建
+ * 期注入（factory_pkg.h——USB 烧录交付路径；真网交付随 F 批）。
+ * 默认构建无用户确认 UI（D04/D09/D10 未决）：不代用户确认，确认窗按
+ * 超时 fail-closed 收尾（TIMEOUT 落盘，候选槽持续门拒）。
+ * FACTORY_DEV_AUTOCONFIRM=ON（仅开发）：以展示对象自动确认后执行
+ * run/spin/hang 夹具——工程证据，无产品用户验收效力。
+ * 任一环节失败 → system_fail。trial 跨复位持久面由 hw_flash_persist
+ * A-4 证明，本闸不重复。 */
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
@@ -148,6 +150,12 @@ int main(void)
 		}
 		CHK(ok && memcmp(dg, FACTORY_DIGEST, 32) == 0,
 		    "slot bytes == forge digest (D-4 device side)");
+		/* 试用门摘要域（规范包长=签名末尾）== Forge package_digest 域。 */
+		CHK(v.pkg_len == FACTORY_TSAP_LEN &&
+			    entelea_pkg_file_digest(0, v.pkg_len, dg) ==
+				    ENTELEA_OK &&
+			    memcmp(dg, FACTORY_DIGEST, 32) == 0,
+		    "gate digest domain == forge package_digest");
 	}
 
 	/* 4) 工厂 intake → PENDING_CONFIRM（元数据经构建注入=Forge 侧
@@ -164,39 +172,62 @@ int main(void)
 		fc.mem_quota_kb = FACTORY_MEM_KB;
 		strncpy(fc.description, FACTORY_DESC,
 			sizeof(fc.description) - 1);
-		CHK(entelea_factory_intake(&fc) == ENTELEA_OK &&
+		CHK(entelea_factory_intake(&fc, 0) == ENTELEA_OK &&
 			    entelea_trial_state() ==
 				    ENTELEA_TRIAL_PENDING_CONFIRM,
-		    "factory intake -> PENDING_CONFIRM");
+		    "factory intake -> PENDING_CONFIRM (slot 0)");
 	}
 
-	/* 5) 用户确认（唯一晋升路径）→ ACTIVE。 */
-	CHK(entelea_trial_confirm() == ENTELEA_OK &&
-		    entelea_trial_state() == ENTELEA_TRIAL_ACTIVE,
-	    "trial confirm -> ACTIVE");
-
-	/* 6) 执行工厂产物：load + run（入参 0 → 2*0+1=1）+ spin（0 次空转
-	 *    → 0）。owner=未绑定（无导入模块——natives 不触发）。 */
+	/* 5) 确认前不可执行：试用门拒装载且零副作用。owner=未绑定（无导入
+	 *    模块——natives 不触发）。 */
 	entelea_principal_t ctx = {0};
 	uint32_t app = 0;
 	entelea_result_t wl = entelea_wasm_init() == ENTELEA_OK
 				     ? entelea_wasm_load(0, ctx, &app)
 				     : ENTELEA_E_IO;
 
+	printk("[hw-fact] pre-confirm wasm load rc=%d\n", (int)wl);
+	CHK(wl == ENTELEA_E_PERM && app == 0 &&
+		    entelea_wasm_instance_count() == 0,
+	    "load before user confirm -> E_PERM (trial gate)");
+
+#ifndef FACTORY_DEV_AUTOCONFIRM
+	/* 6) 产品路径：无用户确认 → 确认窗超时 fail-closed（不代用户确认）。 */
+	CHK(entelea_trial_timeout() == ENTELEA_OK &&
+		    entelea_trial_flush() == ENTELEA_OK &&
+		    entelea_wasm_load(0, ctx, &app) == ENTELEA_E_PERM,
+	    "no confirm -> TIMEOUT persisted, slot stays gated");
+	printk("[hw-fact] PASS: candidate pending real user confirm "
+	       "(no auto-confirm in product build)\n");
+	return 0;
+#else
+	/* 6) 开发自动确认：确认对象=展示对象（trial_current）。 */
+	{
+		entelea_trial_candidate_t shown;
+
+		entelea_trial_current(&shown);
+		printk("[hw-fact] DEV AUTO-CONFIRM (无产品用户验收效力)\n");
+		CHK(entelea_trial_confirm(&shown) == ENTELEA_OK &&
+			    entelea_trial_state() == ENTELEA_TRIAL_ACTIVE,
+		    "dev confirm shown candidate -> ACTIVE");
+	}
+	wl = entelea_wasm_load(0, ctx, &app);
 	printk("[hw-fact] wasm load rc=%d app=%u\n", (int)wl, app);
-	CHK(wl == ENTELEA_OK && app == 1, "wasm load (verified slot, app=1)");
+	CHK(wl == ENTELEA_OK && app == 1, "wasm load (confirmed bytes, app=1)");
 	int32_t ret = -1;
 
 	CHK(entelea_wasm_call(app, ctx, "run", 0, 2000, &ret) == ENTELEA_OK &&
 		    ret == 1,
-	    "call run -> 2*0+1 == 1 (sdk artifact executes)");
+	    "call run -> 2*0+1 == 1 (factory artifact executes)");
 	ret = -1;
 	{
-		entelea_result_t sr = entelea_wasm_call(app, ctx, "spin", 0,
+		/* spin(3)：3 次空转后返回 0（run003 的 spin(N>=1) 死循环缺陷
+		 * 在此暴露为 E_TIMEOUT——RF1 #10）。 */
+		entelea_result_t sr = entelea_wasm_call(app, ctx, "spin", 3,
 						       2000, &ret);
 
-		printk("[hw-fact] spin rc=%d ret=%d\n", (int)sr, ret);
-		CHK(sr == ENTELEA_OK && ret == 0, "call spin -> 0");
+		printk("[hw-fact] spin(3) rc=%d ret=%d\n", (int)sr, ret);
+		CHK(sr == ENTELEA_OK && ret == 0, "call spin(3) -> 0");
 	}
 
 	/* 7) 真死循环有界停止（R-V1 夹具：hang 无条件循环，步预算到期 →
@@ -211,8 +242,10 @@ int main(void)
 		    entelea_trial_state() == ENTELEA_TRIAL_NONE &&
 		    entelea_trial_flush() == ENTELEA_OK,
 	    "trial end + flush (safe steady state)");
-	printk("[hw-fact] PASS: factory loop closed (sdk->forge->device)\n");
+	printk("[hw-fact] PASS: factory loop closed (DEV auto-confirm; "
+	       "not user acceptance)\n");
 	return 0;
+#endif
 
 fail:
 	entelea_safety_system_fail(ENTELEA_FAIL_BOOT(7));

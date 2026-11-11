@@ -111,13 +111,21 @@ ZTEST(framework_r13, test_cross_mechanism_contract_representative)
 	entelea_affect_get(&af);
 	zassert_equal(af.level[0], 50, "R11 中位基线");
 
-	/* R12 试用：确认前不生效。 */
+	/* R12 试用：确认前不生效（执行门拒），确认展示对象后生效。 */
 	entelea_trial_candidate_t tc;
+	entelea_trial_candidate_t shown;
 
 	memset(&tc, 0, sizeof(tc));
+	tc.digest[0] = 0x5A;
+	tc.slot = 0;
 	zassert_equal(entelea_trial_submit(&tc), ENTELEA_OK);
-	zassert_equal(entelea_trial_confirm(), ENTELEA_OK);
+	zassert_equal(entelea_trial_gate(0, tc.digest), ENTELEA_E_PERM,
+		      "R12 确认前门拒");
+	entelea_trial_current(&shown);
+	zassert_equal(entelea_trial_confirm(&shown), ENTELEA_OK);
 	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_ACTIVE, "R12 确认后 ACTIVE");
+	zassert_equal(entelea_trial_gate(0, tc.digest), ENTELEA_OK,
+		      "R12 确认后门放行同字节");
 	zassert_equal(entelea_trial_submit(&tc), ENTELEA_E_BUSY, "R12 单候选");
 }
 

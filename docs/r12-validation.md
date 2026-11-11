@@ -120,6 +120,10 @@ owner 授权 §10.4-D1/D2（SDK 接入+真云付费调用）执行记录。
 
 ### 复现（D 批闸——gate_run.sh 两相；工件=forge artifacts/run003）
 
+> **RF1 已取代（历史记录，勿照做）**：run003 spin(N≥1) 死循环（闸只测
+> N=0），且该闸以自动确认冒充用户验收。现行=run004 + 产品/开发两模式
+> 闸（`MODE=product|dev`，默认 run004/product），见 rf1-validation。
+
 ```sh
 # native_sim sim-flash 全链
 RUN=run003 bash /home/emb/project/workspace/forge/gate/gate_run.sh nsim

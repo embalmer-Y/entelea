@@ -27,11 +27,13 @@ entelea_result_t entelea_wasm_init(void);
 
 /** 验签并装载 slot 的模块，绑定 owner（V1 单实例）。已有活实例 =
  * E_BUSY 且零副作用（先 stop）；验签/读错误原样传播（E_INVALID_SIG /
- * E_IO 不互相改写）；模块超装载缓冲 = E_RANGE。失败不写 app_id_out。 */
+ * E_IO 不互相改写）；R12 试用门（整文件 sha256）拒 = E_PERM 且零副作用；
+ * 模块超装载缓冲 = E_RANGE。失败不写 app_id_out。 */
 entelea_result_t entelea_wasm_load(uint8_t slot, entelea_principal_t owner,
 				   uint32_t *app_id_out);
 
-/** 调用导出函数 fn。ctx 必须等于 load 绑定的 owner，否则 E_PERM。导出
+/** 调用导出函数 fn。ctx 必须等于 load 绑定的 owner，否则 E_PERM；试用门
+ * 按装载时 slot+摘要复核，拒 = E_PERM（之后 D12 门）。导出
  * ABI 仅 ()->i32 与 (i32)->i32：前者 arg 必须为 0，后者收到 arg；其余
  * 签名 = E_PARAM。上述拒绝均不执行、不销毁实例。超时 ms 经步预算近似，
  * 到期 → E_TIMEOUT 有界停止（判别=WAMR 异常串 "instruction limit"）；

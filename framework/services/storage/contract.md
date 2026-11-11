@@ -28,6 +28,9 @@
   缺省安全态/fail-safe，不自动"修复"、不伪造空数据）。
 - 读路径双副本独立缓冲（旧 MD1.1b 缺陷回归保留：共用缓冲在 copy0 较新
   时读回旧副本内容）。
+- `meta_read(buf, cap, *len)`（RF1）：记录长于 cap = `E_RANGE` 且不写越
+  buf（cap=0 同）；cap 恰等于记录长度 = OK。记录上限
+  `ENTELEA_STORAGE_META_MAX`=256。
 
 ## noinit 留痕（一次性）
 
