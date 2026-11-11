@@ -320,6 +320,84 @@ ZTEST(framework_assist, test_output_domain_gates)
 	zassert_true(rb.b, "POWER 经预算门落值");
 }
 
+/* RF1 P1-2：执行门必须写**已裁决描述符**的 safety_uid，而非候选的逻辑
+ * 名——逻辑名与他人保护通道同名时不得跨写，逻辑名≠通道名时合法目标
+ * 必须可达；POWER 值只打 POWER 类描述符。 */
+ZTEST(framework_assist, test_output_targets_checked_safety_uid)
+{
+	entelea_safety_test_reset();
+	entelea_perm_test_reset();
+	entelea_periph_test_reset();
+	entelea_power_test_reset();
+	entelea_power_test_set_budget(100);
+	static const entelea_out_channel_t lamp_ch = {
+		.uid = "lamp_ch", .kind = ENTELEA_CH_GPIO,
+		.poweron = {.b = false}, .linkloss = {.b = false},
+		.fault = {.b = false},
+	};
+	static const entelea_out_channel_t guarded_ch = {
+		.uid = "lamp", .kind = ENTELEA_CH_GPIO,
+		.poweron = {.b = false}, .linkloss = {.b = false},
+		.fault = {.b = false},
+	};
+	static const entelea_out_channel_t pwr_ch = {
+		.uid = "pwr_ch", .kind = ENTELEA_CH_POWER,
+		.poweron = {.pwr = {false, 0}}, .linkloss = {.pwr = {false, 0}},
+		.fault = {.pwr = {false, 0}},
+		.limits = {.current_limit_ma = 1000},
+	};
+
+	zassert_equal(entelea_safety_register_channel(&lamp_ch), ENTELEA_OK);
+	zassert_equal(entelea_safety_register_channel(&guarded_ch), ENTELEA_OK);
+	zassert_equal(entelea_safety_register_channel(&pwr_ch), ENTELEA_OK);
+	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
+	static const entelea_periph_desc_t descs[] = {
+		{.uid = "lamp", .kind = ENTELEA_DEV_OUTPUT, .inst = 0,
+		 .perm_class = ENTELEA_PERM_GPIO, .safety_uid = "lamp_ch"},
+		{.uid = "guarded", .kind = ENTELEA_DEV_OUTPUT, .inst = 5,
+		 .perm_class = ENTELEA_PERM_GPIO, .safety_uid = "lamp"},
+		{.uid = "heater", .kind = ENTELEA_DEV_OUTPUT, .inst = 0,
+		 .perm_class = ENTELEA_PERM_POWER, .safety_uid = "pwr_ch"},
+	};
+
+	zassert_equal(entelea_periph_register(descs, 3), ENTELEA_OK);
+	entelea_perm_table_t t;
+
+	entelea_perm_table_init(&t);
+	zassert_equal(entelea_perm_parse("gpio:write:0", &t), ENTELEA_OK);
+	zassert_equal(entelea_perm_parse("power:write:0", &t), ENTELEA_OK);
+	entelea_principal_t actor;
+
+	zassert_equal(entelea_principal_bind(&actor, 21, &t), ENTELEA_OK);
+	entelea_candidate_t cand = {
+		.kind = ENTELEA_ACT_OUTPUT,
+		.source = {.id = 1, .kind = ENTELEA_SOURCE_MODEL},
+		.target_uid = "lamp", .value_kind = 0, .value_b = true,
+	};
+	entelea_out_value_t rb;
+
+	zassert_equal(entelea_assistant_execute(actor, &cand, NULL), ENTELEA_OK);
+	zassert_equal(entelea_safety_readback("lamp", &rb), ENTELEA_OK);
+	zassert_false(rb.b, "无 gpio:write:5 不得写 guarded 的同名通道");
+	zassert_equal(entelea_safety_readback("lamp_ch", &rb), ENTELEA_OK);
+	zassert_true(rb.b, "落值到已裁决描述符的 safety_uid");
+
+	cand.target_uid = "heater";
+	cand.value_kind = 2;
+	cand.value_u = 50;
+	zassert_equal(entelea_assistant_execute(actor, &cand, NULL), ENTELEA_OK,
+		      "POWER 逻辑名≠通道名仍可达");
+	zassert_equal(entelea_safety_readback("pwr_ch", &rb), ENTELEA_OK);
+	zassert_true(rb.pwr.en && rb.pwr.ma == 50);
+
+	cand.target_uid = "lamp";
+	cand.value_b = false;
+	zassert_equal(entelea_assistant_execute(actor, &cand, NULL),
+		      ENTELEA_E_PARAM, "POWER 值打 GPIO 类描述符拒");
+	zassert_equal(entelea_safety_readback("lamp_ch", &rb), ENTELEA_OK);
+	zassert_true(rb.b, "跨类拒零输出");
+}
+
 
 /* ---- B-2 模型适配层：依赖联动/有界重试/用量累计/参数域 ---- */
 static uint32_t mock_calls;

@@ -35,8 +35,10 @@ static uint32_t clock_fault_count;
  * ISR 内不可返回，此计数是唯一留痕面）。 */
 static uint32_t driver_write_failures;
 
-/* 受检时钟读取：返回 false = 本次时间不可知（护栏介入，*out 为最后
- * 有效值）。并发（二轮 review 缺陷 5）：commit/迁移（线程）与
+/* 受检时钟读取：返回 false = 本次时间不可知（读失败或回退；护栏介入，
+ * *out 为最后有效值）。回退不得以最后有效值冒充已知时间——那会把
+ * 其他通道推进的时刻借来立 slew 界（RF1 缺陷 4）。
+ * 并发（二轮 review 缺陷 5）：commit/迁移（线程）与
  * force_all_fault/estop 补发（ISR）并发访问簿记；32 位目标 u64 可撕裂，
  * 比较/更新/计数入 irq_lock 微临界区（ISR 可嵌套）。 */
 bool entelea_safety_now_ms_checked(uint64_t *out)
@@ -54,6 +56,7 @@ bool entelea_safety_now_ms_checked(uint64_t *out)
 	if (!ok || ms < clock_last_good) {
 		clock_fault_count++;
 		ms = clock_last_good;
+		ok = false;
 	} else {
 		clock_last_good = ms;
 	}

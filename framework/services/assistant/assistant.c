@@ -121,28 +121,30 @@ entelea_result_t entelea_assistant_execute(entelea_principal_t actor,
 		if (pr != ENTELEA_OK) {
 			return pr; /* 未注册/越权/非 ACTIVE（模型不能自批） */
 		}
-		if (cand->value_kind == 2) {
-			/* POWER 值必须经 entelea_power_request：power:write
-			 * 权限 + 预算检查-提交原子化（review P1：不再旁路）。 */
-			entelea_out_value_t pv = {
-				.pwr = {.en = cand->value_b, .ma = cand->value_u}};
-
-			return entelea_power_request(actor, cand->target_uid, pv);
-		}
 		/* 输出动作只打 DEV_OUTPUT 目标（计划符合性审查 P2：原类检
 		 * 条件化在 safety_uid!=NULL 内——非输出描述符（acquire 仅
 		 * 要求 READ）跳过类检直落 safety_commit，装配撞名时可越权）。*/
 		if (d->kind != ENTELEA_DEV_OUTPUT) {
 			return ENTELEA_E_PARAM;
 		}
-		/* 类匹配（无条件）：value_kind 0=GPIO/1=PWM 与目标描述符权限类
-		 * 一致（review P1：跨类写拒）。DEV_OUTPUT 注册强制 safety_uid
-		 * 非空——描述符即权威类面。 */
-		if (cand->value_kind == 0 && d->perm_class != ENTELEA_PERM_GPIO) {
-			return ENTELEA_E_PARAM; /* GPIO 值打 PWM 目标 */
+		/* 类匹配（无条件）：value_kind 0=GPIO/1=PWM/2=POWER 与目标描述符
+		 * 权限类一致（review P1：跨类写拒）。DEV_OUTPUT 注册强制
+		 * safety_uid 非空——描述符即权威类面。 */
+		static const entelea_perm_class_t want[] = {
+			ENTELEA_PERM_GPIO, ENTELEA_PERM_PWM, ENTELEA_PERM_POWER};
+
+		if (d->perm_class != want[cand->value_kind]) {
+			return ENTELEA_E_PARAM;
 		}
-		if (cand->value_kind == 1 && d->perm_class != ENTELEA_PERM_PWM) {
-			return ENTELEA_E_PARAM; /* PWM 值打 GPIO 目标 */
+		/* 写入面=已裁决描述符的 safety_uid（RF1 P1-2）：逻辑名可能
+		 * 与他人保护通道同名，按逻辑名提交会越过本次权限裁决。 */
+		if (cand->value_kind == 2) {
+			/* POWER 值必须经 entelea_power_request：power:write
+			 * 权限 + 预算检查-提交原子化（review P1：不再旁路）。 */
+			entelea_out_value_t pv = {
+				.pwr = {.en = cand->value_b, .ma = cand->value_u}};
+
+			return entelea_power_request(actor, d->safety_uid, pv);
 		}
 		entelea_out_value_t v;
 
@@ -152,7 +154,7 @@ entelea_result_t entelea_assistant_execute(entelea_principal_t actor,
 			v = (entelea_out_value_t){.u = cand->value_u};
 		}
 		/* 唯一写路径（保护层——无旁路）。 */
-		return entelea_safety_commit(cand->target_uid, v);
+		return entelea_safety_commit(d->safety_uid, v);
 	}
 	default:
 		return ENTELEA_E_PARAM;

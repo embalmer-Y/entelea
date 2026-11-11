@@ -66,7 +66,10 @@ void entelea_safety_force_all_fault(void)
 	if (any_write_failed) {
 		/* 强停升级（owner 2026-11-08 定案①）：estop 强停落驱失败 =
 		 * 无法保证输出达安全值 → 全局停机（halt=原子置位，ISR 安全；
-		 * 停喂后由 WDT 复位收口）。先尽力安全化其余通道再升级。 */
+		 * 停喂后由 WDT 复位收口）。先尽力安全化其余通道再升级。
+		 * 停机是终态（RF1 缺陷 3）：与 system_fail 同置 system_failed，
+		 * WDT 复位前 clear_fault/recover 不得恢复任何通道输出。 */
+		atomic_set(&entelea_system_failed, 1);
 		entelea_wdt_halt();
 	}
 	/* 事后补发 ENTELEA_EVT_ESTOP：由 sysworkq 周期项检测 forced 上升沿后

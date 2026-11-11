@@ -63,7 +63,8 @@ static int find_id(entelea_task_id_t id)
 
 static bool same_principal(entelea_principal_t a, entelea_principal_t b)
 {
-	return a._handle == b._handle && a.app_id == b.app_id;
+	return a._handle == b._handle && a._gen == b._gen &&
+	       a.app_id == b.app_id;
 }
 
 entelea_result_t entelea_task_submit(entelea_principal_t ctx, const char *name,

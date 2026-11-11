@@ -9,6 +9,9 @@ hal/periph 语义面）；方向与未决项以[执行规划](../../../docs/rebu
 - principal 完整定义源=R01 context.h 的 `struct entelea_principal`
   （前向声明同源）；**bind 是唯一构造入口**（宿主可信面，槽上限 4、
   app_id 撞名拒绝）；解绑后旧句柄一切裁决 `E_PERM`（伪造/过期不可绕）。
+  句柄 = 槽号+槽绑定代数+app_id，三者须与槽当前绑定一致：同槽重绑
+  （他 app 或同 app）不复活旧副本，过期副本解绑为空操作（RF1 P1-1；
+  代数 uint16，同槽 65536 次重绑内必识别——残余回绕面如实记录）。
 - 文法 `class:op:instances`（数值位图 0-31；"0-3"/"0,2"）与 msg 名单
   `msg:send:name`（[A-Za-z0-9._-]{1,39}，名单≤4）；域外类/操作/实例
   >31/文法坏 = `E_PARAM`（fail-closed，不静默截断）；重复声明幂等。

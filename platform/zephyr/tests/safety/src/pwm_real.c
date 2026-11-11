@@ -310,4 +310,39 @@ ZTEST(framework_safety_pwm, test_force_write_failure_keeps_last_confirmed)
 	entelea_wdt_test_reset();
 }
 
+/* ---- 强停落驱失败 = 终态（RF1 缺陷 3）：升级全局停机后 clear_fault 不得
+ * 恢复其余（落驱成功）通道的输出资格。修复前仅 halt：clear_fault 返回
+ * OK，写成功通道回 ACTIVE 并接受 commit（WDT 复位前窗口内可再输出）。 */
+ZTEST(framework_safety_pwm, test_failed_force_stop_is_terminal)
+{
+	static const entelea_out_channel_t ok_ch = {
+		.uid = "okgpio", .kind = ENTELEA_CH_GPIO,
+		.poweron = {.b = false}, .linkloss = {.b = false},
+		.fault = {.b = false},
+	};
+	entelea_ch_state_t st;
+
+	entelea_safety_test_reset();
+	entelea_wdt_test_reset();
+	zassert_equal(entelea_drv_pwm_init(), 0);
+	zassert_equal(entelea_safety_register_channel(&bus_ch), ENTELEA_OK);
+	zassert_equal(entelea_safety_register_channel(&ok_ch), ENTELEA_OK);
+	zassert_equal(entelea_safety_poweron_init(), ENTELEA_OK);
+	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
+
+	pwm_fail_next = true;
+	entelea_safety_force_all_fault(); /* pwmbus 落驱失败，okgpio 成功 */
+	zassert_false(entelea_wdt_test_patrol_tick(), "升级①：已停机");
+	zassert_equal(entelea_safety_clear_fault(), ENTELEA_E_STATE,
+		      "failed force-stop is terminal: clear_fault must refuse");
+	zassert_true(entelea_safety_estop_latched(), "锁存不得被释放");
+	zassert_equal(entelea_safety_channel_state("okgpio", &st), ENTELEA_OK);
+	zassert_equal(st, ENTELEA_ST_SAFE_FAULT, "成功落驱通道也不得恢复");
+	zassert_equal(entelea_safety_commit("okgpio", (entelea_out_value_t){.b = true}),
+		      ENTELEA_E_STATE, "停机后不得再输出");
+	zassert_equal(entelea_safety_channel_recover("okgpio"), ENTELEA_E_STATE,
+		      "单通道 recover 同样拒绝");
+	entelea_wdt_test_reset();
+}
+
 ZTEST_SUITE(framework_safety_pwm, NULL, NULL, NULL, NULL, NULL);

@@ -16,6 +16,7 @@
 
 struct bound_ctx {
 	uint16_t app_id;
+	uint16_t gen; /* 本槽最近一次绑定代数；解绑不清零（防 ABA） */
 	entelea_perm_table_t table;
 	bool used;
 };
@@ -200,7 +201,12 @@ entelea_result_t entelea_principal_bind(entelea_principal_t *ctx, uint16_t app_i
 			contexts[i].used = true;
 			contexts[i].app_id = app_id;
 			contexts[i].table = *table;
+			contexts[i].gen++;
+			if (contexts[i].gen == 0) {
+				contexts[i].gen = 1; /* 0 保留给零初始化句柄 */
+			}
 			ctx->_handle = (uint8_t)(i + 1);
+			ctx->_gen = contexts[i].gen;
 			ctx->app_id = app_id;
 			return ENTELEA_OK;
 		}
@@ -208,26 +214,32 @@ entelea_result_t entelea_principal_bind(entelea_principal_t *ctx, uint16_t app_i
 	return ENTELEA_E_NOMEM; /* 槽满（=APP 上限） */
 }
 
-void entelea_principal_unbind(entelea_principal_t *ctx)
-{
-	if (ctx == NULL || ctx->_handle == 0 || ctx->_handle > MAX_BOUND_CTX) {
-		return;
-	}
-	struct bound_ctx *b = &contexts[ctx->_handle - 1];
-
-	b->used = false; /* 旧句柄此后裁决 E_PERM（伪造/过期不可绕） */
-	ctx->_handle = 0;
-}
-
 static struct bound_ctx *resolve(entelea_principal_t ctx)
 {
-	/* 句柄域外/未绑定 = 伪造 → 拒（不泄露槽状态）。 */
+	/* 句柄域外/未绑定/app_id 或代数不符 = 伪造或过期 → 拒（不泄露槽
+	 * 状态）。代数 uint16：同槽 65536 次重绑内的过期副本必被识别。 */
 	if (ctx._handle == 0 || ctx._handle > MAX_BOUND_CTX) {
 		return NULL;
 	}
 	struct bound_ctx *b = &contexts[ctx._handle - 1];
 
-	return b->used ? b : NULL;
+	if (!b->used || b->app_id != ctx.app_id || b->gen != ctx._gen) {
+		return NULL;
+	}
+	return b;
+}
+
+void entelea_principal_unbind(entelea_principal_t *ctx)
+{
+	if (ctx == NULL) {
+		return;
+	}
+	struct bound_ctx *b = resolve(*ctx);
+
+	if (b != NULL) {
+		b->used = false; /* 旧句柄此后裁决 E_PERM（伪造/过期不可绕） */
+	}
+	ctx->_handle = 0;
 }
 
 static void deny_trace(entelea_principal_t ctx, uint16_t detail)

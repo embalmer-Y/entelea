@@ -25,7 +25,7 @@
 
 - 一切产品输出必经 `entelea_safety_commit`：查表 → ACTIVE 校验（安全态
   /锁存期 = `E_STATE`）→ 限幅（PWM clamp = `E_RANGE`）→ **slew 时钟门**
-  （本次时钟读失败=时间不可知 → 速率界不可立 → 整笔 `E_STATE`；持续
+  （本次时钟读失败或回退=时间不可知 → 速率界不可立 → 整笔 `E_STATE`；持续
   失败期间重复提交不得逐步改变输出）→ slew（超率拆分到界值 =
   `E_RANGE`，实际落值经 readback 可观）→ 限流（POWER 超限整笔拒 =
   `E_RANGE`）→ 末段临界区（irq_lock 复查 forced；后端写失败 = `E_IO`，
@@ -46,9 +46,10 @@
 - **estop/system_fail 落驱失败与升级（三轮 review 发现 2；升级策略
   owner 2026-11-08 定案①）**：失败通道影子保留最后确认值（不伪称
   fault 已落驱）、状态 SAFE_FAULT/recover-only、计数留痕；强停序列
-  先尽力安全化其余通道，**任一落驱失败 → 立即 `entelea_wdt_halt`**
-  （原子置位，estop ISR 上下文安全；停喂后由 WDT 复位收口——“无法
-  保证输出达安全值即停机”）。范围：estop/system_fail 强停面；单通道
+  先尽力安全化其余通道，**任一落驱失败 → 立即 `entelea_wdt_halt` 并置
+  system_failed**（均为原子置位，estop ISR 上下文安全；停喂后由 WDT 复位
+  收口——“无法保证输出达安全值即停机”；停机为终态，WDT 复位前
+  `clear_fault`/`channel_recover` 一律 `E_STATE`）。范围：estop/system_fail 强停面；单通道
   detach 失败维持 A2 按通道语义，不升级整系统。
 - **slew 总预算（三轮 review 发现 4；基线语义 owner 2026-11-08 定案 C）**：
   界 = slew × (now − last_t)，锚定最后一次**确认写**（值+时刻）；无每笔

@@ -110,6 +110,51 @@ ZTEST(framework_r04, test_principal_grammar_and_forgery)
 	entelea_principal_unbind(&a);
 }
 
+/* RF1 P1-1：解绑后同槽重绑（ABA）——宿主别处保存的旧句柄副本不得继承
+ * 新绑定的权限、不得解绑新绑定；同 app 重绑亦不得复活旧副本；有效槽号
+ * 配错 app_id 视为伪造。 */
+ZTEST(framework_r04, test_principal_stale_copy_after_rebind)
+{
+	entelea_perm_table_t ta, tb;
+
+	entelea_perm_test_reset();
+	entelea_perm_table_init(&ta);
+	entelea_perm_table_init(&tb);
+	zassert_equal(entelea_perm_parse("gpio:write:0", &ta), ENTELEA_OK);
+	zassert_equal(entelea_perm_parse("power:write:0", &tb), ENTELEA_OK);
+
+	entelea_principal_t a, a_copy, b, a2;
+
+	zassert_equal(entelea_principal_bind(&a, 11, &ta), ENTELEA_OK);
+	a_copy = a;
+	entelea_principal_unbind(&a);
+	zassert_equal(entelea_principal_bind(&b, 12, &tb), ENTELEA_OK);
+	zassert_equal(entelea_perm_check(a_copy, ENTELEA_PERM_POWER,
+					 ENTELEA_PERM_WRITE, 0),
+		      ENTELEA_E_PERM, "旧副本不得继承同槽新绑定权限");
+	entelea_principal_unbind(&a_copy);
+	zassert_equal(entelea_perm_check(b, ENTELEA_PERM_POWER,
+					 ENTELEA_PERM_WRITE, 0),
+		      ENTELEA_OK, "旧副本解绑不得撤销新绑定");
+
+	entelea_principal_t forged = b;
+
+	forged.app_id = 99;
+	zassert_equal(entelea_perm_check(forged, ENTELEA_PERM_POWER,
+					 ENTELEA_PERM_WRITE, 0),
+		      ENTELEA_E_PERM, "有效槽号配错 app_id 拒");
+
+	entelea_principal_unbind(&b);
+	zassert_equal(entelea_principal_bind(&a2, 11, &tb), ENTELEA_OK);
+	zassert_equal(entelea_perm_check(a_copy, ENTELEA_PERM_POWER,
+					 ENTELEA_PERM_WRITE, 0),
+		      ENTELEA_E_PERM, "同 app 重绑不得复活旧副本");
+	zassert_equal(entelea_perm_check(a2, ENTELEA_PERM_POWER,
+					 ENTELEA_PERM_WRITE, 0),
+		      ENTELEA_OK);
+	entelea_principal_unbind(&a2);
+}
+
 /* ---- 能力注册：原子回滚/acquire 门/detach ---- */
 ZTEST(framework_r04, test_capability_registry_and_gates)
 {

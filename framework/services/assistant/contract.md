@@ -23,7 +23,10 @@
 
 ## 执行门
 
-- OUTPUT：权限门（gpio/pwm write 声明）→ `entelea_safety_commit`
+- OUTPUT：权限门（按目标描述符类/实例 write 裁决）→ 类匹配（value_kind
+  0/1/2 = GPIO/PWM/POWER）→ 写**已裁决描述符的 `safety_uid`**（不按候选
+  逻辑名提交——同名他人通道不可越权写，RF1 P1-2）；POWER 经
+  `entelea_power_request`，其余经 `entelea_safety_commit`
   （限幅/slew/锁存/审计全链复用——本层零旁路）。
 - TASK：R04 任务面（上层组装——本层不重复受理逻辑）。
 - NOTIFY：无副作用（无执行回执面）。

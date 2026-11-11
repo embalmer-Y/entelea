@@ -55,6 +55,7 @@ typedef struct {
 
 struct entelea_principal {
 	uint8_t _handle; /* 0=未绑定；1..MAX=槽+1 */
+	uint16_t _gen;   /* 槽绑定代数（每次 bind 递增，非 0）——防 ABA */
 	uint16_t app_id;
 };
 
@@ -67,12 +68,14 @@ void entelea_perm_table_init(entelea_perm_table_t *table);
 entelea_result_t entelea_perm_parse(const char *cap, entelea_perm_table_t *table);
 
 /** [host] 绑定 principal（槽上限 4；app_id 撞名拒绝）。解绑后句柄失效
- * ——旧句柄的后续裁决一律 E_PERM（伪造/过期句柄不可绕）。 */
+ * ——旧句柄（含宿主别处保存的副本）的后续裁决一律 E_PERM；句柄须与
+ * 槽当前绑定的 app_id 与代数同时一致（同槽重绑不复活旧副本）。 */
 entelea_result_t entelea_principal_bind(entelea_principal_t *ctx,
 					uint16_t app_id,
 					const entelea_perm_table_t *table);
 
-/** [host] 解绑（appmgr 停止链）。 */
+/** [host] 解绑（appmgr 停止链）。仅当 ctx 是槽当前绑定时生效——过期
+ * 副本解绑为空操作（不得撤销同槽新绑定）。 */
 void entelea_principal_unbind(entelea_principal_t *ctx);
 
 /** [any] 裁决：未声明/未绑定/句柄伪造 = E_PERM + 留痕事件。 */

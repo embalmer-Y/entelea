@@ -299,6 +299,50 @@ ZTEST(framework_safety, test_slew_total_budget_per_ms)
 	zassert_equal(rb.u, 1, "next-ms budget = slew*1");
 }
 
+/* ---- 时钟回退 = 时间不可知（RF1 缺陷 4）：回退期间速率界不可立，整笔
+ * E_STATE。修复前护栏把最后有效值当作“已知”时间返回 ok：另一通道早先
+ * 推进的时刻被借来立界，回退期间 rb-a 一跳 0→100。 ---- */
+ZTEST(framework_safety, test_clock_rollback_rejects_slew_commit)
+{
+	static const entelea_out_channel_t ra = {
+		.uid = "rb-a", .kind = ENTELEA_CH_PWM,
+		.poweron = {.u = 0}, .linkloss = {.u = 0}, .fault = {.u = 0},
+		.limits = {.min = 0, .max = 1000, .slew_per_ms = 1},
+	};
+	static const entelea_out_channel_t rbb = {
+		.uid = "rb-b", .kind = ENTELEA_CH_PWM,
+		.poweron = {.u = 0}, .linkloss = {.u = 0}, .fault = {.u = 0},
+		.limits = {.min = 0, .max = 1000, .slew_per_ms = 1},
+	};
+	entelea_out_value_t rb;
+
+	entelea_safety_test_reset();
+	zassert_equal(entelea_safety_bind_clock(&virt_clock), ENTELEA_OK);
+	zassert_equal(entelea_safety_register_channel(&ra), ENTELEA_OK);
+	zassert_equal(entelea_safety_register_channel(&rbb), ENTELEA_OK);
+	virt_now = 1000;
+	zassert_equal(entelea_safety_poweron_init(), ENTELEA_OK); /* 锚点 0@1000 */
+	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
+	virt_now = 1100;
+	zassert_equal(entelea_safety_commit("rb-b", (entelea_out_value_t){.u = 50}),
+		      ENTELEA_OK); /* 最后有效时刻推进到 1100 */
+
+	virt_now = 900; /* 时钟回退 */
+	uint32_t faults = entelea_safety_clock_faults();
+
+	zassert_equal(entelea_safety_commit("rb-a", (entelea_out_value_t){.u = 100}),
+		      ENTELEA_E_STATE, "rollback = unknown time: no slew bound");
+	zassert_equal(entelea_safety_readback("rb-a", &rb), ENTELEA_OK);
+	zassert_equal(rb.u, 0U, "回退期间输出不得改变");
+	zassert_true(entelea_safety_clock_faults() > faults, "回退计入时钟故障");
+
+	virt_now = 1101; /* 时钟追上：正常计量（界 = 1×101） */
+	zassert_equal(entelea_safety_commit("rb-a", (entelea_out_value_t){.u = 100}),
+		      ENTELEA_OK);
+	zassert_equal(entelea_safety_readback("rb-a", &rb), ENTELEA_OK);
+	zassert_equal(rb.u, 100U);
+}
+
 /* ---- 基线跨迁移持续（决定 C）：任何确认写刷新锚点，免跳面关闭 ---- */
 ZTEST(framework_safety, test_slew_baseline_persists_across_transitions)
 {
