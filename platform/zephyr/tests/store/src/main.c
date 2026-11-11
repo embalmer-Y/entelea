@@ -211,7 +211,7 @@ ZTEST(framework_store, test_audit_ring_flip_and_recovery)
 		zassert_equal(entelea_storage_audit_append(&e, 0), ENTELEA_OK);
 	}
 	/* 翻页后两页过渡态：65 条全部可见（≤128）。 */
-	size_t n = entelea_storage_audit_read(out, 130);
+	int32_t n = entelea_storage_audit_read(out, 130);
 
 	zassert_equal(n, 65, "两页过渡态全部可见");
 	zassert_equal(out[0].seq, 1);
@@ -241,23 +241,40 @@ ZTEST(framework_store, test_audit_ring_flip_and_recovery)
 	n = entelea_storage_audit_read(out, 130);
 	zassert_equal(out[n - 1].seq, 131, "reboot 后 seq 续接");
 
-	/* 半写断尾：破坏活动页槽0（seq129）→ 该页断尾，仅另一页可见。
-	 * 注入手法=先 erase_off 再写坏槽（NOR 纪律：裸覆写已编程区会被
-	 * 擦除纪律拒——RAM 后端等价：64B 置 FF 后覆写）。 */
+	/* 坏槽不断尾（RF1 合同变更，review P1-6）：旧实现自首个坏槽起整页
+	 * 截断——烧毁槽之后的有效记录被丢弃；旧注入（64B erase_off）在
+	 * flash 上擦整页、在 RAM 上只清 64B，双后端语义不同。现注入双后端
+	 * 等价：整页 0 擦除 → 槽0 垃圾 + 槽1 手工编码有效记录（seq 200）。 */
 	uint8_t garbage[64] = {0xDE, 0xAD};
+	uint8_t rec[64];
 
-	zassert_equal(
-		entelea_store_backend.erase_off(ENTELEA_PART_AUDIT, 0, 64),
-		ENTELEA_OK,
-		"注入预擦（flash=页0 扇区超集；RAM=64B 清——双后端等价）");
-	zassert_equal(
-		entelea_storage_test_backend_write(ENTELEA_PART_AUDIT, 0, garbage,
-						   64),
-		ENTELEA_OK, "撕裂注入：破坏槽0");
+	memset(rec, 0xFF, sizeof(rec));
+	rec[0] = 0x31; /* magic "TSA1" LE */
+	rec[1] = 0x41;
+	rec[2] = 0x53;
+	rec[3] = 0x54;
+	rec[4] = 200; /* seq LE */
+	rec[5] = rec[6] = rec[7] = 0;
+	rec[16] = 7; /* ch_idx LE */
+	rec[17] = 0;
+	zassert_equal(entelea_store_backend.erase_off(ENTELEA_PART_AUDIT, 0, 4096),
+		      ENTELEA_OK);
+	zassert_equal(entelea_storage_test_backend_write(ENTELEA_PART_AUDIT, 0,
+							 garbage, 64),
+		      ENTELEA_OK, "坏槽注入");
+	zassert_equal(entelea_storage_test_backend_write(ENTELEA_PART_AUDIT, 64,
+							 rec, 64),
+		      ENTELEA_OK);
 	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
 	n = entelea_storage_audit_read(out, 130);
-	zassert_equal(n, 64, "断尾后仅存另一页连续段");
-	zassert_equal(out[n - 1].seq, 128);
+	zassert_equal(n, 65, "坏槽不可见、其后有效槽可见（64+1）");
+	zassert_equal(out[0].seq, 65);
+	zassert_equal(out[n - 1].seq, 200);
+	zassert_equal(out[n - 1].ch_idx, 7);
+	zassert_equal(entelea_storage_audit_append(&e, 0), ENTELEA_OK);
+	n = entelea_storage_audit_read(out, 130);
+	zassert_equal(n, 66);
+	zassert_equal(out[n - 1].seq, 201, "续接=有效最大+1，坏槽不复用");
 }
 
 ZTEST(framework_store, test_safety_exception_audit_wiring)
@@ -280,7 +297,7 @@ ZTEST(framework_store, test_safety_exception_audit_wiring)
 	zassert_equal(entelea_safety_commit("aud", (entelea_out_value_t){.b = true}),
 		      ENTELEA_E_STATE);
 	entelea_storage_audit_entry_t out[4];
-	size_t n = entelea_storage_audit_read(out, 4);
+	int32_t n = entelea_storage_audit_read(out, 4);
 
 	zassert_equal(n, 1, "首条异常立即落盘");
 	zassert_equal(out[0].evt, 0);
@@ -692,4 +709,327 @@ ZTEST(framework_store, test_meta_boundary_cross_rw)
 	zassert_equal(r[0], 5, "copy1 头=写序第二段");
 }
 
-ZTEST_SUITE(framework_store, NULL, store_setup, NULL, NULL, NULL);
+/* ---- RF1 G2：KV/审计掉电撕裂与介质读错误（review P1-5/P1-6 回归） ----
+ * 注入后端包裹当前后端（RAM/flash 双变体同一手法）：第 k 次写调用只写
+ * 前缀后报 E_IO（撕裂）；读错误开关；NOR 纪律——覆写已编程字节即计数
+ * 并拒绝（RAM 变体同样检出二次编程，flash 变体与模拟器纪律一致）。 */
+static entelea_store_ops_t inj_base;
+static bool inj_mounted;
+static struct {
+	uint32_t writes;
+	uint32_t tear_at;
+	uint32_t tear_keep;
+	uint32_t dbl;
+	bool read_fail;
+} inj;
+
+static entelea_result_t inj_read(entelea_store_part_t part, uint32_t off,
+				 void *buf, uint32_t len)
+{
+	if (inj.read_fail) {
+		return ENTELEA_E_IO;
+	}
+	return inj_base.read(part, off, buf, len);
+}
+
+static entelea_result_t inj_write(entelea_store_part_t part, uint32_t off,
+				  const void *buf, uint32_t len)
+{
+	uint8_t cur[64];
+
+	for (uint32_t done = 0; done < len; done += sizeof(cur)) {
+		uint32_t n = (len - done < sizeof(cur)) ? len - done : sizeof(cur);
+
+		if (inj_base.read(part, off + done, cur, n) != ENTELEA_OK) {
+			return ENTELEA_E_IO;
+		}
+		for (uint32_t i = 0; i < n; i++) {
+			if (cur[i] != 0xFF) {
+				inj.dbl++;
+				return ENTELEA_E_IO;
+			}
+		}
+	}
+	inj.writes++;
+	if (inj.tear_at != 0 && inj.writes == inj.tear_at) {
+		inj.tear_at = 0;
+		if (inj.tear_keep > 0) {
+			(void)inj_base.write(part, off, buf,
+					     inj.tear_keep < len ? inj.tear_keep : len);
+		}
+		return ENTELEA_E_IO;
+	}
+	return inj_base.write(part, off, buf, len);
+}
+
+static entelea_result_t inj_erase(entelea_store_part_t part)
+{
+	return inj_base.erase(part);
+}
+
+static entelea_result_t inj_erase_off(entelea_store_part_t part, uint32_t off,
+				      uint32_t len)
+{
+	return inj_base.erase_off(part, off, len);
+}
+
+static uint32_t inj_size(entelea_store_part_t part)
+{
+	return inj_base.size(part);
+}
+
+static void inj_begin(void)
+{
+	static const entelea_store_ops_t ops = {
+		.read = inj_read, .write = inj_write, .erase = inj_erase,
+		.erase_off = inj_erase_off, .size = inj_size,
+	};
+
+	zassert_false(inj_mounted);
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	entelea_kv_test_reset();
+	memset(&inj, 0, sizeof(inj));
+	inj_base = entelea_store_backend;
+	zassert_equal(entelea_storage_mount(&ops), ENTELEA_OK);
+	inj_mounted = true;
+}
+
+/* 自本次起第 k 次写调用撕裂，只落 keep 字节。 */
+static void inj_tear(uint32_t k, uint32_t keep)
+{
+	inj.writes = 0;
+	inj.tear_at = k;
+	inj.tear_keep = keep;
+}
+
+static void inj_end(void)
+{
+	zassert_equal(inj.dbl, 0, "零二次编程（NOR 擦后写纪律）");
+	zassert_equal(entelea_storage_mount(&inj_base), ENTELEA_OK);
+	inj_mounted = false;
+}
+
+static void store_after(void *fixture)
+{
+	ARG_UNUSED(fixture);
+	if (inj_mounted) { /* 断言中止的用例：恢复后端，不殃及后续用例 */
+		(void)entelea_storage_mount(&inj_base);
+		inj_mounted = false;
+	}
+}
+
+#define APP1 0xA001U
+#define APP2 0xA002U
+
+static void kv_expect(uint32_t app, const void *val, int32_t len)
+{
+	uint8_t b[8];
+
+	zassert_equal(entelea_kv_load(app, b, sizeof(b)), len, "app %x", app);
+	zassert_mem_equal(b, val, (size_t)len, "app %x", app);
+}
+
+/* P1-5：满页复位后续写 + 压实。旧实现：复位时把满页的对页当空页续写
+ * （二次编程），压实先擦目标页再读其上的最新记录（他 app 丢失）。 */
+ZTEST(framework_store, test_kv_full_page_reboot_keeps_all)
+{
+	inj_begin();
+	uint8_t v;
+
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"A1", 2), ENTELEA_OK);
+	for (v = 0; v < 14; v++) {
+		zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_OK);
+	}
+	entelea_kv_test_reset(); /* 页 0 满时复位 */
+	for (v = 100; v < 116; v++) {
+		zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_OK, "v=%u", v);
+	}
+	kv_expect(APP1, "A1", 2);
+	v = 115;
+	kv_expect(APP2, &v, 1);
+
+	/* 每次保存后复位：覆盖全部游标相位（含满页、压实后、对页残留）。 */
+	for (int k = 0; k < 2 * 15 + 2; k++) {
+		v = (uint8_t)(150 + k);
+		zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_OK, "k=%d", k);
+		entelea_kv_test_reset();
+		kv_expect(APP1, "A1", 2);
+		kv_expect(APP2, &v, 1);
+	}
+	inj_end();
+}
+
+/* P1-6：半写记录不得被接受，失败槽不得重写。旧实现单次整槽写（magic
+ * 先落即"有效"），失败后同槽重写。 */
+ZTEST(framework_store, test_kv_torn_write_rejected)
+{
+	inj_begin();
+	uint8_t v = 7;
+
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"OLD", 3), ENTELEA_OK);
+	inj_tear(1, 16); /* 撕裂记录体 */
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"NEW1", 4),
+		      ENTELEA_E_IO);
+	kv_expect(APP1, "OLD", 3);
+	entelea_kv_test_reset();
+	kv_expect(APP1, "OLD", 3);
+
+	inj_tear(2, 2); /* 撕裂提交标记 */
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"NEW2", 4),
+		      ENTELEA_E_IO);
+	kv_expect(APP1, "OLD", 3);
+	zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_OK, "失败后续写不复用坏槽");
+	entelea_kv_test_reset();
+	kv_expect(APP1, "OLD", 3);
+	kv_expect(APP2, &v, 1);
+
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"NEW3", 4), ENTELEA_OK);
+	entelea_kv_test_reset();
+	kv_expect(APP1, "NEW3", 4);
+	inj_end();
+}
+
+/* P1-6：读错误≠空/未存；扫描失败不得盲写；压实读错误在擦除前中止。 */
+ZTEST(framework_store, test_kv_read_error_propagates)
+{
+	inj_begin();
+	uint8_t b[8];
+	uint8_t v;
+
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"OLD", 3), ENTELEA_OK);
+	entelea_kv_test_reset();
+	inj.read_fail = true;
+	int32_t r = entelea_kv_load(APP1, b, sizeof(b));
+
+	zassert_true(r < 0 && r != (int32_t)ENTELEA_E_NOTFOUND, "r=%d", r);
+	zassert_not_equal(entelea_kv_save(APP1, (const uint8_t *)"BAD", 3),
+			  ENTELEA_OK, "扫描失败不得盲写");
+	inj.read_fail = false;
+	kv_expect(APP1, "OLD", 3); /* 恢复后重试初始化 */
+
+	inj.read_fail = true;
+	zassert_equal(entelea_kv_load(APP1, b, sizeof(b)), (int32_t)ENTELEA_E_IO);
+	inj.read_fail = false;
+
+	for (v = 0; v < 14; v++) {
+		zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_OK);
+	}
+	inj.read_fail = true; /* 页满：本次保存需压实 */
+	v = 99;
+	zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_E_IO);
+	inj.read_fail = false;
+	kv_expect(APP1, "OLD", 3);
+	v = 13;
+	kv_expect(APP2, &v, 1);
+	v = 99;
+	zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_OK, "恢复后压实重试");
+	entelea_kv_test_reset();
+	kv_expect(APP1, "OLD", 3);
+	kv_expect(APP2, &v, 1);
+	inj_end();
+}
+
+/* P1-5/P1-6：压实复制撕裂 → 源页仍权威、无垃圾被读出；重试与后续
+ * 多轮压实不丢数据；副本写完而新记录失败（两页最大 seq 相等）→ 复位
+ * 取已用较少页，任一页皆完整。 */
+ZTEST(framework_store, test_kv_compaction_tear_keeps_data)
+{
+	inj_begin();
+	uint8_t v;
+
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"A1", 2), ENTELEA_OK);
+	for (v = 0; v < 14; v++) {
+		zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_OK);
+	}
+	inj_tear(3, 20); /* 压实写序：app1 体/标记、app2 体（撕裂）… */
+	v = 50;
+	zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_E_IO);
+	kv_expect(APP1, "A1", 2);
+	v = 13;
+	kv_expect(APP2, &v, 1);
+	entelea_kv_test_reset();
+	kv_expect(APP1, "A1", 2);
+	kv_expect(APP2, &v, 1);
+
+	v = 50;
+	zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_OK, "重试");
+	kv_expect(APP1, "A1", 2);
+	kv_expect(APP2, &v, 1);
+	for (v = 60; v < 90; v++) {
+		zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_OK, "v=%u", v);
+	}
+	entelea_kv_test_reset();
+	kv_expect(APP1, "A1", 2);
+	v = 89;
+	kv_expect(APP2, &v, 1);
+
+	/* 平局：重置为满页（APP1 + 14×APP2），压实写序 = APP1 体/标记、
+	 * APP2 体/标记、新记录体（第 5 次写撕裂）。 */
+	inj_end();
+	inj_begin();
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"A1", 2), ENTELEA_OK);
+	for (v = 0; v < 14; v++) {
+		zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_OK);
+	}
+	inj_tear(5, 20);
+	v = 70;
+	zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_E_IO);
+	v = 13;
+	kv_expect(APP2, &v, 1);
+	entelea_kv_test_reset();
+	kv_expect(APP1, "A1", 2);
+	kv_expect(APP2, &v, 1);
+	v = 71;
+	zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_OK, "平局后续写");
+	entelea_kv_test_reset();
+	kv_expect(APP1, "A1", 2);
+	kv_expect(APP2, &v, 1);
+	inj_end();
+}
+
+/* P1-6：审计半写不可见、坏槽不复用；读错误使 init/read 显式失败，
+ * 不当空环（旧实现：读失败按空环→下次追加擦页毁数据）。 */
+ZTEST(framework_store, test_audit_torn_and_read_error)
+{
+	inj_begin();
+	entelea_storage_audit_entry_t e = {.ch_idx = 3, .res = -4, .value_u = 9};
+	entelea_storage_audit_entry_t out[8];
+	int32_t n;
+
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+	zassert_equal(entelea_storage_audit_append(&e, 0), ENTELEA_OK);
+	inj_tear(1, 8);
+	zassert_equal(entelea_storage_audit_append(&e, 0), ENTELEA_E_IO);
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+	n = (int32_t)entelea_storage_audit_read(out, 8);
+	zassert_equal(n, 1, "半写记录不可见");
+	zassert_equal(out[0].seq, 1);
+	zassert_equal(entelea_storage_audit_append(&e, 0), ENTELEA_OK);
+	n = (int32_t)entelea_storage_audit_read(out, 8);
+	zassert_equal(n, 2);
+	zassert_equal(out[1].seq, 2);
+
+	inj_tear(2, 2); /* 撕裂提交标记 */
+	zassert_equal(entelea_storage_audit_append(&e, 0), ENTELEA_E_IO);
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+	n = (int32_t)entelea_storage_audit_read(out, 8);
+	zassert_equal(n, 2, "标记半写不可见");
+
+	inj.read_fail = true;
+	zassert_not_equal(entelea_storage_audit_init(), ENTELEA_OK, "读错误≠空环");
+	n = (int32_t)entelea_storage_audit_read(out, 8);
+	zassert_true(n < 0, "n=%d", n);
+	zassert_equal(entelea_storage_audit_append(&e, 0), ENTELEA_E_STATE,
+		      "未就绪不写（不擦页）");
+	inj.read_fail = false;
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+	zassert_equal(entelea_storage_audit_append(&e, 0), ENTELEA_OK);
+	n = (int32_t)entelea_storage_audit_read(out, 8);
+	zassert_equal(n, 3);
+	zassert_equal(out[0].seq, 1);
+	zassert_equal(out[1].seq, 2);
+	zassert_equal(out[2].seq, 3, "重扫后 seq=有效最大+1（坏槽不可见、不复用）");
+	inj_end();
+}
+
+ZTEST_SUITE(framework_store, NULL, store_setup, NULL, store_after, NULL);

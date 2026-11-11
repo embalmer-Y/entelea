@@ -397,6 +397,9 @@ entelea_result_t entelea_pkg_active(uint8_t *slot)
 	uint8_t rec = 0;
 	int32_t n = entelea_kv_load(PKG_ACTIVE_KV_TAG, &rec, 1);
 
+	if (n < 0 && n != (int32_t)ENTELEA_E_NOTFOUND) {
+		return (entelea_result_t)n; /* 介质错误≠无 active（RF1） */
+	}
 	if (n != 1 || rec >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_UNINIT;
 	}

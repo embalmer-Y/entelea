@@ -84,12 +84,12 @@ int main(void)
 		printk("[hw-flash] P2 PASS: meta persists (len=%u fnv=%08x)\n",
 		       rlen, fnv1a(rb, rlen));
 		entelea_storage_audit_entry_t ae[4];
-		size_t n = entelea_storage_audit_read(ae, 4);
+		int32_t n = entelea_storage_audit_read(ae, 4);
 
-		printk("[hw-flash] P2 %s: audit entries=%u (fnv=%08x)\n",
-		       n >= 1 ? "PASS" : "FAIL", n,
+		printk("[hw-flash] P2 %s: audit entries=%d (fnv=%08x)\n",
+		       n >= 1 ? "PASS" : "FAIL", (int)n,
 		       n >= 1 ? fnv1a((const uint8_t *)ae,
-				      n * sizeof(ae[0])) : 0);
+				      (size_t)n * sizeof(ae[0])) : 0);
 		CHK(present && reason == ENTELEA_FAIL_BOOT(7),
 		    "P2 noinit reason survived SW reset (0x00010007)");
 		CHK(entelea_trial_restore() == ENTELEA_OK &&

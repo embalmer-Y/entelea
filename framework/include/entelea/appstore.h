@@ -41,7 +41,7 @@ entelea_result_t entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
  * 验签的 active 不产生任何执行（pkg 测试如实呈现该分层）。 */
 entelea_result_t entelea_pkg_activate(uint8_t slot);
 
-/** 当前 active slot（无 = E_UNINIT）。 */
+/** 当前 active slot（无 = E_UNINIT；介质/初始化错误如实传播）。 */
 entelea_result_t entelea_pkg_active(uint8_t *slot);
 
 /** slot 直读（staged 包事实读面——装载链（wasm_host）取 wasm 段的

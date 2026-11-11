@@ -16,15 +16,19 @@ extern "C" {
 
 #define ENTELEA_KV_BLOB_MAX 250 /* 264B 槽 − 14B 头（结构性） */
 
-/** 惰性初始化（首次 save/load 内部调用亦可）；分区缺失 = E_STATE 如实。 */
+/** 惰性初始化（首次 save/load 内部调用亦可）；分区缺失 = E_STATE，
+ *  读错误 = E_IO 且不就绪（下次调用重扫，不盲写）。 */
 entelea_result_t entelea_kv_init(void);
 
-/** 保存/覆盖该 app 的状态 blob（追加式；页满压实翻页）。 */
+/** 保存/覆盖该 app 的状态 blob（追加式；体先写、提交标记后写；页满
+ *  先读后擦压实）。失败 = 错误码（init 错误原样；写失败 E_IO 且该槽
+ *  烧毁）——失败不改变已存的最新值。 */
 entelea_result_t entelea_kv_save(uint32_t app_hash, const uint8_t *data,
 				 uint16_t len);
 
-/** 读该 app 最新 blob；返回拷贝长度（≥0）或错误码（未存 = E_NOTFOUND，
- *  容量不足 = E_RANGE）。 */
+/** 读该 app 最新 blob；返回拷贝长度（≥0）或错误码（out 空 = E_PARAM，
+ *  未存 = E_NOTFOUND，容量不足 = E_RANGE，读错误 = E_IO，init 错误
+ *  原样）。读错误≠未存。 */
 int32_t entelea_kv_load(uint32_t app_hash, uint8_t *out, uint16_t max);
 
 #ifdef ENTELEA_TEST

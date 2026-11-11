@@ -4,7 +4,9 @@
  * 安全异常类掉电留存。8KB = 两页 × 4KB（擦除块对齐）× 64 槽 × 64B 定长。
  * "单条覆盖最旧"不可行（擦除单位=页）→ 两页乒乓：active 页写满 → 翻页
  * 续写（页首写前擦对页）——掉电始终保留最近 ~64 条（翻页瞬间 ≤128）。
- * 掉电半写探测：槽头 magic + seq 连续性（断尾丢弃）。
+ * RF1（review P1-6）：提交标记最后落（体先写、magic 后写）；逐槽三分类
+ * （擦除/有效/垃圾，不断尾、坏槽不复用）；读错误显式传播（init 不就绪、
+ * read 返回负错误码——读失败≠空环）；写失败烧毁该槽与 seq。
  * 相对旧实现调整：boot 打印留在平台层（本模块 printk-free，经 read API
  * 消费）。全量内存环保留（旧 commit.c 面）归 R04 观测面，本环只落异常类。
  */
@@ -22,7 +24,7 @@ static struct {
 	bool ready;
 	uint8_t active_page; /* 0/1 */
 	uint8_t next_slot;   /* active 页内下一写槽 0..63 */
-	uint32_t next_seq;   /* 全局单调（1 起；0 保留） */
+	uint32_t next_seq;   /* 全局单调（1 起；0/0xFFFFFFFF 不用） */
 } au;
 
 /* 槽小端布局（64B）：magic|seq|t_ms|ch_idx|actor|kind|_pad|evt|res|value|pad */
@@ -72,65 +74,94 @@ static void slot_decode(const uint8_t *s, entelea_storage_audit_entry_t *e)
 	e->value_u = entelea_get_le32(s + OFF_VALUE);
 }
 
-/* 页扫描：返回该页最大 seq（无有效槽 = false）。半写容错：顺序写假设下
- * 自首个坏槽起其后全部忽略（断尾）；seq 断裂亦截断。 */
-static bool page_scan(uint8_t page, uint32_t *max_seq, uint8_t *used_slots)
+static entelea_result_t slot_read(uint8_t page, uint8_t i, uint8_t *s)
 {
-	uint8_t slot[AUDIT_SLOT_SZ];
-	uint32_t prev = 0;
+	return entelea_store_backend.read(ENTELEA_PART_AUDIT,
+					  page * AUDIT_PAGE_SZ + i * AUDIT_SLOT_SZ,
+					  s, AUDIT_SLOT_SZ) == ENTELEA_OK
+		       ? ENTELEA_OK
+		       : ENTELEA_E_IO;
+}
+
+/* 有效 = magic 落定（体先于 magic 写成）且 seq 合法。 */
+static bool slot_valid(const uint8_t *s)
+{
+	uint32_t seq = entelea_get_le32(s + OFF_SEQ);
+
+	return entelea_get_le32(s + OFF_MAGIC) == AUDIT_MAGIC && seq != 0 &&
+	       seq != UINT32_MAX;
+}
+
+static bool slot_erased(const uint8_t *s)
+{
+	for (uint32_t k = 0; k < AUDIT_SLOT_SZ; k++) {
+		if (s[k] != 0xFF) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/* 两段写（槽 64B 对齐、写块 ≤4）：体先、magic 后。 */
+static entelea_result_t slot_commit(uint8_t page, uint8_t i, const uint8_t *s)
+{
+	uint32_t off = page * AUDIT_PAGE_SZ + i * AUDIT_SLOT_SZ;
+
+	if (entelea_store_backend.write(ENTELEA_PART_AUDIT, off + OFF_SEQ,
+					s + OFF_SEQ,
+					AUDIT_SLOT_SZ - OFF_SEQ) != ENTELEA_OK ||
+	    entelea_store_backend.write(ENTELEA_PART_AUDIT, off, s, OFF_SEQ) !=
+		    ENTELEA_OK) {
+		return ENTELEA_E_IO;
+	}
+	return ENTELEA_OK;
+}
+
+/* 页扫描：最大有效 seq + 已用槽数（末个非擦除槽 + 1；坏槽不复用、
+ * 不断尾——其后有效槽照常可见）。读错误显式失败。 */
+static entelea_result_t page_scan(uint8_t page, uint32_t *max_seq,
+				  uint8_t *used_slots)
+{
+	uint8_t s[AUDIT_SLOT_SZ];
 
 	*max_seq = 0;
 	*used_slots = 0;
 	for (uint8_t i = 0; i < AUDIT_SLOTS; i++) {
-		uint32_t off = page * AUDIT_PAGE_SZ + i * AUDIT_SLOT_SZ;
-
-		if (entelea_store_backend.read(ENTELEA_PART_AUDIT, off, slot,
-					       AUDIT_SLOT_SZ) != ENTELEA_OK) {
-			return false;
+		if (slot_read(page, i, s) != ENTELEA_OK) {
+			return ENTELEA_E_IO;
 		}
-		if (entelea_get_le32(slot + OFF_MAGIC) != AUDIT_MAGIC) {
-			break; /* 未写/半写 → 断尾 */
+		if (slot_valid(s) && entelea_get_le32(s + OFF_SEQ) > *max_seq) {
+			*max_seq = entelea_get_le32(s + OFF_SEQ);
 		}
-		uint32_t seq = entelea_get_le32(slot + OFF_SEQ);
-
-		if (seq == 0 || (i > 0 && seq != prev + 1)) {
-			break; /* 序断裂（半写）→ 断尾 */
+		if (!slot_erased(s)) {
+			*used_slots = (uint8_t)(i + 1);
 		}
-		prev = seq;
-		*max_seq = seq;
-		(*used_slots)++;
 	}
-	return *used_slots > 0;
+	return ENTELEA_OK;
 }
 
 entelea_result_t entelea_storage_audit_init(void)
 {
-	uint32_t seq_a, seq_b;
-	uint8_t used_a, used_b;
-	bool has_a = page_scan(0, &seq_a, &used_a);
-	bool has_b = page_scan(1, &seq_b, &used_b);
+	uint32_t seq_a;
+	uint32_t seq_b;
+	uint8_t used_a;
+	uint8_t used_b;
 
-	if (!has_a && !has_b) {
-		/* 全新分区：页 0 起（擦除态，首 append 前无需擦）。 */
-		au.active_page = 0;
-		au.next_slot = 0;
-		au.next_seq = 1;
-	} else if (seq_b > seq_a || (has_b && !has_a)) {
-		au.active_page = 1;
-		au.next_seq = seq_b + 1;
-		au.next_slot = (used_b == AUDIT_SLOTS) ? 0 : used_b;
-		if (used_b == AUDIT_SLOTS) {
-			/* 满页未翻：翻页目标（页 0 含旧数据）append 期擦。 */
-			au.active_page = 0;
-		}
-	} else {
-		au.active_page = 0;
-		au.next_seq = seq_a + 1;
-		au.next_slot = (used_a == AUDIT_SLOTS) ? 0 : used_a;
-		if (used_a == AUDIT_SLOTS) {
-			au.active_page = 1;
-		}
+	au.ready = false;
+	if (page_scan(0, &seq_a, &used_a) != ENTELEA_OK ||
+	    page_scan(1, &seq_b, &used_b) != ENTELEA_OK) {
+		return ENTELEA_E_IO; /* 读错误≠空环：不就绪、不擦页 */
 	}
+	uint8_t page = (seq_b > seq_a) ? 1U : 0U;
+	uint8_t used = page ? used_b : used_a;
+
+	au.next_seq = ((seq_a > seq_b) ? seq_a : seq_b) + 1U;
+	if (used >= AUDIT_SLOTS) {
+		page ^= 1U; /* 满页：翻页目标在首 append 前擦 */
+		used = 0;
+	}
+	au.active_page = page;
+	au.next_slot = used;
 	au.ready = true;
 	return ENTELEA_OK;
 }
@@ -138,40 +169,40 @@ entelea_result_t entelea_storage_audit_init(void)
 entelea_result_t entelea_storage_audit_append(
 	const entelea_storage_audit_entry_t *e, uint16_t evt)
 {
-	if (e == NULL || !au.ready) {
+	if (e == NULL || !au.ready || au.next_seq == UINT32_MAX) {
 		return ENTELEA_E_STATE;
 	}
-	uint8_t slot[AUDIT_SLOT_SZ];
-
-	slot_encode(slot, e, evt, au.next_seq);
-	uint32_t off = au.active_page * AUDIT_PAGE_SZ + au.next_slot * AUDIT_SLOT_SZ;
-
 	if (au.next_slot == 0) {
 		/* 页首写：确保目标页为擦除态（翻页瞬间掉电的恢复路径；
-		 * 擦除幂等）。 */
+		 * 擦除幂等；失败不消耗槽/seq）。 */
 		if (entelea_store_backend.erase_off(ENTELEA_PART_AUDIT,
 						    au.active_page * AUDIT_PAGE_SZ,
 						    AUDIT_PAGE_SZ) != ENTELEA_OK) {
 			return ENTELEA_E_IO;
 		}
 	}
-	if (entelea_store_backend.write(ENTELEA_PART_AUDIT, off, slot,
-					AUDIT_SLOT_SZ) != ENTELEA_OK) {
-		return ENTELEA_E_IO;
-	}
-	au.next_seq++;
+	uint8_t slot[AUDIT_SLOT_SZ];
+
+	slot_encode(slot, e, evt, au.next_seq);
+	entelea_result_t r = slot_commit(au.active_page, au.next_slot, slot);
+
+	au.next_seq++; /* 失败亦烧毁槽与 seq：已编程字节不重写 */
 	au.next_slot++;
 	if (au.next_slot == AUDIT_SLOTS) {
 		au.next_slot = 0;
 		au.active_page ^= 1U; /* 写满翻页（对页在下次页首写前擦） */
 	}
-	return ENTELEA_OK;
+	return r;
 }
 
-size_t entelea_storage_audit_read(entelea_storage_audit_entry_t *out, size_t max)
+int32_t entelea_storage_audit_read(entelea_storage_audit_entry_t *out,
+				   size_t max)
 {
-	if (!au.ready || out == NULL) {
-		return 0;
+	if (out == NULL) {
+		return ENTELEA_E_PARAM;
+	}
+	if (!au.ready) {
+		return ENTELEA_E_STATE;
 	}
 	/* 两页收集（≤128 过渡态）后按 seq 取最近 max 条。静态收集缓冲
 	 * （旧真机实测：4KB 线程栈上爆栈）；读路径低频单消费。 */
@@ -181,17 +212,14 @@ size_t entelea_storage_audit_read(entelea_storage_audit_entry_t *out, size_t max
 	for (uint8_t p = 0; p < AUDIT_PAGES; p++) {
 		for (uint8_t i = 0; i < AUDIT_SLOTS; i++) {
 			uint8_t slot[AUDIT_SLOT_SZ];
-			uint32_t off = p * AUDIT_PAGE_SZ + i * AUDIT_SLOT_SZ;
 
-			if (entelea_store_backend.read(ENTELEA_PART_AUDIT, off, slot,
-						       AUDIT_SLOT_SZ) != ENTELEA_OK) {
-				continue;
+			if (slot_read(p, i, slot) != ENTELEA_OK) {
+				return ENTELEA_E_IO;
 			}
-			if (entelea_get_le32(slot + OFF_MAGIC) != AUDIT_MAGIC) {
-				break;
+			if (slot_valid(slot)) {
+				slot_decode(slot, &all[n]);
+				n++;
 			}
-			slot_decode(slot, &all[n]);
-			n++;
 		}
 	}
 	/* 插入排序（seq 升序；n ≤ 128 低频）。 */
@@ -208,5 +236,5 @@ size_t entelea_storage_audit_read(entelea_storage_audit_entry_t *out, size_t max
 	size_t take = (n > max) ? max : n;
 
 	memcpy(out, &all[n - take], take * sizeof(out[0]));
-	return take;
+	return (int32_t)take;
 }
