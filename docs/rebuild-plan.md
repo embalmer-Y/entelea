@@ -52,7 +52,7 @@
 外移清单及恢复边界记录在该目录的 `relocation-manifest.json`；
 它是搬迁记录，不是第二份迁移/开发进度台账。
 Galatea/Kaleido 的参考位置见唯一台账 `external_references`。
-根 AGENTS 仅作路由，新 Agent 的详细入口见[接手 prompt](agent-handoff-prompt.md)。
+根 AGENTS 仅作路由；架构与模块入口见 [wiki](wiki/README.md)。
 该交接不启动 R02，也不改变 R00/R01 的完成状态。
 
 新版受管理源码 `.deps/<dependency>`、产物 `build/<batch>-<target>`、

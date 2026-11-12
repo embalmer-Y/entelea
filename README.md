@@ -11,7 +11,6 @@ R13 仍待完整框架/产品验收。逐项范围、已验证内容和阻塞见
 - [重建规划](docs/rebuild-plan.md)：顺序、边界、决策闸和验收。
 - [唯一资产台账](docs/migration-assets.json)：固定来源、模块映射、迁移与验证状态。
 - [框架 Wiki](docs/wiki/README.md)：模块职责、调用链、平台差异和限制。
-- [接手快照](docs/agent-handoff-prompt.md)：历史交接，不是当前状态权威。
 - 旧源码在相邻 `entelea-legacy`，主基线
   `e54047b51519fa449dfe4a338af8d126bed8fac4`；Forge 单独固定版本。
 - 新目录是 linked worktree；旧目录包含共享 Git 对象库，**不能删除**。
