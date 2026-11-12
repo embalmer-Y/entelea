@@ -210,7 +210,7 @@ R13 保持 pending。
   - `python3 -m unittest discover -s tools/tests -v`：109 项 OK。
   - native_sim 16 个套件构建退出码 0，于临时目录运行，均报告 `PROJECT EXECUTION SUCCESSFUL`，无 `FAIL -` 行；`START -` 计数与基线一致：wasm 26、delivery 24、store 33、r13 2、pkg 9、r04 12。
   - 板级交叉编译（`esp32p4c5_core_board/esp32p4/hpcore`，仅编译，未烧录），退出码与静态 SRAM（红线 552,960）：hw_factory_intake 0 / 449,268；hw_flash_persist 0 / 98,040；hw_cloud_chat 0 / 481,648；hw_wifi_netmon 0 / 280,120；minimal 0 / 91,124；tf_probe 0 / 69,068。
-  - hw_fault_stop 编译退出码 0，但静态 SRAM 为 640,248，超过红线。以基线提交 55559c2 的导出树复测，同为 640,248，故为既有问题，本次未改变。该应用的 R02 验证记录已删除，待 owner 决定移除或改造。
+  - hw_fault_stop 编译退出码 0，但静态 SRAM 为 640,248，超过红线。以基线提交 55559c2 的导出树复测，同为 640,248，故为既有问题，本次未改变。该应用的 R02 验证记录已删除；owner 决定移除，已从仓库删除（历史见 55559c2）。
   - Linux 云诊断 `ENTELEA_CLOUD_OUT=build/rf1-f2-cloud ENTELEA_MBEDTLS_BUILD=build/rf1-mbedtls-host sh build-support/build-f2-cloud.sh` 退出码 0（仅编译链接，未运行）。
 - 排障：hw_cloud_chat 与 hw_wifi_netmon 首次失败，原因是复用的构建目录缓存了旧的 `ZEPHYR_MODULES`（仅 hal_espressif），nanopb 未进入模块集，Kconfig 中止。删除目录后，以 `--module nanopb`（云应用另加 mbedtls、tf_psa_crypto）重建通过。
 - 未测与边界：未烧录、未运行板级程序，未做真机验证；native_sim 结果不代表真板行为。

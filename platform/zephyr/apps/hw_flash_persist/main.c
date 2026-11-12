@@ -2,8 +2,7 @@
 /* R03 board batch A-3 hardware-gate image: unattended flash persistence
  * across resets on real hardware.
  * Phase ledger = kv (flash-persistent). Resets take the production path
- * (system_fail -> task_wdt channel expiry -> sys_reboot, as in hw_fault_stop
- * P1).
+ * (system_fail -> task_wdt channel expiry -> sys_reboot).
  *  P1 (no kv record, i.e. power-on entry): write the meta pattern string and
  *     read it back; store P1 in kv; append one audit entry; then
  *     system_fail(FAIL_BOOT(7)) -> SW reset (system_fail also records the
