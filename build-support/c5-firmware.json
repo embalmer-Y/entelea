@@ -33,6 +33,6 @@
   },
   "build": {
     "verified": "2026-11-09 真机：C5 slave 启动 log + P4 WiFi 闸全链 ALL PASS",
-    "evidence": "build/f1-wifi-gate/gate-wifi-allpass.log"
+    "evidence": "docs/evidence/f1-wifi-gate/gate-wifi-allpass.log"
   }
 }

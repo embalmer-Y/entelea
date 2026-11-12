@@ -185,6 +185,14 @@ R13 保持 pending。
   - 模块与补丁：`check_dependencies.py --dependency zephyr --checkout .deps/zephyrproject/zephyr` PASS；
     `--dependency wamr --checkout .deps/wamr` PASS；esp-hosted-mcu HEAD `2e3f6c8`；SDK `sdk_version` 1.0.1，GCC 14.3.0。
   - OpenHands 环境：版本集合与旧环境逐行一致（仅少 pip）；`openhands-sdk` / `openhands-tools` 1.60.2，`pynacl` 1.6.2 可导入。
+- 证据迁出（2026-11-12）：仓库内日志与笔记迁入 `docs/evidence/`（路径与原 `build/` 子目录同名）；
+  仓库外二进制与备份位于 `/home/emb/project/backups/`，逐个 `cmp` 核对一致：
+  `hw-gate/p4-full-16m.bin` sha256 `c00800dbc24a43c7876c428bf246cd1da3b56cb47b82c4594c81d996cb33b0d6`；
+  `hw-gate/legacy-app-0x2000.bin` `faff1a461f7c211f2a47ebe14081090301366c2689f0f32bcce4d36725d652ad`；
+  `r02-hwgate/zephyr/zephyr.bin` `b4221a5e54f7153542c3bc90bd0d26cd1272ae60636d7306354904dc56c9fe1e`；
+  `r14-tf-final/zephyr/zephyr.bin` `269ee7e25570afcf115fd4941aafb92813d4be1b5c491d21327427fc79b3ae51`；
+  `r15-cloud/zephyr/zephyr.bin` `d12b32456ac2db926a03e5a1a4eea468c48db1fbab5e56410d407caac36cd9b0`。
+  `build/` 中其余内容均为可再生构建树，删除不影响证据。
 - 未测与边界：
   1. `build-support/build-c5-firmware.sh` 未运行（它会对 IDF 副本执行 patch-idf，并覆盖产物与 sha256）；
      仅路径已改，需授权后再执行。

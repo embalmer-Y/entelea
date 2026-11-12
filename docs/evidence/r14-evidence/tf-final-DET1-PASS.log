@@ -1,0 +1,51 @@
+ESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0x1 (POWERON),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff20000,len:0xb60c
+load:0x4ff2b6c0,len:0x1f60
+load:0x50108000,len:0x24
+SHA-256 comparison failed:
+Calculated: 7dd18a86a644288830a1c0cbf2c1f3793e8243a29c339b04c91e8e6f0cdb5b47
+Expected: 00000000200a0000000000000000000000000000000000000000000000000000
+Attempting to boot anyway...
+entry 0x4ff20580
+I (soc_init): ESP Simple boot
+I (soc_init): compile time Nov  9 2026 21:31:34
+W (soc_init): Unicore bootloader
+I (soc_init): chip revision: v3.2
+I (flash_init): SPI Speed      : 80MHz
+I (flash_init): SPI Mode       : DIO
+I (flash_init): SPI Flash Size : 16MB
+I (boot): DRAM	: lma=00002020h vma=4ff20000h size=0b60ch ( 46604)
+I (boot): DRAM	: lma=0000d634h vma=4ff2b6c0h size=01f60h (  8032)
+I (boot): RTC_IRAM	: lma=0000f59ch vÿESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0x1 (POWERON),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff20000,len:0xb60c
+load:0x4ff2b6c0,len:0x1f60
+load:0x50108000,len:0x24
+SHA-256 comparison failed:
+Calculated: 7dd18a86a644288830a1c0cbf2c1f3793e8243a29c339b04c91e8e6f0cdb5b47
+Expected: 00000000200a0000000000000000000000000000000000000000000000000000
+Attempting to boot anyway...
+entry 0x4ff20580
+I (soc_init): ESP Simple boot
+I (soc_init): compile time Nov  9 2026 21:31:34
+W (soc_init): Unicore bootloader
+I (soc_init): chip revision: v3.2
+I (flash_init): SPI Speed      : 80MHz
+I (flash_init): SPI Mode       : DIO
+I (flash_init): SPI Flash Size : 16MB
+I (boot): DRAM	: lma=00002020h vma=4ff20000h size=0b60ch ( 46604)
+I (boot): DRAM	: lma=0000d634h vma=4ff2b6c0h size=01f60h (  8032)
+I (boot): RTC_IRAM	: lma=0000f59ch vma=50108000h size=00024h (    36)
+I (boot): DROM	: lma=00010000h vma=40010000h size=01100h (  4352)
+I (boot): IROM	: lma=00020000h vma=40000000h size=06880h ( 26752)
+I (boot): libc heap size 560 kB.
+I (spi_flash): detected chip: boya
+I (spi_flash): flash io: dio
+*** Booting Zephyr OS build v4.5.0 ***
+[hw-tf] DET=1
+[hw-tf] PASS: sd_init ok type=0 ver=4 blocks=32358400

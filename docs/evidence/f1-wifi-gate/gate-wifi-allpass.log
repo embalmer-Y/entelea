@@ -1,0 +1,57 @@
+ESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0x1 (POWERON),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff20000,len:0xeae8
+load:0x4ff2eb40,len:0x2d14
+load:0x50108000,len:0x24
+SHA-256 comparison failed:
+Calculated: 2ce8877c8b209fb359814c4c5fdd67b3911189ba406b0b672563cbc3800419a2
+Expected: 0000000090c70000000000000000000000000000000000000000000000000000
+Attempting to boot anyway...
+entry 0x4ff20580
+I (soc_init): ESP Simple boot
+I (soc_init): compile time Nov  9 2026 16:58:27
+W (soc_init): Unicore bootloader
+I (soc_init): chip revision: v3.2
+I (flash_init): SPI Speed      : 80MHz
+I (flash_init): SPI Mode       : DIO
+I (flash_init): SPI Flash Size : 16MB
+I (boot): DRAM	: lma=00002020h vma=4ff20000h size=0eae8h ( 60136)
+I (boot): DRAM	: lma=00010b10h vma=4ff2eb40h size=02d14h ( 11540)
+I (boot): RTC_IRAM	: lma=0001382ch vma=50108000h size=00024h (    36)
+I (boot): DROM	: lma=00020000h vma=40030000h size=06a00h ( 27136)
+I (boot): IROM	: lma=00030000h vma=40000000h size=24280h (148096)
+I (boot): libc heap size 354 kB.
+I (spi_flash): detected chip: boya
+I (spi_flash): flash io: dio
+[00:00:02.007,000] [0m<inf> sd: Card does not support CMD8, assuming legacy card[0m
+[00:00:02.050,000] [0m<inf> esp_hosted_mcu_core: coprocessor priv event 34[0m
+[00:00:02.050,000] [0m<inf> esp_hosted_mcu_core: coproces[00:00:02.051,000] [0m<inf> esp_hosted_mcu_core: coprocessor firmware v3.0.10[0m
+sor SDIO e2h mode 0[0m
+*** Booting Zephyr OS build v4.5.0 ***
+[hw-wifi] wifi/netmon gate begins
+[00:00:03.111,000] [0m<dbg> esp_hosted_mcu.esp_hosted_mcu_handle_event: unhandled event msg_id 773[0m
+[hw-wifi] PASS: default wifi iface ready (esp_hosted)
+[hw-wifi] PASS: iface up
+[hw-wifi] CONFIG_WAIT (P4C1: ssid/psk over console)
+[00:00:03.153,000] [0m<dbg> esp_hosted_mcu.esp_hosted_mcu_handle_event: unhandled event msg_id 773[0m
+[hw-wifi] PASS: credentials injected over console (P4C1)
+[hw-wifi] CONNECT_BEGIN attempt=1
+[hw-wifi] CONNECT_OK attempt=1
+[hw-wifi] DHCP_BOUND attempt=1 address=192.168.2.120
+[hw-wifi] dep NET after 1st good=DEGRADED
+[hw-wifi] dep NET UP (2 good, debounced)
+[00:00:27.064,000] [0m<dbg> esp_hosted_mcu.esp_hosted_mcu_handle_event: StaDisconnected reason=8[0m
+[hw-wifi] DISCONNECT_OK
+[hw-wifi] dep NET DOWN (bad -> immediate)
+[hw-wifi] CONNECT_BEGIN attempt=2
+[hw-wifi] CONNECT_OK attempt=2
+[hw-wifi] DHCP_BOUND attempt=2 address=192.168.2.120
+[hw-wifi] dep NET after 1st good=DEGRADED
+[hw-wifi] dep NET UP (2 good, debounced)
+[00:00:38.306,000] [0m<dbg> esp_hosted_mcu.esp_hosted_mcu_handle_event: StaDisconnected reason=8[0m
+[hw-wifi] DISCONNECT_OK
+[hw-wifi] dep NET DOWN (bad -> immediate)
+[hw-wifi] PASS: association+dhcp+dep-up/down x2/2
+[hw-wifi] PASS: wifi/netmon loop closed (net dep live)

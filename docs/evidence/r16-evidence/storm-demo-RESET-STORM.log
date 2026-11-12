@@ -1,0 +1,163 @@
+‚‚úESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0x1 (POWERON),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff20000,len:0xc7e8
+load:0x4ff2c810,len:0x1c54
+load:0x50108000,len:0x24
+SHA-256 comparison failed:
+Calculated: aef8e5491b20ed9d54ae0684544bf7e579bcc75b836f61fc175dcbac35aad82f
+Expected: 0000000050fb0000000000000000000000000000000000000000000000000000
+Attempting to boot anyway...
+entry 0x4ff20580
+I (soc_init): ESP Simple boot
+I (soc_init): compile time Nov 11 2026 00:12:03
+W (soc_init): Unicore bootloader
+I (soc_init): chip revision: v3.2
+I (flash_init): SPI Speed      : 80MHz
+I (flash_init): SPI Mode       : DIO
+I (flash_init): SPI Flash Size : 16MB
+I (boot): DRAM	: lma=00002020h vma=4ff20000h size=0c7e8h ( 51176)
+I (boot): DRAM	: lma=0000e810h vma=4ff2c810h size=01c54h (  7252)
+I (boot): RTC_IRAM	: lma=0001046ch vma=50108000h size=00024h (    36)
+I (boot): DROM	: lma=00020000h vma=40010000h size=01200h (  4608)
+I (boot): IROM	: lma=00030000h vma=40000000h size=06700h ( 26368)
+I (boot): libc heap size 539 kB.
+I (spi_flash): detected chip: boya
+I (spi_flash): flash io: dio
+*** Booting Zephyr OS build v4.5.0 ***
+[entelea] minimal supervision image: outputs held at safe poweron
+[entelea] last abnormal reset reason=0x00010007 (noinit)
+[storm-demo] forcing abnormal reset in 3s...
+ESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0xc (SW_CPU_RESET),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff20000,len:0xc7e8
+load:0x4ff2c810,len:0x1c54
+load:0x50108000,len:0x24
+SHA-256 comparison failed:
+Calculated: aef8e5491b20ed9d54ae0684544bf7e579bcc75b836f61fc175dcbac35aad82f
+Expected: 0000000050fb0000000000000000000000000000000000000000000000000000
+Attempting to boot anyway...
+entry 0x4ff20580
+I (soc_init): ESP Simple boot
+I (soc_init): compile time Nov 11 2026 00:12:03
+W (soc_init): Unicore bootloader
+I (soc_init): chip revision: v3.2
+I (flash_init): SPI Speed      : 80MHz
+I (flash_init): SPI Mode       : DIO
+I (flash_init): SPI Flash Size : 16MB
+I (boot): DRAM	: lma=00002020h vma=4ff20000h size=0c7e8h ( 51176)
+I (boot): DRAM	: lma=0000e810h vma=4ff2c810h size=01c54h (  7252)
+I (boot): RTC_IRAM	: lma=0001046ch vma=50108000h size=00024h (    36)
+I (boot): DROM	: lma=00020000h vma=40010000h size=01200h (  4608)
+I (boot): IROM	: lma=00030000h vma=40000000h size=06700h ( 26368)
+I (boot): libc heap size 539 kB.
+I (spi_flash): detected chip: boya
+I (spi_flash): flash io: dio
+*** Booting Zephyr OS build v4.5.0 ***
+[entelea] minimal supervision image: outputs held at safe poweron
+[d12] abnormal reset #1 cause=0x2
+[entelea] last abnormal reset reason=0x00010007 (noinit)
+[storm-demo] forcing abnormal reset in 3s...
+ESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0xc (SW_CPU_RESET),boot:0x30f (SPI_FAST_FLASH_BOOT)
+Core0 Saved PC:0x4ff20b1e
+SPI mode:DIO, clock div:1
+load:0x4ff20000,len:0xc7e8
+load:0x4ff2c810,len:0x1c54
+load:0x50108000,len:0x24
+SHA-256 comparison failed:
+Calculated: aef8e5491b20ed9d54ae0684544bf7e579bcc75b836f61fc175dcbac35aad82f
+Expected: 0000000050fb0000000000000000000000000000000000000000000000000000
+Attempting to boot anyway...
+entry 0x4ff20580
+I (soc_init): ESP Simple boot
+I (soc_init): compile time Nov 11 2026 00:12:03
+W (soc_init): Unicore bootloader
+I (soc_init): chip revision: v3.2
+I (flash_init): SPI Speed      : 80MHz
+I (flash_init): SPI Mode       : DIO
+I (flash_init): SPI Flash Size : 16MB
+I (boot): DRAM	: lma=00002020h vma=4ff20000h size=0c7e8h ( 51176)
+I (boot): DRAM	: lma=0000e810h vma=4ff2c810h size=01c54h (  7252)
+I (boot): RTC_IRAM	: lma=0001046ch vma=50108000h size=00024h (    36)
+I (boot): DROM	: lma=00020000h vma=40010000h size=01200h (  4608)
+I (boot): IROM	: lma=00030000h vma=40000000h size=06700h ( 26368)
+I (boot): libc heap size 539 kB.
+I (spi_flash): detected chip: boya
+I (spi_flash): flash io: dio
+*** Booting Zephyr OS build v4.5.0 ***
+[entelea] minimal supervision image: outputs held at safe poweron
+[d12] abnormal reset #2 cause=0x2
+[entelea] last abnormal reset reason=0x00010007 (noinit)
+[storm-demo] forcing abnormal reset in 3s...
+ESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0xc (SW_CPU_RESET),boot:0x30f (SPI_FAST_FLASH_BOOT)
+Core0 Saved PC:0x4ff20b1e
+SPI mode:DIO, clock div:1
+load:0x4ff20000,len:0xc7e8
+load:0x4ff2c810,len:0x1c54
+load:0x50108000,len:0x24
+SHA-256 comparison failed:
+Calculated: aef8e5491b20ed9d54ae0684544bf7e579bcc75b836f61fc175dcbac35aad82f
+Expected: 0000000050fb0000000000000000000000000000000000000000000000000000
+Attempting to boot anyway...
+entry 0x4ff20580
+I (soc_init): ESP Simple boot
+I (soc_init): compile time Nov 11 2026 00:12:03
+W (soc_init): Unicore bootloader
+I (soc_init): chip revision: v3.2
+I (flash_init): SPI Speed      : 80MHz
+I (flash_init): SPI Mode       : DIO
+I (flash_init): SPI Flash Size : 16MB
+I (boot): DRAM	: lma=00002020h vma=4ff20000h size=0c7e8h ( 51176)
+I (boot): DRAM	: lma=0000e810h vma=4ff2c810h size=01c54h (  7252)
+I (boot): RTC_IRAM	: lma=0001046ch vma=50108000h size=00024h (    36)
+I (boot): DROM	: lma=00020000h vma=40010000h size=01200h (  4608)
+I (boot): IROM	: lma=00030000h vma=40000000h size=06700h ( 26368)
+I (boot): libc heap size 539 kB.
+I (spi_flash): detected chip: boya
+I (spi_flash): flash io: dio
+*** Booting Zephyr OS build v4.5.0 ***
+[entelea] minimal supervision image: outputs held at safe poweron
+[d12] abnormal reset #3 cause=0x2
+[entelea] last abnormal reset reason=0x00010007 (noinit)
+[storm-demo] forcing abnormal reset in 3s...
+ESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0xc (SW_CPU_RESET),boot:0x30f (SPI_FAST_FLASH_BOOT)
+Core0 Saved PC:0x4ff20b1e
+SPI mode:DIO, clock div:1
+load:0x4ff20000,len:0xc7e8
+load:0x4ff2c810,len:0x1c54
+load:0x50108000,len:0x24
+SHA-256 comparison failed:
+Calculated: aef8e5491b20ed9d54ae0684544bf7e579bcc75b836f61fc175dcbac35aad82f
+Expected: 0000000050fb0000000000000000000000000000000000000000000000000000
+Attempting to boot anyway...
+entry 0x4ff20580
+I (soc_init): ESP Simple boot
+I (soc_init): compile time Nov 11 2026 00:12:03
+W (soc_init): Unicore bootloader
+I (soc_init): chip revision: v3.2
+I (flash_init): SPI Speed      : 80MHz
+I (flash_init): SPI Mode       : DIO
+I (flash_init): SPI Flash Size : 16MB
+I (boot): DRAM	: lma=00002020h vma=4ff20000h size=0c7e8h ( 51176)
+I (boot): DRAM	: lma=0000e810h vma=4ff2c810h size=01c54h (  7252)
+I (boot): RTC_IRAM	: lma=0001046ch vma=50108000h size=00024h (    36)
+I (boot): DROM	: lma=00020000h vma=40010000h size=01200h (  4608)
+I (boot): IROM	: lma=00030000h vma=40000000h size=06700h ( 26368)
+I (boot): libc heap size 539 kB.
+I (spi_flash): detected chip: boya
+I (spi_flash): flash io: dio
+*** Booting Zephyr OS build v4.5.0 ***
+[entelea] minimal supervision image: outputs held at safe poweron
+[d12] abnormal reset #4 cause=0x2
+[d12] RESET-STORM SAFE-HALT: >=3 consecutive abnormal resets; outputs at safe poweron, business halted (power-cycle to exit)
+[entelea] last abnormal reset reason=0x00010007 (noinit)
+[storm-demo] SAFE-HALT confirmed (business halted, feeding)

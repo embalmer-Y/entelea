@@ -1,0 +1,1185 @@
+[inject] sent ssid=8B psk=12B host=30B key=82B model=22B
+ESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0x1 (POWERON),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff20000,len:0xef70
+load:0x4ff2efc0,len:0x3034
+load:0x50108000,len:0x24
+SHA-256 comparison failed:
+Calculated: 7159f50247f86d181ce7f652c0a120f9ae39a278d045db237a8532267a9e9248
+Expected: 00000000f0bf0000000000000000000000000000000000000000000000000000
+Attempting to boot anyway...
+entry 0x4ff20580
+I (soc_init): ESP Simple boot
+I (soc_init): compile time Nov 10 2026 19:44:59
+W (soc_init): Unicore bootloader
+I (soc_init): chip revision: v3.2
+I (flash_init): SPI Speed      : 80MHz
+I (flash_init): SPI Mode       : DIO
+I (flash_init): SPI Flash Size : 16MB
+I (boot): DRAM	: lma=00002020h vma=4ff20000h size=0ef70h ( 61296)
+I (boot): DRAM	�ESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0x1 (POWERON),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff20000,len:0xef70
+load:0x4ff2efc0,len:0x3034
+load:0x50108000,len:0x24
+SHA-256 comparison failed:
+Calculated: 7159f50247f86d181ce7f652c0a120f9ae39a278d045db237a8532267a9e9248
+Expected: 00000000f0bf0000000000000000000000000000000000000000000000000000
+Attempting to boot anyway...
+entry 0x4ff20580
+I (soc_init): ESP Simple boot
+I (soc_init): compile time Nov 10 2026 19:44:59
+W (soc_init): Unicore bootloader
+I (soc_init): chip revision: v3.2
+I (flash_init): SPI Speed      : 80MHz
+I (flash_init): SPI Mode       : DIO
+I (flash_init): SPI Flash Size : 16MB
+I (boot): DRAM	: lma=00002020h vma=4ff20000h size=0ef70h ( 61296)
+I (boot): DRAM	: lma=00010f98h vma=4ff2efc0h size=03034h ( 12340)
+I (boot): RTC_IRAM	: lma=00013fd4h vma=50108000h size=00024h (    36)
+I (boot): DROM	: lma=00020000h vma=40060000h size=18b80h (101248)
+I (boot): IROM	: lma=00040000h vma=40000000h size=56480h (353408)
+I (boot): libc heap size 161 kB.
+I (spi_flash): detected chip: boya
+I (spi_flash): flash io: dio
+[00:00:02.007,000] [0m<inf> sd: Card does not support CMD8, assuming legacy card[0m
+[00:00:02.051,000] [0m<inf> esp_hosted_mcu_core: coprocessor priv event 34[0m
+[00:00:02.051,000] [0m<inf> esp_hosted_mcu_core: coproce[00:00:02.052,000] [0m<inf> esp_hosted_mcu_core: coprocessor firmware v3.0.10[0m
+ssor SDIO e2h mode 0[0m
+*** Booting Zephyr OS build v4.5.0 ***
+[hw-cloud] MCU real-cloud gate begins (r15 A-1)
+[hw-cloud] PASS: default wifi iface ready (esp_hosted)
+[hw-cloud] PASS: iface up
+[hw-cloud] CONFIG_WAIT (P4C2: ssid/psk/host/key/model over console)
+[hw-cloud] PASS: credentials injected over console (P4C2)
+[hw-cloud] CONNECT_BEGIN attempt=1
+[hw-cloud] CONNECT_OK attempt=1
+[hw-cloud] DHCP_BOUND attempt=1 address=192.168.2.120
+[hw-cloud] dep NET UP
+[hw-cloud] PASS: connect+dhcp+dep NET UP
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4298 => handshake
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_HELLO_REQUEST
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_CLIENT_HELLO
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_client.c:921 => write client hello
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:1571 Perform PSA-based ECDH/FFDH computation.
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2494 => write handshake message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2654 => write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2790 <= write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2615 <= write handshake message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_client.c:1014 <= write client hello
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2077 message length: 311, out_left: 311
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2084 ssl->f_send() returned 311 (-0xfffffec9)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2111 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_SERVER_HELLO
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2002 => ssl_tls13_process_server_hello
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 127
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 127
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 122 (-0xffffff86)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4112 <= read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:1501 received ServerHello message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:499 DHE group name: x25519
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:1304 => ssl_tls13_generate_handshake_keys
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:1393 <= ssl_tls13_generate_handshake_keys
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:1948 Switch to handshake keys for inbound traffic
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2060 <= ssl_tls13_process_server_hello ( ServerHello )
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_ENCRYPTED_EXTENSIONS
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2208 => parse encrypted extensions
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 6
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 6
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 1 (-0xffffffff)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4963 Ignore ChangeCipherSpec in TLS 1.3 compatibility mode
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 32
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 32
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 27 (-0xffffffe5)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1301 => decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1831 <= decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4112 <= read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2297 <= parse encrypted extensions
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_CERTIFICATE_REQUEST
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2537 => parse certificate request
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 3951
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 3951
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 1270 (-0xfffffb0a)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 1275, nb_want: 3951
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 1440 (-0xfffffa60)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 2715, nb_want: 3951
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 1236 (-0xfffffb2c)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1301 => decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1831 <= decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4112 <= read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2567 <= parse certificate request
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_SERVER_CERTIFICATE
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:726 => parse certificate
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4108 reuse previously read message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4112 <= read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:750 <= parse certificate
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_CERTIFICATE_VERIFY
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:377 => parse certificate verify
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 286
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 286
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 199 (-0xffffff39)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 204, nb_want: 286
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 82 (-0xffffffae)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1301 => decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1831 <= decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4112 <= read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:421 <= parse certificate verify
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:422 mbedtls_ssl_tls13_process_certificate_verify() returned 0 (-0x0000)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_SERVER_FINISHED
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:1149 => parse finished message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 74
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 74
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 69 (-0xffffffbb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1301 => decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1831 <= decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4112 <= read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:792 => mbedtls_ssl_tls13_calculate_verify_data
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:823 <= mbedtls_ssl_tls13_calculate_verify_data
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:1165 <= parse finished message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:1548 => derive application traffic keys
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:1637 <= derive application traffic keys
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_CLIENT_CCS_AFTER_SERVER_FINISHED
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:1298 => write change cipher spec
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2654 => write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2790 <= write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:1321 <= write change cipher spec
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2077 message length: 6, out_left: 6
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2084 ssl->f_send() returned 6 (-0xfffffffa)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2111 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_CLIENT_CERTIFICATE
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2653 Switch to handshake traffic keys for outbound traffic
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2668 skip write certificate
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2676 skip write certificate verify
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_CLIENT_FINISHED
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:1228 => write finished message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:792 => mbedtls_ssl_tls13_calculate_verify_data
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:823 <= mbedtls_ssl_tls13_calculate_verify_data
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2494 => write handshake message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2654 => write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:808 => encrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1265 <= encrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2790 <= write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2615 <= write handshake message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:1245 <= write finished message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:1706 => mbedtls_ssl_tls13_compute_resumption_master_secret
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:1736 <= mbedtls_ssl_tls13_compute_resumption_master_secret
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2077 message length: 85, out_left: 85
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2084 ssl->f_send() returned 85 (-0xffffffab)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2111 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_FLUSH_BUFFERS
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2730 handshake: done
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_HANDSHAKE_WRAPUP
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:1254 Switch to application keys for inbound traffic
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:1257 Switch to application keys for outbound traffic
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4309 <= handshake
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:5925 => write
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2654 => write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:808 => encrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1265 <= encrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2077 message length: 421, out_left: 421
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2084 ssl->f_send() returned 421 (-0xfffffe5b)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2111 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2790 <= write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:5947 <= write
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:5663 => read
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 287
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 287
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 282 (-0xfffffee6)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1301 => decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1831 <= decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4112 <= read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 287
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 287
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 282 (-0xfffffee6)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1301 => decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1831 <= decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4112 <= read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 1650
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 1650
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 1435 (-0xfffffa65)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 1440, nb_want: 1650
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 210 (-0xffffff2e)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1301 => decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1831 <= decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4112 <= read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:5823 <= read
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:5663 => read
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 24
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 24
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 19 (-0xffffffed)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1301 => decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1831 <= decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4980 got an alert message, type: [1:0]
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4996 is a close notify message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4095 mbedtls_ssl_handle_message_type() returned -30848 (-0x7880)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:5723 mbedtls_ssl_read_record() returned -30848 (-0x7880)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:6068 => write close notify
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:5058 => send alert message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2654 => write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:808 => encrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1265 <= encrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2077 message length: 37, out_left: 37
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2084 ssl->f_send() returned 37 (-0xffffffdb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2111 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2790 <= write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:5070 <= send alert message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:6079 <= write close notify
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:5184 => free
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:5244 <= free
+
+[hw-cloud] PASS: real TLS chat: content+usage+touched (attempt 1)
+[hw-cloud] reply=ok usage=24+48
+[hw-cloud] PASS: dep MODEL UP
+[hw-cloud] DISCONNECT_OK dep NET DOWN
+[hw-cloud] PASS: disconnect -> dep NET DOWN
+[hw-cloud] PASS: chat rejected while NET down (admission gate)
+[hw-cloud] rejected rc=-4 (E_STATE expected)
+[hw-cloud] CONNECT_BEGIN attempt=2
+[hw-cloud] CONNECT_OK attempt=2
+[hw-cloud] DHCP_BOUND attempt=2 address=192.168.2.120
+[hw-cloud] dep NET UP
+[hw-cloud] PASS: reconnect+dhcp (attempt 2)
+[https] fail stage=dns
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:6068 => write close notify
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:6079 <= write close notify
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:5184 => free
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:5244 <= free
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4298 => handshake
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_HELLO_REQUEST
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_CLIENT_HELLO
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_client.c:921 => write client hello
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:1571 Perform PSA-based ECDH/FFDH computation.
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2494 => write handshake message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2654 => write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2790 <= write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2615 <= write handshake message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_client.c:1014 <= write client hello
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2077 message length: 311, out_left: 311
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2084 ssl->f_send() returned 311 (-0xfffffec9)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2111 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_SERVER_HELLO
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2002 => ssl_tls13_process_server_hello
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 127
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 127
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 122 (-0xffffff86)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4112 <= read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:1501 received ServerHello message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:499 DHE group name: x25519
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:1304 => ssl_tls13_generate_handshake_keys
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:1393 <= ssl_tls13_generate_handshake_keys
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:1948 Switch to handshake keys for inbound traffic
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2060 <= ssl_tls13_process_server_hello ( ServerHello )
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_ENCRYPTED_EXTENSIONS
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2208 => parse encrypted extensions
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 6
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 6
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 1 (-0xffffffff)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4963 Ignore ChangeCipherSpec in TLS 1.3 compatibility mode
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 32
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 32
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 27 (-0xffffffe5)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1301 => decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1831 <= decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4112 <= read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2297 <= parse encrypted extensions
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_CERTIFICATE_REQUEST
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2537 => parse certificate request
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 3951
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 3951
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 1270 (-0xfffffb0a)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 1275, nb_want: 3951
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 1440 (-0xfffffa60)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 2715, nb_want: 3951
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 1236 (-0xfffffb2c)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1301 => decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1831 <= decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4112 <= read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2567 <= parse certificate request
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_SERVER_CERTIFICATE
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:726 => parse certificate
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4108 reuse previously read message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4112 <= read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:750 <= parse certificate
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_CERTIFICATE_VERIFY
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:377 => parse certificate verify
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 286
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 286
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 199 (-0xffffff39)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 204, nb_want: 286
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 82 (-0xffffffae)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1301 => decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1831 <= decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4112 <= read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:421 <= parse certificate verify
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:422 mbedtls_ssl_tls13_process_certificate_verify() returned 0 (-0x0000)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_SERVER_FINISHED
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:1149 => parse finished message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 74
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 74
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 69 (-0xffffffbb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1301 => decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1831 <= decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4112 <= read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:792 => mbedtls_ssl_tls13_calculate_verify_data
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:823 <= mbedtls_ssl_tls13_calculate_verify_data
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:1165 <= parse finished message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:1548 => derive application traffic keys
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:1637 <= derive application traffic keys
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_CLIENT_CCS_AFTER_SERVER_FINISHED
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:1298 => write change cipher spec
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2654 => write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2790 <= write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:1321 <= write change cipher spec
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2077 message length: 6, out_left: 6
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2084 ssl->f_send() returned 6 (-0xfffffffa)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2111 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_CLIENT_CERTIFICATE
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2653 Switch to handshake traffic keys for outbound traffic
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2668 skip write certificate
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2676 skip write certificate verify
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_CLIENT_FINISHED
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:1228 => write finished message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:792 => mbedtls_ssl_tls13_calculate_verify_data
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:823 <= mbedtls_ssl_tls13_calculate_verify_data
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2494 => write handshake message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2654 => write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:808 => encrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1265 <= encrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2790 <= write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2615 <= write handshake message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:1245 <= write finished message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:1706 => mbedtls_ssl_tls13_compute_resumption_master_secret
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_keys.c:1736 <= mbedtls_ssl_tls13_compute_resumption_master_secret
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2077 message length: 85, out_left: 85
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2084 ssl->f_send() returned 85 (-0xffffffab)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2111 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_FLUSH_BUFFERS
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_client.c:2730 handshake: done
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2072 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4217 client state: MBEDTLS_SSL_HANDSHAKE_WRAPUP
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:1254 Switch to application keys for inbound traffic
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls13_generic.c:1257 Switch to application keys for outbound traffic
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:4309 <= handshake
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:5925 => write
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2654 => write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:808 => encrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1265 <= encrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2077 message length: 421, out_left: 421
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2084 ssl->f_send() returned 421 (-0xfffffe5b)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2111 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2790 <= write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:5947 <= write
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:5663 => read
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 287
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 287
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 282 (-0xfffffee6)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1301 => decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1831 <= decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4112 <= read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 287
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 287
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 282 (-0xfffffee6)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1301 => decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1831 <= decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4112 <= read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 2028
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 2028
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 1435 (-0xfffffa65)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 1440, nb_want: 2028
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 588 (-0xfffffdb4)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1301 => decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1831 <= decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4112 <= read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:5823 <= read
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:5663 => read
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4040 => read record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 0, nb_want: 5
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 5 (-0xfffffffb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1865 => fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2005 in_left: 5, nb_want: 24
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2025 in_left: 5, nb_want: 24
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2028 ssl->f_recv(_timeout)() returned 19 (-0xffffffed)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2050 <= fetch input
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1301 => decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1831 <= decrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4980 got an alert message, type: [1:0]
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4996 is a close notify message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:4095 mbedtls_ssl_handle_message_type() returned -30848 (-0x7880)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:5723 mbedtls_ssl_read_record() returned -30848 (-0x7880)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:6068 => write close notify
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:5058 => send alert message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2654 => write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:808 => encrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:1265 <= encrypt buf
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2063 => flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2077 message length: 37, out_left: 37
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2084 ssl->f_send() returned 37 (-0xffffffdb)
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2111 <= flush output
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:2790 <= write record
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:5070 <= send alert message
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_msg.c:6079 <= write close notify
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:5184 => free
+
+[mbed] /home/emb/project/entelea-legacy/.deps/mbedtls/library/ssl_tls.c:5244 <= free
+
+[hw-cloud] PASS: real TLS chat (attempt 2)
+[hw-cloud] reply2=ok usage=24+84
+[hw-cloud] DISCONNECT_OK dep NET DOWN
+[hw-cloud] PASS: MCU real-cloud loop closed (TLS1.3 chat x2 + admission gate)
+[gate] ALL PASS

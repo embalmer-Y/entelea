@@ -1,0 +1,18 @@
+*** Booting Zephyr OS build v4.5.0 ***
+[hw-fact] factory loop gate begins (tsap 331B)
+[hw-fact] PASS: factory provisioning pk0 (maint channel)
+[hw-fact] PASS: stage factory package (begin+chunks)
+[hw-fact] PASS: verify signature (explicit factory root)
+[hw-fact] PASS: slot bytes == forge digest (D-4 device side)
+[hw-fact] PASS: factory intake -> PENDING_CONFIRM
+[hw-fact] PASS: trial confirm -> ACTIVE
+[hw-fact] wasm load rc=0 app=1
+[hw-fact] PASS: wasm load (verified slot, app=1)
+[hw-fact] PASS: call run -> 2*0+1 == 1 (sdk artifact executes)
+[hw-fact] spin rc=0 ret=0
+[hw-fact] PASS: call spin -> 0
+[hw-fact] PASS: call hang (real infinite loop) -> E_TIMEOUT bounded stop
+[hw-fact] PASS: trial end + flush (safe steady state)
+[hw-fact] PASS: factory loop closed (sdk->forge->device)
+
+Stopped at 60.110s

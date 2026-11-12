@@ -1,0 +1,53 @@
+ESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0x1 (POWERON),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff20000,len:0xac08
+load:0x4ff2ac90,len:0x1984
+load:0x50108000,len:0x24
+SHA-256 comparison failed:
+Calculated: 7173fc830d4c8d70b5d2e42c39154cf7e31be3d2c96f2d5cd9210ae14ef3da4b
+Expected: 00000000001a0000000000000000000000000000000000000000000000000000
+Attempting to boot anyway...
+entry 0x4ff20580
+I (soc_init): ESP Simple boot
+I (soc_init): compile time Nov  9 2026 21:32:10
+W (soc_init): Unicore bootloader
+I (soc_init): chip revision: v3.2
+I (flash_init): SPI Speed      : 80MHz
+I (flash_init): SPI Mode       : DIO
+I (flash_init): SPI Flash Size : 16MB
+I (boot): DRAM	: lma=00002020h vma=4ff20000h size=0ac08h ( 44040)
+I (boot): DRAM	: lma=0000cc30h vma=4ff2ac90h size=01984h (  6532)
+I (boot): RTC_IRAM	: lma=0000e5bch vma=50108000h size=00024h (    36)
+I (boot): DROM	: lma=00010000h vma=40010000h size=00f00h (  3840)
+I (boot): IROM	: lma=00020000h vma=40000000h size=05680h ( 22144)
+I (boot): libc heap size 5 kB.
+I (spi_flash): detected chip: boya
+I (spi_flash): flash io: dio
+*** Booting Zephyr OS build v4.5.0 ***
+[entelea] minimal supervision image: outputs held at safe poweron
+[entelea] safety: ch=0 safe_fault=0 estop=clear at=0ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=clear at=0ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=clear at=0ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=clear at=0ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=clear at=0ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=clear at=0ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=clear at=0ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=clear at=0ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=clear at=0ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=LATCHED at=44893ms lvl=1
+[entelea] safety: ch=0 safe_fault=0 estop=LATCHED at=46263ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=LATCHED at=46263ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=LATCHED at=46263ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=LATCHED at=46263ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=LATCHED at=69862ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=LATCHED at=74344ms lvl=1
+[entelea] safety: ch=0 safe_fault=0 estop=LATCHED at=75667ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=LATCHED at=75667ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=LATCHED at=75667ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=LATCHED at=75667ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=LATCHED at=75667ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=LATCHED at=75667ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=LATCHED at=75667ms lvl=0
+[entelea] safety: ch=0 safe_fault=0 estop=LATCHED at=75667ms lvl=0

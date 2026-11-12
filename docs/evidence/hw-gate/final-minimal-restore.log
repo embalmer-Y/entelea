@@ -1,0 +1,30 @@
+ESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0x1 (POWERON),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff20000,len:0xac08
+load:0x4ff2ac90,len:0x1974
+load:0x50108000,len:0x24
+SHA-256 comparison failed:
+Calculated: 186608d1348d4a34729d8deb021e5c297ed481e3904d31a19b7ce1431fec3aa4
+Expected: 00000000101a0000000000000000000000000000000000000000000000000000
+Attempting to boot anyway...
+entry 0x4ff20580
+I (soc_init): ESP Simple boot
+I (soc_init): compile time Nov  8 2026 17:38:55
+W (soc_init): Unicore bootloader
+I (soc_init): chip revision: v3.2
+I (flash_init): SPI Speed      : 80MHz
+I (flash_init): SPI Mode       : DIO
+I (flash_init): SPI Flash Size : 16MB
+I (boot): DRAM	: lma=00002020h vma=4ff20000h size=0ac08h ( 44040)
+I (boot): DRAM	: lma=0000cc30h vma=4ff2ac90h size=01974h (  6516)
+I (boot): RTC_IRAM	: lma=0000e5ach vma=50108000h size=00024h (    36)
+I (boot): DROM	: lma=00010000h vma=40010000h size=00e80h (  3712)
+I (boot): IROM	: lma=00020000h vma=40000000h size=05400h ( 21504)
+I (boot): libc heap size 517 kB.
+I (spi_flash): detected chip: boya
+I (spi_flash): flash io: dio
+*** Booting Zephyr OS build v4.5.0 ***
+[entelea] minimal supervision image: outputs held at safe poweron
+[quiet-4s]

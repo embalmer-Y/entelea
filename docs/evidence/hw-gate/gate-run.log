@@ -1,0 +1,104 @@
+[t+  0.3s] ESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0x1 (POWERON),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff20000,len:0xb324
+load:0x4ff2b390,len:0x1998
+load:0x50108000,len:0x24
+SHA-256 comparison failed:
+Calculated: 7dee51cf80c1f6478261f5b941a3eb1afbd7ddf17752f63f744260e5f3e4ec83
+Expected: 00000000d0120000000000000000000000000000000000000000000000000000
+Attempting to boot anyway...
+entry 0x4ff20580
+I (soc_init): ESP Simple boot
+I (soc_init): compile time Nov  8 2026 20:14:23
+W (soc_init): Unicore bootloader
+I (soc_init): chip revision: v3.2
+I (flash_init): SPI Speed      : 80MHz
+I (flash_init): SPI Mode       : DIO
+I (flash_init): SPI Flash Size : 16MB
+I (boot): DRAM	: lma=00002020h vma=4ff20000h size=0b324h ( 45860)
+I (boot): DRAM	: lma=0000d34ch vma=4ff2b390h size=01998h (  6552)
+I (boot): RTC_IRAM	: lma=0000ecech vma=50108000h size=00024h (    36)
+I (boot): DROM	: lma=00010000h vma=40010000h size=01080h (  4224)
+I (boot): IROM	: lma=00020000h vma=40000000h size=05a00h ( 23040)
+I (boot): libc heap size 3 kB.
+I (spi_flash): detected chip: boya
+I (spi_flash): flash io: dio
+*** Booting Zephyr OS build v4.5.0 ***
+[hw-gate] boot sequence begins
+[hw-gate] boot ok (patrol=500ms channel=5000ms); hwinfo rc=0 cause=0x8
+[hw-gate] P1: healthy 6s window (alive = patrol+MWDT fed)
+[t+  1.2s] [hw-gate] alive 1s
+[t+  2.4s] [hw-gate] alive 2s
+[t+  3.3s] [hw-gate] alive 3s
+[t+  4.2s] [hw-gate] alive 4s
+[t+  5.4s] [hw-gate] alive 5s
+[t+  6.3s] [hw-gate] alive 6s
+[hw-gate] P1: system_fail(FAIL_WDT 0xff); reset expected <=~5s
+[t+ 11.4s] ESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0xc (SW_CPU_RESET),boot:0x30f (SPI_FAST_FLASH_BOOT)
+SPI mode:DIO, clock div:1
+load:0x4ff20000,len:0xb324
+load:0x4ff2b390,len:0x1998
+load:0x50108000,len:0x24
+SHA-256 comparison failed:
+Calculated: 7dee51cf80c1f6478261f5b941a3eb1afbd7ddf17752f63f744260e5f3e4ec83
+Expected: 00000000d0120000000000000000000000000000000000000000000000000000
+Attempting to boot anyway...
+entry 0x4ff20580
+I (soc_init): ESP Simple boot
+I (soc_init): compile time Nov  8 2026 20:14:23
+W (soc_init): Unicore bootloader
+I (soc_init): chip revision: v3.2
+I (flash_init): SPI Speed      : 80MHz
+I (flash_init): SPI Mode       : DIO
+I (flash_init): SPI Flash Size : 16MB
+I (boot): DRAM	: lma=00002020h vma=4ff20000h size=0b324h ( 45860)
+I (boot): DRAM	: lma=0000d34ch vma=4ff2b390h size=01998h (  6552)
+I (boot): RTC_IRAM	: lma=0000ecech vma=50108000h size=00024h (    36)
+I (boot): DROM	: lma=00010000h vma=40010000h size=01080h (  4224)
+I (boot): IROM	: lma=00020000h vma=40000000h size=05a00h ( 23040)
+I (boot): libc heap size 3 kB.
+I (spi_flash): detected chip: boya
+I (spi_flash): flash io: dio
+*** Booting Zephyr OS build v4.5.0 ***
+[hw-gate] boot sequence begins
+[hw-gate] boot ok (patrol=500ms channel=5000ms); hwinfo rc=0 cause=0x2
+[hw-gate] P1 VERIFIED: system_fail -> channel expiry -> reset
+[hw-gate] P2: wedging kernel now; MWDT reset expected <=~8s
+[t+ 21.3s] ESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0x7 (HP_SYS_HP_WDT_RESET),boot:0x30f (SPI_FAST_FLASH_BOOT)
+Core0 Saved PC:0x400000ea
+SPI mode:DIO, clock div:1
+load:0x4ff20000,len:0xb324
+load:0x4ff2b390,len:0x1998
+load:0x50108000,len:0x24
+SHA-256 comparison failed:
+Calculated: 7dee51cf80c1f6478261f5b941a3eb1afbd7ddf17752f63f744260e5f3e4ec83
+Expected: 00000000d0120000000000000000000000000000000000000000000000000000
+Attempting to boot anyway...
+entry 0x4ff20580
+[t+ 21.6s] I (soc_init): ESP Simple boot
+I (soc_init): compile time Nov  8 2026 20:14:23
+W (soc_init): Unicore bootloader
+I (soc_init): chip revision: v3.2
+I (flash_init): SPI Speed      : 80MHz
+I (flash_init): SPI Mode       : DIO
+I (flash_init): SPI Flash Size : 16MB
+W (soc_init): PRO CPU has been reset by WDT.
+I (boot): DRAM	: lma=00002020h vma=4ff20000h size=0b324h ( 45860)
+I (boot): DRAM	: lma=0000d34ch vma=4ff2b390h size=01998h (  6552)
+I (boot): RTC_IRAM	: lma=0000ecech vma=50108000h size=00024h (    36)
+I (boot): DROM	: lma=00010000h vma=40010000h size=01080h (  4224)
+I (boot): IROM	: lma=00020000h vma=40000000h size=05a00h ( 23040)
+I (boot): libc heap size 3 kB.
+I (spi_flash): detected chip: boya
+I (spi_flash): flash io: dio
+*** Booting Zephyr OS build v4.5.0 ***
+[hw-gate] boot sequence begins
+[hw-gate] boot ok (patrol=500ms channel=5000ms); hwinfo rc=0 cause=0x10
+[hw-gate] P2 VERIFIED: hardware MWDT reset the SoC
+[hw-gate] gate complete: parking resident (patrol feeding)

@@ -57,6 +57,24 @@ def local_file(root, path):
     return file
 
 
+def evidence_file(root, data, path):
+    """Working-tree evidence, or a removed docs/ file frozen at its anchor commit."""
+    anchor = data.get("removed_evidence_docs", {}).get(path)
+    if anchor is None or (root / path).is_file():
+        return local_file(root, path)
+    require(
+        re.fullmatch(r"[0-9a-f]{40}", anchor) is not None,
+        f"Malformed evidence anchor: {path}",
+    )
+    require(
+        path.startswith("docs/") and ".." not in PurePosixPath(path).parts,
+        f"Removed evidence outside docs/: {path}",
+    )
+    git(root, "merge-base", "--is-ancestor", anchor, "HEAD")
+    git(root, "cat-file", "-e", f"{anchor}:{path}")
+    return None
+
+
 def source_tree(repo, commit):
     entries = {}
     for raw in git(repo, "ls-tree", "-rz", "--full-tree", commit).split(b"\0"):
@@ -139,7 +157,7 @@ def validate(data, root, sources=False):
                 f"done batch missing evidence paths: {ident}",
             )
             for path in batch["evidence_paths"]:
-                local_file(root, path)
+                evidence_file(root, data, path)
                 require(
                     path.startswith("docs/"),
                     f"done evidence outside docs/: {ident}: {path}",
@@ -279,7 +297,7 @@ def validate(data, root, sources=False):
             f"Invalid verification state: {ident}",
         )
         for path in verification["evidence_paths"]:
-            local_file(root, path)
+            evidence_file(root, data, path)
         if verification["state"] == "passed":
             require(verification["evidence_paths"], f"Missing passed evidence: {ident}")
             require(
