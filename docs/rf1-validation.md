@@ -158,7 +158,7 @@ R13 保持 pending。
   5. 未来日期的持久记录会按该日计数（不放宽），时钟异常后额度可能冻结到该日；清理策略未实现。
   6. “连续 3 次异常复位”仍不等于“一小时 3 次”窗口，未实现。
   7. ISR 拒绝由锁端口代码保证，未做中断注入测试；并发仅在主机与 native_sim 线程中验证，未在真板多核验证。
-  8. 名称已改为 `guard`（WP4b）；上述运行结果针对改名前，改名后未复验。
+  8. 名称已改为 `guard`（WP4b，提交 30954d1）；改名后的复验见下节“WP4b 改名验证记录”。
 
 ### 依赖布局与 Forge 并入验证记录（2026-11-12）
 
@@ -200,6 +200,20 @@ R13 保持 pending。
   3. 历史验证文档中的旧路径（`../entelea-legacy/.deps/...`）未改写，随历史文档处理。
   4. 板级烧录与真机验证未执行（未授权）；native_sim 结果不代表真板行为。
   5. ruff 版本由 Zephyr 官方依赖固定为 0.14.2，未采用此前计划的 0.17.4。
+
+### WP4b 改名验证记录（30954d1）
+
+- 改名范围：`d12` 模块的文件、目录、公共 API、CMake 选项、DT 标签 `guardretained`、运行时日志前缀 `[guard]` 与 `[guard] SAFE-HALT`、步骤名 `guard_bootguard`、阈值文档 `docs/guard-threshold-proposal.md`。持久魔数（`D12G`、`D12M`、`0xD12`）、哈希与“D12”决策标签保持不变；历史证据日志未改。
+- 验证（真实命令与退出码）：
+  - 主机 `Build_CMakeTools` 退出码 0；`RunCtest_CMakeTools` 7/7（含 `guard_runtime_host`）。
+  - `python3 tools/check_migration.py --sources`：PASS，800 项，117 资产。
+  - `python3 -m unittest discover -s tools/tests -v`：109 项 OK。
+  - native_sim 16 个套件构建退出码 0，于临时目录运行，均报告 `PROJECT EXECUTION SUCCESSFUL`，无 `FAIL -` 行；`START -` 计数与基线一致：wasm 26、delivery 24、store 33、r13 2、pkg 9、r04 12。
+  - 板级交叉编译（`esp32p4c5_core_board/esp32p4/hpcore`，仅编译，未烧录），退出码与静态 SRAM（红线 552,960）：hw_factory_intake 0 / 449,268；hw_flash_persist 0 / 98,040；hw_cloud_chat 0 / 481,648；hw_wifi_netmon 0 / 280,120；minimal 0 / 91,124；tf_probe 0 / 69,068。
+  - hw_fault_stop 编译退出码 0，但静态 SRAM 为 640,248，超过红线。以基线提交 55559c2 的导出树复测，同为 640,248，故为既有问题，本次未改变。该应用的 R02 验证记录已删除，待 owner 决定移除或改造。
+  - Linux 云诊断 `ENTELEA_CLOUD_OUT=build/rf1-f2-cloud ENTELEA_MBEDTLS_BUILD=build/rf1-mbedtls-host sh build-support/build-f2-cloud.sh` 退出码 0（仅编译链接，未运行）。
+- 排障：hw_cloud_chat 与 hw_wifi_netmon 首次失败，原因是复用的构建目录缓存了旧的 `ZEPHYR_MODULES`（仅 hal_espressif），nanopb 未进入模块集，Kconfig 中止。删除目录后，以 `--module nanopb`（云应用另加 mbedtls、tf_psa_crypto）重建通过。
+- 未测与边界：未烧录、未运行板级程序，未做真机验证；native_sim 结果不代表真板行为。
 
 ## 对照原规划和批准修订
 
@@ -259,8 +273,8 @@ R-V1–R-V5 是原规划的批准范围修订，不能反推其余原要求已�
 ```sh
 cd /home/emb/project/entelea
 /usr/bin/python3 tools/build_zephyr.py --app platform/zephyr/tests/delivery \
-  --board native_sim --zephyr-base ../entelea-legacy/.deps/zephyr \
-  --python ../entelea-legacy/.venv/bin/python3 \
+  --board native_sim --zephyr-base .deps/zephyrproject/zephyr \
+  --python .venv/bin/python3 \
   --build-dir build/rf1-delivery-epoch-after-fix --build
 # 在独立临时目录运行 build/rf1-delivery-epoch-after-fix/zephyr/zephyr.exe
 # 可选的失败探针另加 --cmake-arg=-DTEST_TRIAL_PERMISSION_GAP=ON
