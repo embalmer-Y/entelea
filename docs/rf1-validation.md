@@ -6,8 +6,8 @@
 `f5160ae`），后续 G5/G6、追加反例修复及本文在其上继续修改。
 本文所在提交及后续台账记录可用 Git 历史确认；本地构建目录不是源码
 版本锚点。RF1 **仍 blocked**：WP2 已把试用确认的权限列表与运行时 natives
-授权取交集，并由设备计算候选摘要（F1/F3/F4）；稳定集准入（D-E，WP3）、工厂
-权限映射与板级试用持久化闸未闭合，不能宣布软件安全闭环或框架/产品验收完成。
+授权取交集，并由设备计算候选摘要（F1/F3/F4）；WP3 已实施稳定集准入（D-E）。
+工厂权限映射与板级试用持久化闸未闭合，不能宣布软件安全闭环或框架/产品验收完成。
 R13 保持 pending。
 
 本轮未烧录、操作硬件、调用真实云、安装依赖或推送。历史真机/云
@@ -85,7 +85,7 @@ R13 保持 pending。
 通过，可选 CMake 选项已删除。该结果只证明软件授权路径，不证明真实 GPIO 被访问。
 
 仍未覆盖：签名 manifest 不含权限与步数（D-D 首期不入签，由用户确认与持久
-记录约束）；稳定集准入与数据晋升（D-E，WP3）；工厂位图到权限列表的映射
+记录约束）；稳定集准入已由 WP3 实施（见下节）；工厂位图到权限列表的映射
 （owner 待定）。
 
 ### WP2 验证记录（试用授权绑定）
@@ -94,8 +94,26 @@ R13 保持 pending。
 - 主机：`cmake -S . -B build/rf1-host` 配置与构建，`ctest` 6/6（含 governance_tests、architecture、migration_sources、dependency_manifest）。
 - 板级交叉编译（未烧录）：`hw_factory_intake`、`hw_flash_persist` 通过链接；`check_board_ram.py` 为 449,008 与 98,036 字节，红线 552,960。
 - 修复前证据：F1 由历史探针 16/17 失败（上节）。F3、F4 及授权路径的修复前可执行对拍未做，因为接口已变更、旧测试不能在新接口上编译；这些修复目前依据代码审阅与 fail-closed 推理，并由修复后的用例覆盖。
-- VS Code CMake Tools 入口仍不可用：扩展日志显示 `no kit selected`，需你在窗口中选择一次 kit；命令行 CTest 结果不替代该入口的结论，但已如实列出。
+- VS Code CMake Tools 入口（WP1）已恢复：选择 kit `GCC 15.2.0 x86_64-linux-gnu` 后，`Build_CMakeTools` 配置并构建通过，`RunCtest_CMakeTools` 6/6 通过（此前扩展报 `no kit selected`）。
 - 未测：并发改槽与多核；真实 GPIO 物理效果；真板包加载与试用持久化（`hw_flash_persist` 的试用闸已按决定移出，SRAM 预算下另行规划）。
+
+### WP3 验证记录（稳定集准入，D-E）
+
+- 修复前证据：新增回归断言“晋升须持久结束试用”在首版实现上失败（delivery 22/23
+  通过，1 失败：`entelea_trial_state()` 不等于 NONE）。首版只在内存中结束试用，
+  未持久化，重启后试用恢复为 ACTIVE，撤销稳定记录对同槽试用无效。修复后该断言通过。
+- 修复后（native_sim，退出码 0）：delivery 24/24（含
+  `test_stable_record_corruption_fails_closed`）、wasm 26/26（含
+  `test_stable_record_grants_natives_only_for_its_bytes`）、r13 2/2、pkg 9/9、r04 12/12。
+- 主机：`RunCtest_CMakeTools` 6/6；`check_migration.py --sources` PASS（800 项，117 资产）；
+  `unittest discover` 通过；`git diff --check` 无输出。
+- 板级：`hw_factory_intake`（esp32p4c5_core_board/esp32p4/hpcore）交叉编译通过（未烧录）；
+  静态 SRAM 449,008 字节，红线 552,960（`check_board_ram.py`）。新增栈帧未单独测量。
+- 与计划的差异（待 owner 确认）：①计划写“双副本 meta”，实际改用 KV（CRC 与提交标记），
+  因为 meta 只有单一记录区；②计划 D-E 原文“非候选槽默认拒绝”与 A1 冲突，owner 已确认
+  `pure_compute_allowed`，故纯计算可执行，仅 natives 需授权。
+- 未测：多线程并发晋升与撤销；真实断电注入（当前仅以 `entelea_trial_test_reset` 模拟重启）；
+  两步写入之间断电的真机验证。残余窗口见[交付合同](../framework/services/delivery/contract.md)“稳定集准入”。
 
 ## 对照原规划和批准修订
 
@@ -112,7 +130,7 @@ R13 保持 pending。
 | R09 | 有媒体接口和假后端；真实语音/视觉/显示及 D11 闸未完成，接口不等于设备功能。 |
 | R10 | 有同意、删除和有界 RAM 经历；原规划的可恢复持久经历链尚未交付，不能仅归因于 schema 待定。 |
 | R11 | 有模拟 affect 机制；台账中的 20 个旧源为 reference，不是 20 个已迁移源，真实长期行为未验收。 |
-| R12 | 试用状态、候选摘要（设备计算）、授权与步数绑定已有；稳定集准入与晋升仍未闭合；Forge 的版本化与隔离尚未证明。 |
+| R12 | 试用状态、候选摘要（设备计算）、授权与步数绑定，以及稳定集准入（D-E，WP3）已有；Forge 的版本化与隔离尚未证明。 |
 | R13 | 配置矩阵和两条代表性机制断言不等于完整框架或产品验收；依赖 RF1 及未闭合决策，保持 pending。 |
 
 R-V1–R-V5 是原规划的批准范围修订，不能反推其余原要求已交付。
@@ -170,9 +188,7 @@ cd /home/emb/project/entelea
 
 ## 未完成与决策
 
-1. 稳定集准入（D-E，WP3）：非候选槽与试用结束后的稳定记录、双副本、晋升
-   与显式撤销尚未实施；WP2 只保证 natives 授权取交集，纯计算仍可执行。
-   工厂产物权限位图到权限列表的映射待 owner 决定（`hw_factory_intake`
+1. 工厂产物权限位图到权限列表的映射待 owner 决定（`hw_factory_intake`
    当前以空列表提交）。`hw_flash_persist` 的试用持久化闸已按决定移出
    （SRAM 预算），板级恢复须在获批预算后另行规划。
 2. 规划持久经历 schema、真实介质恢复和满盘策略；明确试用数据晋升、

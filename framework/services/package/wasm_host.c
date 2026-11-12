@@ -293,11 +293,15 @@ entelea_result_t entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx,
 			return tg;
 		}
 	}
-	{ /* R12 授权查询（逐次，不缓存；D-B/D-C）：仅 ACTIVE 且字节相符时授予
-	   * 确认的权限与步数。其余（NONE/非候选/试用结束）无 natives 权限（A1），
-	   * 执行配额取设备上限。 */
+	{ /* R12 授权查询（逐次，不缓存；D-B/D-C/D-E）：试用 ACTIVE 且字节相符，或该槽
+	   * 稳定记录摘要相符时授予权限与步数。其余无 natives 权限（A1），执行配额取
+	   * 设备上限。 */
 		entelea_trial_grant_t g;
 		entelea_result_t gr = entelea_trial_grant(it->slot, it->digest, &g);
+
+		if (gr != ENTELEA_OK) {
+			gr = entelea_stable_grant(it->slot, it->digest, &g);
+		}
 
 		entelea_perm_table_init(&it->grant);
 		it->grant_ok = false;

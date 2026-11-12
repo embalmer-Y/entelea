@@ -5,7 +5,7 @@
 /* R12 工厂/试用/晋升合同见 framework/services/delivery/contract.md。
  * 编程循环=OpenHands Software Agent SDK（owner 已确认决策）——SDK 侧
  * 循环不在固件内；Forge 侧集成契约（窄接口）与固件试用状态机在此。
- * 单候选与内容绑定试用确认已有；稳定集准入和试用数据晋升尚未闭合。 */
+ * 单候选、内容绑定试用确认与稳定集准入（D-E）已有；试用数据晋升（D05 细节）尚未闭合。 */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -88,8 +88,8 @@ entelea_trial_state_t entelea_trial_state(void);
 void entelea_trial_current(entelea_trial_candidate_t *out);
 
 /** [thread] 执行门（装载/调用前由 wasm 宿主查询）：digest=该 slot 当前
- * 整文件 sha256。NONE 或非候选 slot=OK（试用政策不管辖；稳定集准入
- * 归 D05，且执行时不授予 natives 权限——见 grant）；候选 slot（或候选
+ * 整文件 sha256。NONE 或非候选 slot=OK（试用政策不管辖；纯计算不授予
+ * natives 权限，natives 授权见 grant，含稳定记录）；候选 slot（或候选
  * slot 不可知）仅 ACTIVE 且 digest 相符=OK，否则 E_PERM（PENDING/
  * REJECTED/TIMEOUT/确认后换字节均拒）。 */
 entelea_result_t entelea_trial_gate(uint8_t slot, const uint8_t digest[32]);
@@ -99,6 +99,22 @@ entelea_result_t entelea_trial_gate(uint8_t slot, const uint8_t digest[32]);
  * 调用方不得授予任何 natives 权限。试用结束后下一次查询即失效。 */
 entelea_result_t entelea_trial_grant(uint8_t slot, const uint8_t digest[32],
 				     entelea_trial_grant_t *out);
+
+/** [thread] 晋升稳定（D-E）：仅 ACTIVE 且 shown 与当前候选全字段一致时执行。先持久
+ * 结束试用（→ NONE，已 flush），再把同一字节的摘要、权限列表与步数写入该槽的稳定
+ * 记录（KV）。试用持久失败 = 错误码且保持 ACTIVE；稳定记录写入失败 = 错误码且试用
+ * 已结束，须重新试用（fail-closed）。调用方须取得第二次用户确认。 */
+entelea_result_t entelea_trial_promote(const entelea_trial_candidate_t *shown);
+
+/** [thread] 显式撤销该槽的稳定记录。该槽 ACTIVE 试用同样被结束并持久化。
+ * 非 OK = 撤销结果未知，该槽可能仍有 natives 授权，须重试直至 OK。 */
+entelea_result_t entelea_stable_revoke(uint8_t slot);
+
+/** [any] 稳定记录授权（执行时逐次查询）：该槽稳定记录存在且摘要相符时授予其
+ * 权限与步数；未存、撤销或摘要不符 = E_PERM（输出清零）；存储读错误 = E_IO
+ * （不授予）。 */
+entelea_result_t entelea_stable_grant(uint8_t slot, const uint8_t digest[32],
+				      entelea_trial_grant_t *out);
 
 /* ---- Forge 集成契约（窄接口——SDK 侧循环消费；固件消费产物） ---- */
 

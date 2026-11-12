@@ -53,7 +53,7 @@ entelea_result_t entelea_pkg_file_digest_capture(uint8_t slot, uint32_t len,
 
 /** 激活（KV "PAGA" 记录 active slot）。它只是包**事实记录**，不授予
  * 执行权：装载链（wasm_host）装载前复核验签 + R12 试用门；稳定集
- * 准入/晋升归 D05（未决）。 */
+ * 准入/晋升见 delivery.h 的稳定记录（D-E）；激活本身不授予权限。 */
 entelea_result_t entelea_pkg_activate(uint8_t slot);
 
 /** 当前 active slot（无 = E_UNINIT；介质/初始化错误如实传播）。 */

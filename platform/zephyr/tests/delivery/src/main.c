@@ -4,12 +4,14 @@
 #include <zephyr/ztest.h>
 #include <entelea/appstore.h>
 #include <entelea/delivery.h>
+#include <entelea/kv.h>
 #include <entelea/storage.h>
 
 static void trial_before(void *fixture)
 {
 	ARG_UNUSED(fixture);
 	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	entelea_kv_test_reset();
 	entelea_trial_test_reset();
 }
 
@@ -876,4 +878,96 @@ ZTEST(framework_trial, test_admission_field_validation_keeps_state)
 		      "字段拒绝不改变状态");
 	set_perm(&c, "");
 	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK, "空列表=无权限合法");
+}
+
+/* D-E：晋升需 ACTIVE 且第二次确认的同一字节；经 KV 持久，重启后仍有效；撤销
+ * 即失效；摘要不符与槽域外被拒。 */
+ZTEST(framework_trial, test_stable_promote_persists_and_revokes)
+{
+	entelea_trial_candidate_t c;
+	entelea_trial_candidate_t cur;
+	entelea_trial_candidate_t bad;
+	entelea_trial_grant_t g;
+	uint8_t dg[32];
+	uint8_t other[32];
+
+	memset(dg, 0x42, sizeof(dg));
+	memset(other, 0x43, sizeof(other));
+	memset(&c, 0, sizeof(c));
+	memcpy(c.digest, dg, sizeof(dg));
+	set_perm(&c, "gpio:read:0");
+	c.budget_steps = 500;
+	c.slot = 1;
+
+	zassert_equal(entelea_trial_promote(&c), ENTELEA_E_STATE, "无候选不可晋升");
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
+	zassert_equal(entelea_trial_promote(&c), ENTELEA_E_STATE, "PENDING 不可晋升");
+	entelea_trial_current(&cur);
+	zassert_equal(entelea_trial_confirm(&cur), ENTELEA_OK);
+	zassert_equal(entelea_trial_flush(), ENTELEA_OK, "持久化 ACTIVE 以验证晋升结束");
+
+	bad = cur;
+	bad.budget_steps++;
+	zassert_equal(entelea_trial_promote(&bad), ENTELEA_E_PERM, "展示对象不符");
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_ACTIVE, "失败保持 ACTIVE");
+
+	zassert_equal(entelea_trial_promote(&cur), ENTELEA_OK, "第二次确认的同一字节");
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_NONE, "晋升结束试用");
+
+	zassert_equal(entelea_stable_grant(1, dg, &g), ENTELEA_OK, "稳定记录授权");
+	zassert_equal(g.perm_len, 11U);
+	zassert_equal(memcmp(g.perm, "gpio:read:0", 11), 0);
+	zassert_equal(g.budget_steps, 500U);
+	zassert_equal(entelea_stable_grant(1, other, &g), ENTELEA_E_PERM, "摘要不符");
+	zassert_equal(entelea_stable_grant(0, dg, &g), ENTELEA_E_PERM, "其他槽无记录");
+	zassert_equal(entelea_stable_grant(ENTELEA_APP_SLOT_COUNT, dg, &g),
+		      ENTELEA_E_PARAM, "槽域外");
+
+	entelea_trial_test_reset(); /* 模拟重启：稳定记录与试用结束均须持久 */
+	zassert_equal(entelea_trial_restore(), ENTELEA_OK);
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_NONE, "晋升须持久结束试用");
+	zassert_equal(entelea_stable_grant(1, dg, &g), ENTELEA_OK, "重启后仍有效");
+
+	/* 同字节再次试用至 ACTIVE（已持久）：撤销须同时结束该槽试用，否则试用仍授予。 */
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
+	entelea_trial_current(&cur);
+	zassert_equal(entelea_trial_confirm(&cur), ENTELEA_OK);
+	zassert_equal(entelea_trial_flush(), ENTELEA_OK);
+	zassert_equal(entelea_trial_grant(1, dg, &g), ENTELEA_OK, "试用 ACTIVE 授权");
+	zassert_equal(entelea_stable_revoke(1), ENTELEA_OK);
+	zassert_equal(entelea_trial_grant(1, dg, &g), ENTELEA_E_PERM, "撤销后试用不授权");
+	zassert_equal(entelea_stable_grant(1, dg, &g), ENTELEA_E_PERM, "撤销即失效");
+	zassert_equal(g.perm_len, 0);
+
+	entelea_trial_test_reset();
+	zassert_equal(entelea_trial_restore(), ENTELEA_OK);
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_NONE, "撤销结束的试用已持久");
+	zassert_equal(entelea_stable_revoke(ENTELEA_APP_SLOT_COUNT), ENTELEA_E_PARAM);
+}
+
+/* D-E 负测：稳定记录损坏（未知版本、长度不符、权限长度越界）一律 E_PERM 且输出清零。
+ * 记录布局与 delivery.c 的 STABLE_REC_LEN 一致（1+32+4+1+96）。 */
+ZTEST(framework_trial, test_stable_record_corruption_fails_closed)
+{
+	uint8_t dg[32];
+	uint8_t rec[1 + 32 + 4 + 1 + 96];
+	entelea_trial_grant_t g;
+
+	memset(dg, 0x42, sizeof(dg));
+	memset(rec, 0, sizeof(rec));
+	rec[0] = 2; /* 未知版本 */
+	memcpy(rec + 1, dg, sizeof(dg));
+	zassert_equal(entelea_kv_save(0x53544230U + 1, rec, sizeof(rec)), ENTELEA_OK);
+	zassert_equal(entelea_stable_grant(1, dg, &g), ENTELEA_E_PERM, "未知版本拒绝");
+	zassert_equal(g.perm_len, 0);
+
+	rec[0] = 1;
+	rec[37] = 97; /* 超出 ENTELEA_TRIAL_PERM_MAX */
+	zassert_equal(entelea_kv_save(0x53544230U + 1, rec, sizeof(rec)), ENTELEA_OK);
+	zassert_equal(entelea_stable_grant(1, dg, &g), ENTELEA_E_PERM, "权限长度越界拒绝");
+
+	rec[37] = 0;
+	zassert_equal(entelea_kv_save(0x53544230U + 1, rec, 10), ENTELEA_OK);
+	zassert_equal(entelea_stable_grant(1, dg, &g), ENTELEA_E_PERM, "长度不符拒绝");
+	zassert_equal(g.budget_steps, 0U);
 }

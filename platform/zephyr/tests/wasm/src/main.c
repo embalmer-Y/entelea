@@ -7,6 +7,7 @@
 #include <entelea/appstore.h>
 #include <entelea/d12.h>
 #include <entelea/delivery.h>
+#include <entelea/kv.h>
 #include <entelea/package.h>
 #include <entelea/principal.h>
 #include <entelea/storage.h>
@@ -271,6 +272,7 @@ static void wasm_before(void *fixture)
 
 	ARG_UNUSED(fixture);
 	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	entelea_kv_test_reset();
 	entelea_wasm_test_reset();
 	entelea_perm_test_reset();
 	entelea_trial_test_reset();
@@ -1016,7 +1018,7 @@ ZTEST(framework_wasm, test_rf1_trial_call_rechecks_gate)
 	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
 }
 
-/* 非候选 slot 不受试用政策管辖（稳定集准入归 D05——残余已登记）。 */
+/* 非候选 slot 不受试用政策管辖（natives 仅经稳定记录授权，见稳定集用例）。 */
 ZTEST(framework_wasm, test_rf1_trial_other_slot_ungoverned)
 {
 	entelea_principal_t ctx = {0};
@@ -1027,5 +1029,49 @@ ZTEST(framework_wasm, test_rf1_trial_other_slot_ungoverned)
 	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE));
 	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_OK,
 		      "非候选槽不受试用门管辖");
+	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
+}
+
+/* D-E + A1：晋升后的稳定记录使该槽在非候选状态下获得 natives 授权；撤销即失效；
+ * 换字节（摘要不符）即使记录存在也无授权。 */
+ZTEST(framework_wasm, test_stable_record_grants_natives_only_for_its_bytes)
+{
+	entelea_principal_t owner = mk_principal(1, "gpio:read:0");
+	entelea_trial_candidate_t shown;
+	entelea_trial_grant_t g;
+	uint32_t app = 0;
+	int32_t ret = -77;
+
+	stage_signed(0, WASM_PROBE, sizeof(WASM_PROBE));
+	trial_confirm_slot0("gpio:read:0", 1000);
+	entelea_trial_current(&shown);
+	zassert_equal(entelea_trial_promote(&shown), ENTELEA_OK, "第二次确认晋升");
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_NONE);
+
+	zassert_equal(entelea_wasm_load(0, owner, &app), ENTELEA_OK,
+		      "非候选纯计算可装载");
+	zassert_equal(entelea_wasm_call(app, owner, "run", 0, 100, &ret),
+		      ENTELEA_OK);
+	zassert_equal(ret, 1, "稳定记录授予 natives");
+	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
+
+	zassert_equal(entelea_stable_revoke(0), ENTELEA_OK);
+	zassert_equal(entelea_wasm_load(0, owner, &app), ENTELEA_OK);
+	zassert_equal(entelea_wasm_call(app, owner, "run", 0, 100, &ret),
+		      ENTELEA_OK);
+	zassert_equal(ret, ENTELEA_E_PERM, "撤销后 natives 拒");
+	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
+
+	stage_signed(0, WASM_PROBE, sizeof(WASM_PROBE));
+	trial_confirm_slot0("gpio:read:0", 1000);
+	entelea_trial_current(&shown);
+	zassert_equal(entelea_trial_promote(&shown), ENTELEA_OK);
+	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE)); /* 他字节：摘要不符 */
+	zassert_equal(entelea_stable_grant(0, staged_dg, &g), ENTELEA_E_PERM,
+		      "换字节后稳定记录不授予");
+	zassert_equal(entelea_stable_grant(0, shown.digest, &g), ENTELEA_OK,
+		      "记录仍对原字节有效");
+	zassert_equal(entelea_wasm_load(0, owner, &app), ENTELEA_OK,
+		      "换字节仍可纯计算装载");
 	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
 }
