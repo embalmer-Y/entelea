@@ -210,7 +210,7 @@
       "planned_root": "framework/services/delivery",
       "first_batch": "R12",
       "status": "in_progress",
-      "implemented_scope": "试用状态与内容门已有；确认权限、预算、稳定集、晋升和并发装载未闭合"
+      "implemented_scope": "试用状态、设备计算摘要、授权（确认列表∩宿主授权）与步数已绑定（41786e3）；稳定集准入、晋升和并发改槽未闭合"
     },
     {
       "id": "M-FACTORY",
@@ -218,7 +218,7 @@
       "planned_root": "integrations/forge",
       "first_batch": "R12",
       "status": "in_progress",
-      "implemented_scope": "设备侧窄合同在 framework/services/delivery；独立 Forge 工作区非 Git 仓库，隔离和版本锚点未闭合"
+      "implemented_scope": "设备侧窄合同在 framework/services/delivery；独立 Forge 工作区已有独立 Git 基线 ec24f00（不属于 Entelea 提交），产品隔离、外发与版本锚点的产品保障仍未闭合"
     },
     {
       "id": "M-PRODUCT",
@@ -426,7 +426,8 @@
       ],
       "implementation_commit": "29d6cde",
       "review_commit": "22b126d",
-      "note": "已修复并复验多项迁移缺陷；真实 WAMR 探针仍证明确认权限与运行时权限脱钩，稳定集/预算合同待裁决。原生同址主体依赖可信宿主，不宣称隔离。本轮 CTest 入口不可用；未推送或执行真机/真云操作。"
+      "wp2_commit": "41786e3",
+      "note": "已修复并复验多项迁移缺陷。WP2（41786e3）：试用确认权限列表与运行时 natives 授权取交集，候选摘要由设备从已验签字节计算，装载门摘要与装载字节同趟比对，步数封顶取最小值。仍 blocked：稳定集准入（D-E）未实施；工厂位图到权限列表的映射待 owner 决定；hw_flash_persist 试用持久化闸按决定移出（SRAM 预算）；VS Code CMake 入口待选择 kit。原生同址主体依赖可信宿主，不宣称隔离。未推送，未执行真机/真云操作。"
     },
     {
       "id": "R13",
@@ -1257,8 +1258,7 @@
       "first_batch": "R12",
       "migration_action": "adapt",
       "status": "in_progress",
-      "constraints": "R12固件面试用状态机已交付（单候选/内容绑定确认/fail-closed超时/intake域外拒）；SDK实际接入/命令面/持久试用归获批工厂任务与板级批。",
-      "target_paths": [
+      "constraints": "R12固件面试用状态机已交付（单候选/设备计算摘要的内容绑定确认/确认列表∩宿主授权/fail-closed超时/intake域外拒及声明摘要核对，41786e3）；稳定集准入未实施；SDK实际接入/命令面/持久试用归获批工厂任务与板级批。",      "target_paths": [
         "framework/services/delivery/delivery.c",
         "framework/include/entelea/delivery.h"
       ],
