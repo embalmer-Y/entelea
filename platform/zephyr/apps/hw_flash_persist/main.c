@@ -16,7 +16,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/drivers/hwinfo.h>
-#include <entelea/delivery.h>
 #include <entelea/kv.h>
 #include <entelea/safety.h>
 #include <entelea/storage.h>
@@ -75,13 +74,13 @@ int main(void)
 		uint8_t rb[ENTELEA_STORAGE_META_MAX];
 		uint16_t rlen = 0;
 
-		/* meta=单槽"最新记录"语义：P1 模式串往返已验；其后的
-		 * trial flush 合法接管该槽（v2 42B 记录）——本相位经 trial
-		 * restore 验证 meta 面跨复位（含 CRC/版本域校验）。 */
+		/* meta 面跨复位：P1 写入的诊断模式串须原样回读。试用持久化闸已移出本
+		 * 应用（包路径超出其 SRAM 预算；由 native delivery 套件覆盖）。 */
 		CHK(entelea_storage_meta_read(rb, sizeof(rb), &rlen) ==
 				    ENTELEA_OK &&
-			    rlen == 42,
-		    "P2 meta holds trial record (single-slot latest)");
+			    rlen == sizeof(META_PAT) &&
+			    memcmp(rb, META_PAT, sizeof(META_PAT)) == 0,
+		    "P2 meta holds the P1 diagnostic pattern");
 		printk("[hw-flash] P2 PASS: meta persists (len=%u fnv=%08x)\n",
 		       rlen, fnv1a(rb, rlen));
 		entelea_storage_audit_entry_t ae[4];
@@ -93,18 +92,6 @@ int main(void)
 				      (size_t)n * sizeof(ae[0])) : 0);
 		CHK(present && reason == ENTELEA_FAIL_BOOT(7),
 		    "P2 noinit reason survived SW reset (0x00010007)");
-		CHK(entelea_trial_restore() == ENTELEA_OK &&
-			    entelea_trial_state() == ENTELEA_TRIAL_PENDING_CONFIRM,
-		    "P2 trial PENDING survives reset");
-		{
-			entelea_trial_candidate_t tc;
-
-			entelea_trial_current(&tc);
-			CHK(tc.digest[11] == 0xA5 && tc.permissions == 0x0202 &&
-				    tc.version == 4 && tc.slot == 0 &&
-				    tc.epoch != 0,
-			    "P2 trial candidate content bound");
-		}
 		CHK(entelea_kv_save(PHASE_APP, "P2", 2) == ENTELEA_OK,
 		    "P2 kv phase=P2");
 		printk("[hw-flash] gate complete: parking resident\n");
@@ -112,9 +99,6 @@ int main(void)
 		printk("[hw-flash] P3: already verified; parking resident\n");
 	} else {
 		/* ---- P1：写入面 ---- */
-		CHK(entelea_trial_restore() == ENTELEA_OK &&
-			    entelea_trial_state() == ENTELEA_TRIAL_NONE,
-		    "P1 trial storage is empty before the diagnostic meta write");
 		CHK(entelea_storage_meta_write(META_PAT, sizeof(META_PAT)) ==
 			    ENTELEA_OK,
 		    "P1 meta write");
@@ -140,18 +124,7 @@ int main(void)
 
 		CHK(entelea_storage_audit_append(&e, 0) == ENTELEA_OK,
 		    "P1 audit append");
-		/* A-4：R12 试用状态持久（meta 面）。 */
-		entelea_trial_candidate_t tc;
-
-		memset(&tc, 0, sizeof(tc));
-		tc.digest[11] = 0xA5;
-		tc.permissions = 0x0202;
-		tc.version = 4;
-		tc.slot = 0;
-		CHK(entelea_trial_submit(&tc) == ENTELEA_OK &&
-			    entelea_trial_flush() == ENTELEA_OK,
-		    "P1 trial submit+flush");
-		printk("[hw-flash] P1: kv/audit/trial written; system_fail -> SW reset <=~5s\n");
+		printk("[hw-flash] P1: kv/audit written; system_fail -> SW reset <=~5s\n");
 		entelea_safety_system_fail(ENTELEA_FAIL_BOOT(7));
 	}
 	for (;;) {

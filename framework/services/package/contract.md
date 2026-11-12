@@ -33,24 +33,27 @@
   （独立 zephyr 库不保序且不入链——上游 §878 语义）。
 - 生命周期：load(slot, owner)（V1 单实例：已有活实例 = E_BUSY 且零
   副作用；验签复核，错误原样传播；64KB 装载上限 = E_RANGE；**试用门
-  在卸旧模块之前查询**，E_PERM/E_IO 零副作用；owner 此时绑定）→ call
-  → stop（实例销毁，模块保留至下次 load 卸旧重建）。
+  在卸旧模块之前查询**，E_PERM/E_IO 零副作用；owner 此时绑定）；
+  **单趟捕获（F3）**：门摘要趟与装载捕获趟比对，不相等 = E_PERM 且不
+  创建实例。→ call → stop（实例销毁，模块保留至下次 load 卸旧重建）。
 - call 前**复查试用门**（按装载时记录的 slot+digest）：门已撤销（试用
-  结束后同槽新候选、未确认）= E_PERM，不执行、不销毁实例。
+  结束后同槽新候选、未确认）= E_PERM，不执行、不销毁实例。**授权逐次
+  查询**（grant，不缓存）：仅 ACTIVE 且字节相符时授予确认的权限与步数；
+  否则本次调用无 natives 权限，执行配额取设备上限。
 - call：ctx ≠ owner = E_PERM；导出 ABI 仅 ()->i32 / (i32)->i32（前者
   arg 必须为 0，后者收到 arg），其余 = E_PARAM——这些拒绝不执行、不销毁
   实例。**步预算指令配额**（1000 指令/ms 换算，封顶 1e8）：到期 →
   E_TIMEOUT 有界停止；其余 trap → E_IO；两者都销毁实例。调用方不指定
   自定义预算时使用 `entelea_wasm_call_default`，其默认值为 1e8 指令；
-  原 `entelea_wasm_call` 的显式 0 仍表示零指令，不表示默认值。该预算
+  原 `entelea_wasm_call` 的显式 0 仍表示零指令，不表示默认值。实际配额 =
+  min(请求换算, 确认步数（未确认 = 设备上限）, 1e8)。该预算
   不是墙钟硬截止；现有上限比获批方案允许的绝对上限 2e9 更严格。
-- natives：只按 load 绑定的 owner 裁决（user_data；Wasm 传入整数不可转
-  principal；owner={0} 未绑定 = 一律拒）。natives 注册失败 = init E_IO 并
-  回滚运行时。代表 native "entelea"."host_probe" (i)i（gpio:read:0 门），
-  VM→native 真路径由导入夹具覆盖；全符号集随 R06+ 消费面扩展。
-  owner 权限尚未与用户确认的 trial 位图绑定，见
-  [交付合同](../delivery/contract.md)；
-  不能仅凭 owner 绑定宣称用户确认的权限得到执行。
+- natives：授权 = 确认的权限列表 ∩ load 绑定的 owner 的宿主授权（D-B；
+  Wasm 传入整数不可转 principal；owner={0} 未绑定 = 一律拒；未确认的包
+  无任何 natives 权限，A1）。natives 注册失败 = init E_IO 并回滚运行时。
+  代表 native "entelea"."host_probe" (i)i（gpio:read:0 门），VM→native 真路径
+  由 wasm 套件覆盖；全符号集随 R06+ 消费面扩展。授权语义见
+  [交付合同](../delivery/contract.md)。
 
 ## D03 Lua 接入合同（关键可行性验证——不冒充正式支持）
 

@@ -67,6 +67,11 @@ void entelea_perm_table_init(entelea_perm_table_t *table);
  * 不静默截断）。重复声明幂等。 */
 entelea_result_t entelea_perm_parse(const char *cap, entelea_perm_table_t *table);
 
+/** [host] 解析分号分隔的声明列表（空 = 无声明，OK）。任一段为空、超长或
+ * 文法坏 = E_PARAM；失败后 table 内容未定义，调用方须丢弃。 */
+entelea_result_t entelea_perm_parse_list(const char *list, size_t len,
+					 entelea_perm_table_t *table);
+
 /** [host] 绑定 principal（槽上限 4；app_id 撞名拒绝）。解绑后句柄失效
  * ——旧句柄（含宿主别处保存的副本）的后续裁决一律 E_PERM；句柄须与
  * 槽当前绑定的 app_id 与代数同时一致。槽代数耗尽后本次运行不再复用；

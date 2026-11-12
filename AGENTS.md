@@ -2,8 +2,9 @@
 
 This tree contains the R00-R12 implementation milestones plus the RF1 review
 repairs. Historical milestones and diagnostic demonstrations are not complete
-framework or product acceptance. RF1 still has an unresolved trial-authority
-gap; R13 product acceptance remains pending. See `docs/rf1-validation.md`.
+framework or product acceptance. RF1 still has open items (stable-set admission,
+factory permission mapping); R13 product acceptance remains pending. See
+`docs/rf1-validation.md`.
 
 - Read README and the current batch in `docs/rebuild-plan.md` first.
 - Use `docs/migration-assets.json` as the sole migration/status ledger. Query only

@@ -282,6 +282,84 @@ static void wasm_before(void *fixture)
 	zassert_ok(entelea_d12_bind_clock(&d12_clock));
 }
 
+/* R12 试用辅助：向 slot 提交（摘要由设备从槽内字节计算；宿主只申请权限、
+ * 步数与版本）。 */
+static entelea_result_t trial_submit(uint8_t slot, const char *perm,
+				     uint32_t budget)
+{
+	entelea_trial_request_t req;
+
+	memset(&req, 0, sizeof(req));
+	req.slot = slot;
+	req.version = 1;
+	req.budget_steps = budget;
+	req.perm_len = (uint8_t)strlen(perm);
+	memcpy(req.perm, perm, req.perm_len);
+	return entelea_trial_submit(&req);
+}
+
+/* 提交并确认 slot 0 当前包：展示对象摘要须等于测试侧独立计算的暂存摘要。 */
+static void trial_confirm_slot0(const char *perm, uint32_t budget)
+{
+	entelea_trial_candidate_t shown;
+
+	zassert_equal(trial_submit(0, perm, budget), ENTELEA_OK);
+	entelea_trial_current(&shown);
+	zassert_mem_equal(shown.digest, staged_dg, 32,
+			  "F4：摘要由设备从槽内字节计算");
+	zassert_equal(entelea_trial_confirm(&shown), ENTELEA_OK);
+}
+
+/* F3 注入：摘要门读取（第 1 趟）与装载捕获读取（第 2 趟）读的是同一精确区间
+ * (SLOT_A, 0, len)。第 2 趟返回前：fail=true 则返回 E_IO；否则翻转 wasm 段内
+ * 一个字节。两种情况都须拒绝装载。 */
+static entelea_store_ops_t tp_base;
+static bool tp_mounted;
+static struct {
+	uint32_t len;
+	uint32_t hits;
+	bool fail;
+} tp;
+
+static entelea_result_t tp_read(entelea_store_part_t part, uint32_t off,
+				void *buf, uint32_t len)
+{
+	entelea_result_t r = tp_base.read(part, off, buf, len);
+
+	if (r == ENTELEA_OK && part == ENTELEA_PART_SLOT_A && off == 0 &&
+	    len == tp.len && ++tp.hits == 2U) {
+		if (tp.fail) {
+			return ENTELEA_E_IO;
+		}
+		((uint8_t *)buf)[ENTELEA_TSAP_CONTENT_OFF + sizeof(MAN) + 4U] ^=
+			0x01U;
+	}
+	return r;
+}
+
+static void tp_mount(uint32_t len, bool fail)
+{
+	entelea_store_ops_t tampered;
+
+	zassert_false(tp_mounted);
+	tp_base = entelea_store_backend;
+	tampered = tp_base;
+	tampered.read = tp_read;
+	tp.len = len;
+	tp.hits = 0;
+	tp.fail = fail;
+	zassert_equal(entelea_storage_mount(&tampered), ENTELEA_OK);
+	tp_mounted = true;
+}
+
+static void tp_unmount(void)
+{
+	if (tp_mounted) {
+		zassert_equal(entelea_storage_mount(&tp_base), ENTELEA_OK);
+		tp_mounted = false;
+	}
+}
+
 static entelea_principal_t mk_principal(uint16_t app_id, const char *cap)
 {
 	entelea_perm_table_t t;
@@ -395,8 +473,12 @@ ZTEST(framework_wasm, test_native_probe_principal_gate)
 	entelea_principal_t ok_ctx;
 
 	zassert_equal(entelea_principal_bind(&ok_ctx, 1, &t), ENTELEA_OK);
-	zassert_equal(entelea_wasm_test_probe_decide(ok_ctx, 0xFFFFFFFF), 1,
-		      "注入授权身份 → 授权可见（Wasm 传参被忽略）");
+	zassert_equal(entelea_wasm_test_probe_decide(ok_ctx, "gpio:read:0"), 1,
+		      "确认授权 + 宿主授权 → 授权可见（Wasm 传参被忽略）");
+	zassert_equal(entelea_wasm_test_probe_decide(ok_ctx, NULL),
+		      ENTELEA_E_PERM, "无确认授权即拒（A1）");
+	zassert_equal(entelea_wasm_test_probe_decide(ok_ctx, "pwm:set:1"),
+		      ENTELEA_E_PERM, "确认未含 gpio:read:0 即拒");
 	/* 未授权（空权限）→ E_PERM。 */
 	entelea_perm_table_t empty;
 
@@ -404,13 +486,14 @@ ZTEST(framework_wasm, test_native_probe_principal_gate)
 	entelea_principal_t poor;
 
 	zassert_equal(entelea_principal_bind(&poor, 2, &empty), ENTELEA_OK);
-	zassert_equal(entelea_wasm_test_probe_decide(poor, 0), ENTELEA_E_PERM,
+	zassert_equal(entelea_wasm_test_probe_decide(poor, "gpio:read:0"),
+		      ENTELEA_E_PERM,
 		      "注入未授权身份 → E_PERM（不崩溃、不越权）");
 	/* 域外句柄 E_PERM；完整匹配的 C 字段不由该断言证明不可伪造。 */
 	entelea_principal_t fake = {._handle = 91, .app_id = 0};
 
-	zassert_equal(entelea_wasm_test_probe_decide(fake, 0), ENTELEA_E_PERM,
-		      "伪造句柄 → E_PERM");
+	zassert_equal(entelea_wasm_test_probe_decide(fake, "gpio:read:0"),
+		      ENTELEA_E_PERM, "伪造句柄 → E_PERM");
 }
 
 /* ---- RF1 G3 回归用例 ---- */
@@ -470,7 +553,7 @@ ZTEST(framework_wasm, test_rf1_init_natives_failure_fail_closed)
 	zassert_equal(entelea_wasm_load(0, owner, &app), ENTELEA_OK);
 	zassert_equal(entelea_wasm_call(app, owner, "run", 0, 100, &ret),
 		      ENTELEA_OK, "导入解析成功（natives 已注册）");
-	zassert_equal(ret, 1);
+	zassert_equal(ret, ENTELEA_E_PERM, "A1：未确认包的 natives 一律拒");
 }
 
 /* P1-7：单实例占用时 load 必须先拒（E_BUSY）且零副作用——原实现先卸载
@@ -520,12 +603,13 @@ ZTEST(framework_wasm, test_rf1_load_io_errors_propagate)
 	zassert_equal(rd.hits, 1);
 	rd_unmount();
 
-	/* 验签通过、模块字节读失败：先证验签不读该区间（注入只命中装载读）。 */
-	rd_mount(false, ENTELEA_PART_SLOT_A, v.wasm_off, v.wasm_len);
+	/* 验签通过、装载的整包读取失败：先证验签不读整包区间（注入只命中装载读）。
+	 * 装载第一趟（门摘要）即整包读取，其失败须原样为 E_IO。 */
+	rd_mount(false, ENTELEA_PART_SLOT_A, 0, v.pkg_len);
 	zassert_equal(entelea_pkg_verify(0, NULL, &v, NULL), ENTELEA_OK);
-	zassert_equal(rd.hits, 0, "验签不读模块字节区间");
+	zassert_equal(rd.hits, 0, "验签不读整包区间");
 	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_E_IO, "装载读错误");
-	zassert_equal(rd.hits, 1, "失败确由模块字节读触发");
+	zassert_equal(rd.hits, 1, "失败确由装载的整包读取触发");
 	rd_unmount();
 	zassert_equal(app, 0xAA);
 	zassert_equal(entelea_wasm_instance_count(), 0);
@@ -543,6 +627,7 @@ ZTEST(framework_wasm, test_rf1_owner_bound_at_load)
 	int32_t ret = 0;
 
 	stage_signed(0, WASM_PROBE, sizeof(WASM_PROBE));
+	trial_confirm_slot0("gpio:read:0", 1000);
 	zassert_equal(entelea_wasm_load(0, poor, &app), ENTELEA_OK);
 	ret = -77;
 	zassert_equal(entelea_wasm_call(app, rich, "run", 0, 100, &ret),
@@ -607,47 +692,234 @@ ZTEST(framework_wasm, test_default_instruction_budget_and_explicit_limits)
 	zassert_equal(observed_instruction_limit, 0);
 }
 
-#ifdef TEST_TRIAL_PERMISSION_GAP
-/* Expected to fail until confirmed permissions are bound to runtime grants. */
-ZTEST(framework_wasm, test_trial_confirmation_restricts_runtime_permissions)
+/* F1（D-B）：natives 授权 = 用户确认的权限列表 ∩ 宿主注入的 principal 授权。
+ * 确认为空时，即使宿主 principal 有 gpio:read:0 也必须拒绝（原缺口）。 */
+ZTEST(framework_wasm, test_f1_native_grant_is_confirmed_intersect_host)
 {
 	entelea_principal_t owner = mk_principal(1, "gpio:read:0");
-	entelea_trial_candidate_t candidate = {0};
+	entelea_principal_t nogrant = mk_principal(2, NULL);
+	uint32_t app = 0;
+	int32_t ret = -77;
+	entelea_result_t rc;
+
+	stage_signed(0, WASM_PROBE, sizeof(WASM_PROBE));
+
+	trial_confirm_slot0("", 1000);
+	zassert_equal(entelea_wasm_load(0, owner, &app), ENTELEA_OK);
+	rc = entelea_wasm_call(app, owner, "run", 0, 100, &ret);
+	zassert_true(rc == ENTELEA_E_PERM ||
+			     (rc == ENTELEA_OK && ret == ENTELEA_E_PERM),
+		     "确认为空不得由宿主授权放行: rc=%d ret=%d", (int)rc,
+		     (int)ret);
+	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
+	zassert_equal(entelea_trial_end(), ENTELEA_OK);
+
+	trial_confirm_slot0("pwm:set:1", 1000);
+	zassert_equal(entelea_wasm_load(0, owner, &app), ENTELEA_OK);
+	zassert_equal(entelea_wasm_call(app, owner, "run", 0, 100, &ret),
+		      ENTELEA_OK);
+	zassert_equal(ret, ENTELEA_E_PERM, "确认未含 gpio:read:0");
+	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
+	zassert_equal(entelea_trial_end(), ENTELEA_OK);
+
+	trial_confirm_slot0("gpio:read:0", 1000);
+	zassert_equal(entelea_wasm_load(0, nogrant, &app), ENTELEA_OK);
+	zassert_equal(entelea_wasm_call(app, nogrant, "run", 0, 100, &ret),
+		      ENTELEA_OK);
+	zassert_equal(ret, ENTELEA_E_PERM, "宿主无授权即拒");
+	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
+
+	zassert_equal(entelea_wasm_load(0, owner, &app), ENTELEA_OK);
+	zassert_equal(entelea_wasm_call(app, owner, "run", 0, 100, &ret),
+		      ENTELEA_OK);
+	zassert_equal(ret, 1, "确认与宿主授权同时具备");
+	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
+}
+
+/* A1：未经确认的包（NONE/非候选）即使宿主有授权，natives 也一律拒绝；
+ * 纯计算仍可装载执行（不受试用门管辖，稳定集准入归 D05）。 */
+ZTEST(framework_wasm, test_a1_unconfirmed_package_has_no_native_grant)
+{
+	entelea_principal_t owner = mk_principal(1, "gpio:read:0");
 	uint32_t app = 0;
 	int32_t ret = -77;
 
 	stage_signed(0, WASM_PROBE, sizeof(WASM_PROBE));
-	memcpy(candidate.digest, staged_dg, sizeof(candidate.digest));
-	zassert_equal(entelea_trial_submit(&candidate), ENTELEA_OK);
-	entelea_trial_current(&candidate);
-	zassert_equal(candidate.permissions, 0, "user confirmed no permissions");
-	zassert_equal(entelea_trial_confirm(&candidate), ENTELEA_OK);
-	entelea_result_t rc = entelea_wasm_load(0, owner, &app);
-
-	if (rc == ENTELEA_OK) {
-		rc = entelea_wasm_call(app, owner, "run", 0, 100, &ret);
-		zassert_true(rc == ENTELEA_E_PERM ||
-			     (rc == ENTELEA_OK && ret == ENTELEA_E_PERM),
-			     "unapproved gpio:read executed: rc=%d result=%d",
-			     (int)rc, (int)ret);
-	} else {
-		zassert_equal(rc, ENTELEA_E_PERM);
-	}
+	zassert_equal(entelea_wasm_load(0, owner, &app), ENTELEA_OK);
+	zassert_equal(entelea_wasm_call(app, owner, "run", 0, 100, &ret),
+		      ENTELEA_OK);
+	zassert_equal(ret, ENTELEA_E_PERM, "未确认：natives 一律拒");
+	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
 }
-#endif
+
+/* D-C：执行配额 = min(调用方请求, 确认步数, 设备上限 1e8)。 */
+ZTEST(framework_wasm, test_dc_budget_is_capped_by_confirmed_steps)
+{
+	entelea_principal_t ctx = {0};
+	uint32_t app = 0;
+	int32_t ret = -77;
+
+	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE));
+	trial_confirm_slot0("", 1000);
+	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_OK);
+	zassert_equal(entelea_wasm_call(app, ctx, "health_ping", 0, UINT32_MAX,
+					&ret),
+		      ENTELEA_OK);
+	zassert_equal(observed_instruction_limit, 1000, "确认步数封顶大请求");
+	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
+
+	zassert_equal(entelea_trial_end(), ENTELEA_OK);
+	trial_confirm_slot0("", 100000000U);
+	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_OK);
+	zassert_equal(entelea_wasm_call(app, ctx, "health_ping", 0, 1, &ret),
+		      ENTELEA_OK);
+	zassert_equal(observed_instruction_limit, 1000, "请求更小时取请求");
+	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
+
+	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_OK);
+	zassert_equal(entelea_wasm_call(app, ctx, "health_ping", 0, UINT32_MAX,
+					&ret),
+		      ENTELEA_OK);
+	zassert_equal(observed_instruction_limit, 100000000,
+		      "确认上限不超过设备上限");
+	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
+}
+
+/* 授权逐次查询：试用结束后，已装载实例的 natives 授权立即失效（不缓存）。 */
+ZTEST(framework_wasm, test_grant_refreshed_per_call_after_trial_end)
+{
+	entelea_principal_t owner = mk_principal(1, "gpio:read:0");
+	uint32_t app = 0;
+	int32_t ret = -77;
+
+	stage_signed(0, WASM_PROBE, sizeof(WASM_PROBE));
+	trial_confirm_slot0("gpio:read:0", 1000);
+	zassert_equal(entelea_wasm_load(0, owner, &app), ENTELEA_OK);
+	zassert_equal(entelea_wasm_call(app, owner, "run", 0, 100, &ret),
+		      ENTELEA_OK);
+	zassert_equal(ret, 1, "ACTIVE 期间授权可见");
+	zassert_equal(entelea_trial_end(), ENTELEA_OK);
+	ret = -77;
+	zassert_equal(entelea_wasm_call(app, owner, "run", 0, 100, &ret),
+		      ENTELEA_OK);
+	zassert_equal(ret, ENTELEA_E_PERM, "试用结束后授权立即失效");
+	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
+}
+
+/* F4：提交的摘要由设备从槽内字节计算；空槽与坏包被拒且不改变状态。 */
+ZTEST(framework_wasm, test_f4_submit_computes_digest_from_slot_bytes)
+{
+	entelea_trial_candidate_t shown;
+	uint8_t bad = 0xEE;
+
+	zassert_equal(trial_submit(0, "", 1000), ENTELEA_E_INVALID_SIG,
+		      "空槽无有效包");
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_NONE,
+		      "失败不改变状态");
+
+	stage_signed(0, WASM_PROBE, sizeof(WASM_PROBE));
+	zassert_equal(entelea_pkg_slot_write(0, ENTELEA_TSAP_CONTENT_OFF, &bad, 1),
+		      ENTELEA_OK);
+	zassert_equal(trial_submit(0, "", 1000), ENTELEA_E_INVALID_SIG,
+		      "坏包拒提交");
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_NONE);
+
+	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE));
+	zassert_equal(trial_submit(0, "", 1000), ENTELEA_OK);
+	entelea_trial_current(&shown);
+	zassert_mem_equal(shown.digest, staged_dg, 32, "设备计算摘要");
+}
+
+/* F4（工厂）：声明的包摘要须与设备计算值相等，否则不提交。 */
+ZTEST(framework_wasm, test_f4_factory_intake_checks_device_digest)
+{
+	entelea_factory_candidate_t fc;
+	entelea_trial_candidate_t shown;
+
+	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE));
+	memset(&fc, 0, sizeof(fc));
+	memcpy(fc.package_digest, staged_dg, sizeof(fc.package_digest));
+	fc.runtime_version = 1;
+	fc.payload_kind = 0;
+	fc.budget_steps = 100000;
+	fc.mem_quota_kb = 64;
+
+	fc.package_digest[0] ^= 1U;
+	zassert_equal(entelea_factory_intake(&fc, 0), ENTELEA_E_INVALID_SIG,
+		      "声明摘要与槽内字节不符");
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_NONE);
+	fc.package_digest[0] ^= 1U;
+
+	zassert_equal(entelea_factory_intake(&fc, 0), ENTELEA_OK);
+	entelea_trial_current(&shown);
+	zassert_mem_equal(shown.digest, staged_dg, 32);
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_PENDING_CONFIRM,
+		      "intake 只到 PENDING");
+}
+
+/* F4（工厂）：Lua 载荷经同一验收面（仅 intake，不默认解释为 wasm）。 */
+ZTEST(framework_wasm, test_f4_factory_intake_lua_payload_uses_same_gate)
+{
+	entelea_factory_candidate_t fc;
+
+	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE));
+	memset(&fc, 0, sizeof(fc));
+	memcpy(fc.package_digest, staged_dg, sizeof(fc.package_digest));
+	fc.runtime_version = 1;
+	fc.payload_kind = 1;
+	fc.budget_steps = 100000;
+	fc.mem_quota_kb = 64;
+	zassert_equal(entelea_factory_intake(&fc, 0), ENTELEA_OK,
+		      "Lua payload 合法");
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_PENDING_CONFIRM);
+}
+
+/* F3：门摘要与装载字节来自同一趟读取。门后、捕获前改写槽内 wasm 字节时，
+ * 装载必须拒绝且不创建实例（原实现门与装载分别读取）。 */
+ZTEST(framework_wasm, test_f3_load_rejects_bytes_changed_after_gate)
+{
+	entelea_principal_t ctx = {0};
+	uint32_t app = 0xAA;
+	entelea_result_t rc;
+
+	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE));
+	trial_confirm_slot0("", 1000);
+	tp_mount(staged_len < 512U ? staged_len : 512U, false);
+	rc = entelea_wasm_load(0, ctx, &app);
+	tp_unmount();
+	zassert_equal(rc, ENTELEA_E_PERM, "门后字节变化须拒装载");
+	zassert_equal(app, 0xAA);
+	zassert_equal(entelea_wasm_instance_count(), 0);
+	zassert_equal(tp.hits, 2U, "两趟读取均发生（门摘要 + 捕获）");
+}
+
+/* F3：捕获趟读取失败原样为 E_IO，不创建实例。 */
+ZTEST(framework_wasm, test_f3_capture_read_failure_propagates)
+{
+	entelea_principal_t ctx = {0};
+	uint32_t app = 0xAA;
+	entelea_result_t rc;
+
+	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE));
+	trial_confirm_slot0("", 1000);
+	tp_mount(staged_len < 512U ? staged_len : 512U, true);
+	rc = entelea_wasm_load(0, ctx, &app);
+	tp_unmount();
+	zassert_equal(rc, ENTELEA_E_IO, "捕获趟读错误原样传播");
+	zassert_equal(app, 0xAA);
+	zassert_equal(entelea_wasm_instance_count(), 0);
+	zassert_equal(tp.hits, 2U);
+}
 
 /* RF1 #9（G4）：执行闸——试用候选须经用户确认，且执行字节=确认对象。
  * 未确认（PENDING）候选不得装载（原 load 不查试用态：推送即可执行）。 */
 ZTEST(framework_wasm, test_rf1_trial_pending_not_loadable)
 {
 	entelea_principal_t ctx = {0};
-	entelea_trial_candidate_t c;
 	uint32_t app = 0xAA;
 
 	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE));
-	memset(&c, 0, sizeof(c));
-	memcpy(c.digest, staged_dg, 32);
-	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
+	zassert_equal(trial_submit(0, "", 1000), ENTELEA_OK);
 	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_E_PERM,
 		      "未确认候选不得装载");
 	zassert_equal(app, 0xAA);
@@ -658,15 +930,10 @@ ZTEST(framework_wasm, test_rf1_trial_pending_not_loadable)
 ZTEST(framework_wasm, test_rf1_trial_confirm_bound_to_bytes)
 {
 	entelea_principal_t ctx = {0};
-	entelea_trial_candidate_t c;
 	uint32_t app = 0;
 
 	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE));
-	memset(&c, 0, sizeof(c));
-	memcpy(c.digest, staged_dg, 32);
-	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
-	entelea_trial_current(&c); /* 展示对象（含 submit 赋的 epoch） */
-	zassert_equal(entelea_trial_confirm(&c), ENTELEA_OK);
+	trial_confirm_slot0("", 1000);
 	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_OK,
 		      "已确认字节可装载");
 	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
@@ -679,13 +946,11 @@ ZTEST(framework_wasm, test_rf1_trial_confirm_bound_to_bytes)
  * 与测试侧独立计算的暂存字节摘要对拍；摘要读失败原样 E_IO、零副作用。 */
 ZTEST(framework_wasm, test_persisted_pending_is_gated_after_restart)
 {
-	entelea_trial_candidate_t c = {0};
 	entelea_principal_t ctx = {0};
 	uint32_t app = 0xAA;
 
 	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE));
-	memcpy(c.digest, staged_dg, sizeof(c.digest));
-	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
+	zassert_equal(trial_submit(0, "", 1000), ENTELEA_OK);
 	zassert_equal(entelea_trial_flush(), ENTELEA_OK);
 	entelea_trial_test_reset();
 	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_E_PERM,
@@ -731,19 +996,14 @@ ZTEST(framework_wasm, test_rf1_trial_call_rechecks_gate)
 	int32_t ret = -1;
 
 	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE));
-	memset(&c, 0, sizeof(c));
-	memcpy(c.digest, staged_dg, 32);
-	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
-	entelea_trial_current(&c);
-	zassert_equal(entelea_trial_confirm(&c), ENTELEA_OK);
+	trial_confirm_slot0("", 1000);
 	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_OK);
 	zassert_equal(entelea_wasm_call(app, ctx, "health_ping", 0, 100, &ret),
 		      ENTELEA_OK, "ACTIVE+摘要相符可调用");
 
 	zassert_equal(entelea_trial_end(), ENTELEA_OK);
-	memset(&c, 0, sizeof(c));
-	memset(c.digest, 0x5C, 32); /* 同槽新候选（他字节） */
-	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
+	stage_signed(0, WASM_PROBE, sizeof(WASM_PROBE)); /* 同槽他字节 */
+	zassert_equal(trial_submit(0, "", 1000), ENTELEA_OK);
 	ret = -77;
 	zassert_equal(entelea_wasm_call(app, ctx, "health_ping", 0, 100, &ret),
 		      ENTELEA_E_PERM, "同槽新候选待确认：旧实例拒");
@@ -760,14 +1020,12 @@ ZTEST(framework_wasm, test_rf1_trial_call_rechecks_gate)
 ZTEST(framework_wasm, test_rf1_trial_other_slot_ungoverned)
 {
 	entelea_principal_t ctx = {0};
-	entelea_trial_candidate_t c;
 	uint32_t app = 0;
 
+	stage_signed(1, WASM_PROBE, sizeof(WASM_PROBE));
+	zassert_equal(trial_submit(1, "", 1000), ENTELEA_OK, "候选在 slot 1");
 	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE));
-	memset(&c, 0, sizeof(c));
-	c.slot = 1;
-	memset(c.digest, 0x11, 32);
-	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
-	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_OK);
+	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_OK,
+		      "非候选槽不受试用门管辖");
 	zassert_equal(entelea_wasm_stop(app), ENTELEA_OK);
 }

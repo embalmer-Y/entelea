@@ -397,8 +397,16 @@ entelea_result_t entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
 entelea_result_t entelea_pkg_file_digest(uint8_t slot, uint32_t len,
 					 uint8_t out[32])
 {
+	return entelea_pkg_file_digest_capture(slot, len, out, 0, 0, NULL);
+}
+
+entelea_result_t entelea_pkg_file_digest_capture(uint8_t slot, uint32_t len,
+						 uint8_t out[32], uint32_t cap_off,
+						 uint32_t cap_len, uint8_t *cap_buf)
+{
 	if (slot >= ENTELEA_APP_SLOT_COUNT || out == NULL || len == 0 ||
-	    len > SLOT_SZ) {
+	    len > SLOT_SZ || cap_len > len || cap_off > len - cap_len ||
+	    (cap_len != 0 && cap_buf == NULL)) {
 		return ENTELEA_E_PARAM;
 	}
 	uint32_t st[8];
@@ -414,6 +422,17 @@ entelea_result_t entelea_pkg_file_digest(uint8_t slot, uint32_t len,
 			return ENTELEA_E_IO;
 		}
 		entelea_sha256_stream_update(st, buf, n);
+		if (cap_len != 0) {
+			const uint32_t lo = off > cap_off ? off : cap_off;
+			const uint32_t end = off + n;
+			const uint32_t hi =
+				end < cap_off + cap_len ? end : cap_off + cap_len;
+
+			if (lo < hi) {
+				memcpy(cap_buf + (lo - cap_off), buf + (lo - off),
+				       hi - lo);
+			}
+		}
 		off += n;
 	}
 	entelea_sha256_stream_final(st, out);

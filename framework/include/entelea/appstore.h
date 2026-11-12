@@ -43,6 +43,14 @@ entelea_result_t entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
 entelea_result_t entelea_pkg_file_digest(uint8_t slot, uint32_t len,
 					 uint8_t out[32]);
 
+/** 单趟捕获：同一次流式读取计算 sha256(slot[0, len))，并把
+ * slot[cap_off, cap_off+cap_len) 复制到 cap_buf（cap_len=0 时不捕获）。
+ * 装载链用它保证门检查的摘要与实际装载字节来自同一批读取。
+ * 域外（含区间越出 len）=E_PARAM，读失败=E_IO。 */
+entelea_result_t entelea_pkg_file_digest_capture(uint8_t slot, uint32_t len,
+						 uint8_t out[32], uint32_t cap_off,
+						 uint32_t cap_len, uint8_t *cap_buf);
+
 /** 激活（KV "PAGA" 记录 active slot）。它只是包**事实记录**，不授予
  * 执行权：装载链（wasm_host）装载前复核验签 + R12 试用门；稳定集
  * 准入/晋升归 D05（未决）。 */

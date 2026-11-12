@@ -6,7 +6,10 @@
  * 宿主）。WAMR pinned 25bd7eb；fast 解释器 + 指令配额 + WASI 关 +
  * 池模式（旧 DEC-17/25/31/48③ 语义）。实例在 load 时绑定 R04 owner
  * principal，此后不可替换：natives 只按 owner 裁决（Wasm 传入整数不可转
- * principal；owner={0} 未绑定 = natives 一律拒）。 */
+ * principal）；owner={0} 未绑定 = natives 一律拒）。natives 授权取交集：
+ * 试用确认的权限列表（仅 ACTIVE 且字节相符）与 owner 的宿主授权须同时允许；
+ * 未经确认的包（NONE/非候选）无任何 natives 权限。执行配额 = min(请求,
+ * 确认步数, 1e8)。 */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -60,9 +63,9 @@ uint8_t entelea_wasm_instance_count(void);
 #ifdef ENTELEA_TEST
 /* 停止实例、卸载模块并销毁运行时（下次 init 从零开始）。 */
 void entelea_wasm_test_reset(void);
-/* 代表 native 裁决函数直达钩子（伪造/失效 principal 输入）。 */
+/* 代表 native 裁决直达钩子：grant=确认权限列表（NULL = 无确认授权）。 */
 int32_t entelea_wasm_test_probe_decide(entelea_principal_t owner,
-				       uint32_t ignored);
+				       const char *grant);
 #endif
 
 #ifdef __cplusplus

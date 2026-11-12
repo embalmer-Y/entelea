@@ -195,6 +195,43 @@ entelea_result_t entelea_perm_parse(const char *cap, entelea_perm_table_t *table
 	return ENTELEA_OK;
 }
 
+entelea_result_t entelea_perm_parse_list(const char *list, size_t len,
+					 entelea_perm_table_t *table)
+{
+	if ((list == NULL && len != 0) || table == NULL) {
+		return ENTELEA_E_PARAM;
+	}
+	if (len == 0) {
+		return ENTELEA_OK;
+	}
+	size_t start = 0;
+
+	for (;;) {
+		char decl[64];
+		size_t end = start;
+
+		while (end < len && list[end] != ';') {
+			end++;
+		}
+		const size_t n = end - start;
+
+		if (n == 0 || n >= sizeof(decl)) {
+			return ENTELEA_E_PARAM; /* 空段（含首尾分号）或超长 */
+		}
+		memcpy(decl, list + start, n);
+		decl[n] = '\0';
+		entelea_result_t r = entelea_perm_parse(decl, table);
+
+		if (r != ENTELEA_OK) {
+			return r;
+		}
+		if (end == len) {
+			return ENTELEA_OK;
+		}
+		start = end + 1;
+	}
+}
+
 entelea_result_t entelea_principal_bind(entelea_principal_t *ctx, uint16_t app_id,
 					const entelea_perm_table_t *table)
 {

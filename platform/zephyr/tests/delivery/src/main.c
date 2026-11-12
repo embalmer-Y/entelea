@@ -13,6 +13,22 @@ static void trial_before(void *fixture)
 	entelea_trial_test_reset();
 }
 
+/* 状态机用例直接提交调用方摘要（TEST 接缝，不验签）。生产 submit 由设备
+ * 计算摘要，其验证在 wasm 套件用签名包完成（F4）。 */
+#define entelea_trial_submit entelea_trial_submit_with_digest_for_test
+
+/* 候选必须通过 admission：步数 1..1e8，权限列表合法（空 = 无权限）。 */
+#define TEST_BUDGET 1000U
+
+static void set_perm(entelea_trial_candidate_t *c, const char *perm)
+{
+	size_t n = strlen(perm);
+
+	zassert_true(n <= ENTELEA_TRIAL_PERM_MAX);
+	memcpy(c->perm, perm, n);
+	c->perm_len = (uint8_t)n;
+}
+
 ZTEST(framework_trial, test_lifecycle_and_user_gate)
 {
 	entelea_trial_test_reset(); /* 用例序不保证：自含净基线 */
@@ -20,7 +36,8 @@ ZTEST(framework_trial, test_lifecycle_and_user_gate)
 
 	memset(&c, 0, sizeof(c));
 	c.digest[0] = 0xAB;
-	c.permissions = 0x0005;
+	set_perm(&c, "gpio:read:0;pwm:set:1");
+	c.budget_steps = TEST_BUDGET;
 	c.version = 3;
 
 	/* 未提交即确认/拒绝/结束=STATE。 */
@@ -44,7 +61,9 @@ ZTEST(framework_trial, test_lifecycle_and_user_gate)
 
 	entelea_trial_current(&cur);
 	zassert_equal(cur.digest[0], 0xAB, "内容绑定（digest=确认对象）");
-	zassert_equal(cur.permissions, 0x0005);
+	zassert_equal(memcmp(cur.perm, "gpio:read:0;pwm:set:1", 21), 0,
+		      "权限列表为确认对象");
+	zassert_equal(cur.budget_steps, TEST_BUDGET, "步数为确认对象");
 	zassert_equal(cur.version, 3, "version 同为确认对象（合同三要素）");
 
 	/* 确认前不生效：confirm（携带所见对象）是唯一晋升路径。 */
@@ -68,6 +87,7 @@ ZTEST(framework_trial, test_reject_and_timeout_paths)
 
 	memset(&c, 0, sizeof(c));
 	c.digest[31] = 1;
+	c.budget_steps = TEST_BUDGET;
 
 	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
 	/* 拒绝：槽保留可重推。 */
@@ -87,7 +107,7 @@ ZTEST(framework_trial, test_reject_and_timeout_paths)
 	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK, "TIMEOUT 后可重推");
 }
 
-ZTEST(framework_trial, test_factory_intake_gates)
+ZTEST(framework_trial, test_factory_intake_domain_refusals)
 {
 	entelea_trial_test_reset(); /* 用例序不保证：自含净基线 */
 	entelea_factory_candidate_t fc;
@@ -96,21 +116,21 @@ ZTEST(framework_trial, test_factory_intake_gates)
 	fc.payload_kind = 0; /* wasm */
 	fc.budget_steps = 100000;
 	fc.mem_quota_kb = 64;
+	fc.permissions_len = 11;
+	memcpy(fc.permissions, "gpio:read:0", 11);
 
+	/* 域检查先于任何 slot 访问：拒绝不触发状态恢复。 */
 	zassert_equal(entelea_factory_intake(NULL, 0), ENTELEA_E_PARAM);
-	zassert_equal(entelea_factory_intake(&fc, 0), ENTELEA_OK);
-	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_PENDING_CONFIRM,
-		      "intake→PENDING（确认前不生效）");
+	zassert_equal(entelea_factory_intake(&fc, ENTELEA_APP_SLOT_COUNT),
+		      ENTELEA_E_PARAM, "slot 域外");
 
 	/* 未知 payload_kind 拒（不默认解释）。 */
-	entelea_trial_test_reset();
 	entelea_factory_candidate_t bad = fc;
 
 	bad.payload_kind = 7;
 	zassert_equal(entelea_factory_intake(&bad, 0), ENTELEA_E_PARAM,
 		      "未知 payload 拒");
-	/* 预算域外。 */
-	entelea_trial_test_reset();
+	/* 预算、内存与权限长度域外。 */
 	bad = fc;
 	bad.budget_steps = 0;
 	zassert_equal(entelea_factory_intake(&bad, 0), ENTELEA_E_RANGE);
@@ -123,12 +143,12 @@ ZTEST(framework_trial, test_factory_intake_gates)
 	bad = fc;
 	bad.mem_quota_kb = 513;
 	zassert_equal(entelea_factory_intake(&bad, 0), ENTELEA_E_RANGE);
-	/* Lua payload（kind=1）合法路径。 */
-	entelea_trial_test_reset();
 	bad = fc;
-	bad.payload_kind = 1;
-	zassert_equal(entelea_factory_intake(&bad, 0), ENTELEA_OK,
-		      "Lua payload 合法（不默认解释为 wasm）");
+	bad.permissions_len = ENTELEA_TRIAL_PERM_MAX + 1U;
+	zassert_equal(entelea_factory_intake(&bad, 0), ENTELEA_E_RANGE,
+		      "权限列表超长拒");
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_UNINITIALIZED,
+		      "域外拒绝不改变状态");
 }
 
 /* ---- 跨重启持久（A-4）：flush/restore 往返+fail-closed+约束态保持 ---- */
@@ -146,7 +166,8 @@ ZTEST(framework_trial, test_persistence_roundtrip_and_fail_closed)
 
 	memset(&c, 0, sizeof(c));
 	c.digest[7] = 0x5A;
-	c.permissions = 0x0301;
+	set_perm(&c, "gpio:read:0");
+	c.budget_steps = TEST_BUDGET;
 	c.version = 9;
 	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
 	entelea_trial_candidate_t before;
@@ -162,7 +183,8 @@ ZTEST(framework_trial, test_persistence_roundtrip_and_fail_closed)
 
 	entelea_trial_current(&cur);
 	zassert_equal(cur.digest[7], 0x5A);
-	zassert_equal(cur.permissions, 0x0301);
+	zassert_equal(memcmp(cur.perm, "gpio:read:0", 11), 0, "权限列表跨重启");
+	zassert_equal(cur.budget_steps, TEST_BUDGET, "步数跨重启");
 	zassert_equal(cur.version, 9);
 	zassert_equal(cur.slot, before.slot);
 	zassert_equal(cur.epoch, before.epoch, "纪元跨重启（重启前展示仍有效）");
@@ -188,7 +210,7 @@ ZTEST(framework_trial, test_persistence_roundtrip_and_fail_closed)
 	/* 坏记录（域外 state）→ fail-closed 约束态。RF1 #9 合同变更：原
 	 * 归 NONE=试用政策不管辖=未确认字节放行（fail-open）；现置 TIMEOUT
 	 * 且候选槽 UNKNOWN（两槽门拒）。 */
-	uint8_t bad[42];
+	uint8_t bad[141];
 
 	zassert_equal(entelea_storage_meta_read(bad, sizeof(bad), NULL),
 		      ENTELEA_E_PARAM);
@@ -197,7 +219,7 @@ ZTEST(framework_trial, test_persistence_roundtrip_and_fail_closed)
 
 		zassert_equal(entelea_storage_meta_read(bad, sizeof(bad), &blen),
 			      ENTELEA_OK);
-		zassert_equal(blen, 42);
+		zassert_equal(blen, 141);
 		bad[1] = 0x77; /* 域外 state */
 		zassert_equal(entelea_storage_meta_write(bad, blen), ENTELEA_OK);
 		zassert_equal(entelea_storage_meta_write(bad, blen), ENTELEA_OK);
@@ -239,14 +261,15 @@ ZTEST(framework_trial, test_rf1_stale_confirm_rejected)
 
 	memset(&a, 0, sizeof(a));
 	a.digest[0] = 0xA1;
-	a.permissions = 0x0001;
+	set_perm(&a, "gpio:read:0");
+	a.budget_steps = TEST_BUDGET;
 	zassert_equal(entelea_trial_submit(&a), ENTELEA_OK);
 	entelea_trial_current(&shown_a); /* 界面展示 A */
 	/* 确认窗超时；工厂随后推 B（更高权限）。 */
 	zassert_equal(entelea_trial_timeout(), ENTELEA_OK);
 	b = a;
 	b.digest[0] = 0xB2;
-	b.permissions = 0x00FF;
+	set_perm(&b, "gpio:read:0;pwm:set:1");
 	zassert_equal(entelea_trial_submit(&b), ENTELEA_OK);
 	zassert_equal(entelea_trial_confirm(&shown_a), ENTELEA_E_PERM,
 		      "迟到的“确认 A”");
@@ -267,7 +290,8 @@ ZTEST(framework_trial, test_rf1_confirm_binds_every_field)
 
 	memset(&c, 0, sizeof(c));
 	c.digest[3] = 0x33;
-	c.permissions = 0x0102;
+	set_perm(&c, "gpio:read:0");
+	c.budget_steps = TEST_BUDGET;
 	c.version = 5;
 	c.slot = 1;
 	c.epoch = 0xDEADBEEFU;
@@ -280,8 +304,14 @@ ZTEST(framework_trial, test_rf1_confirm_binds_every_field)
 	bad.digest[3] ^= 1U;
 	zassert_equal(entelea_trial_confirm(&bad), ENTELEA_E_PERM, "digest");
 	bad = shown;
-	bad.permissions ^= 0x8000U;
-	zassert_equal(entelea_trial_confirm(&bad), ENTELEA_E_PERM, "permissions");
+	bad.perm[0] = 'x';
+	zassert_equal(entelea_trial_confirm(&bad), ENTELEA_E_PERM, "perm 列表");
+	bad = shown;
+	bad.perm_len = 0;
+	zassert_equal(entelea_trial_confirm(&bad), ENTELEA_E_PERM, "perm 长度");
+	bad = shown;
+	bad.budget_steps++;
+	zassert_equal(entelea_trial_confirm(&bad), ENTELEA_E_PERM, "budget");
 	bad = shown;
 	bad.version++;
 	zassert_equal(entelea_trial_confirm(&bad), ENTELEA_E_PERM, "version");
@@ -307,6 +337,7 @@ ZTEST(framework_trial, test_rf1_repush_new_epoch)
 
 	memset(&c, 0, sizeof(c));
 	c.digest[0] = 0x11;
+	c.budget_steps = TEST_BUDGET;
 	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
 	entelea_trial_current(&first);
 	zassert_equal(entelea_trial_reject(), ENTELEA_OK);
@@ -321,9 +352,11 @@ ZTEST(framework_trial, test_rf1_repush_new_epoch)
 
 ZTEST(framework_trial, test_epoch_exhaustion_cannot_revive_old_confirmation)
 {
-	entelea_trial_candidate_t candidate = {0};
+	entelea_trial_candidate_t candidate = {.budget_steps = TEST_BUDGET};
 	entelea_trial_candidate_t old_shown;
-	uint8_t record[42] = {0};
+	/* v3 记录 141B：ver|state|version|slot|epoch[4]|budget[4]|perm_len|
+	 * perm[96]|digest[32]；digest 偏移 13+96=109。 */
+	uint8_t record[141] = {0};
 
 	candidate.digest[0] = 0x11;
 	zassert_equal(entelea_trial_submit(&candidate), ENTELEA_OK);
@@ -331,10 +364,12 @@ ZTEST(framework_trial, test_epoch_exhaustion_cannot_revive_old_confirmation)
 	zassert_equal(old_shown.epoch, 1U);
 	zassert_equal(entelea_trial_timeout(), ENTELEA_OK);
 
-	record[0] = 2;
+	record[0] = 3;
 	record[1] = ENTELEA_TRIAL_TIMEOUT;
-	memset(record + 6, 0xFF, 4);
-	memcpy(record + 10, candidate.digest, sizeof(candidate.digest));
+	memset(record + 4, 0xFF, 4); /* 纪元耗尽 */
+	record[8] = 0xE8;            /* budget = 1000 (LE) */
+	record[9] = 0x03;
+	memcpy(record + 109, candidate.digest, sizeof(candidate.digest));
 	zassert_equal(entelea_storage_meta_write(record, sizeof(record)), ENTELEA_OK);
 	zassert_equal(entelea_storage_meta_write(record, sizeof(record)), ENTELEA_OK);
 	entelea_trial_test_reset();
@@ -342,12 +377,10 @@ ZTEST(framework_trial, test_epoch_exhaustion_cannot_revive_old_confirmation)
 
 	entelea_result_t rc = entelea_trial_submit(&candidate);
 
-	if (rc == ENTELEA_OK) {
-		zassert_not_equal(entelea_trial_confirm(&old_shown), ENTELEA_OK,
-				  "wrapped epoch must not revive an old confirmation");
-	}
 	zassert_equal(rc, ENTELEA_E_RANGE, "exhausted epoch must refuse a new candidate");
 	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_TIMEOUT);
+	zassert_not_equal(entelea_trial_confirm(&old_shown), ENTELEA_OK,
+			  "wrapped epoch must not revive an old confirmation");
 	entelea_trial_test_reset();
 	zassert_equal(entelea_trial_restore(), ENTELEA_OK);
 	zassert_equal(entelea_trial_submit(&candidate), ENTELEA_E_RANGE,
@@ -364,6 +397,7 @@ ZTEST(framework_trial, test_rf1_submit_slot_rules)
 	entelea_factory_candidate_t fc;
 
 	memset(&c, 0, sizeof(c));
+	c.budget_steps = TEST_BUDGET;
 	c.slot = ENTELEA_APP_SLOT_COUNT;
 	zassert_equal(entelea_trial_submit(&c), ENTELEA_E_PARAM, "slot 域外");
 	c.slot = ENTELEA_TRIAL_SLOT_UNKNOWN;
@@ -394,9 +428,6 @@ ZTEST(framework_trial, test_rf1_submit_slot_rules)
 	zassert_equal(entelea_factory_intake(&fc, ENTELEA_APP_SLOT_COUNT),
 		      ENTELEA_E_PARAM, "intake slot 域外");
 	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_UNINITIALIZED);
-	zassert_equal(entelea_factory_intake(&fc, 1), ENTELEA_OK);
-	entelea_trial_current(&cur);
-	zassert_equal(cur.slot, 1, "intake 绑定 slot");
 }
 
 /* RF1 #9（G4）：执行门——候选槽仅 ACTIVE 且同字节放行；非候选槽与 NONE
@@ -415,6 +446,7 @@ ZTEST(framework_trial, test_rf1_gate_semantics)
 	zassert_equal(entelea_trial_gate(0, dg), ENTELEA_OK, "NONE 不管辖");
 	memset(&c, 0, sizeof(c));
 	memcpy(c.digest, dg, sizeof(dg));
+	c.budget_steps = TEST_BUDGET;
 	c.slot = 1;
 	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
 	zassert_equal(entelea_trial_gate(1, dg), ENTELEA_E_PERM, "PENDING");
@@ -489,7 +521,7 @@ static entelea_result_t fail_second_meta_erase(entelea_store_part_t part,
 
 ZTEST(framework_trial, test_restart_gate_restores_pending_before_load)
 {
-	entelea_trial_candidate_t candidate = {0};
+	entelea_trial_candidate_t candidate = {.budget_steps = TEST_BUDGET};
 
 	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
 	entelea_trial_test_reset();
@@ -506,7 +538,7 @@ ZTEST(framework_trial, test_restart_gate_restores_pending_before_load)
 
 ZTEST(framework_trial, test_restore_cannot_discard_live_unflushed_candidate)
 {
-	entelea_trial_candidate_t candidate = {0};
+	entelea_trial_candidate_t candidate = {.budget_steps = TEST_BUDGET};
 
 	zassert_equal(entelea_trial_restore(), ENTELEA_OK);
 	zassert_equal(entelea_trial_submit(&candidate), ENTELEA_OK);
@@ -517,7 +549,7 @@ ZTEST(framework_trial, test_restore_cannot_discard_live_unflushed_candidate)
 
 ZTEST(framework_trial, test_corrupt_meta_cannot_open_gate)
 {
-	entelea_trial_candidate_t candidate = {0};
+	entelea_trial_candidate_t candidate = {.budget_steps = TEST_BUDGET};
 
 	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
 	entelea_trial_test_reset();
@@ -564,7 +596,7 @@ ZTEST(framework_trial, test_meta_read_failure_cannot_open_gate)
 ZTEST(framework_trial, test_no_fallback_to_stale_copy_on_io_error)
 {
 	uint8_t dg[32] = {0};
-	entelea_trial_candidate_t c = {.slot = 0};
+	entelea_trial_candidate_t c = {.slot = 0, .budget_steps = TEST_BUDGET};
 	entelea_store_ops_t failure;
 	entelea_result_t r;
 
@@ -590,7 +622,7 @@ ZTEST(framework_trial, test_no_fallback_to_stale_copy_on_io_error)
 ZTEST(framework_trial, test_no_fallback_to_stale_corrupt_copy)
 {
 	uint8_t dg[32] = {0};
-	entelea_trial_candidate_t c = {.slot = 0};
+	entelea_trial_candidate_t c = {.slot = 0, .budget_steps = TEST_BUDGET};
 
 	zassert_equal(entelea_trial_restore(), ENTELEA_OK);
 	zassert_equal(entelea_trial_flush(), ENTELEA_OK, "persist older NONE");
@@ -606,7 +638,7 @@ ZTEST(framework_trial, test_no_fallback_to_stale_corrupt_copy)
 ZTEST(framework_trial, test_single_or_different_valid_copies_are_ambiguous)
 {
 	uint8_t dg[32] = {0};
-	uint8_t rec[42] = {2, ENTELEA_TRIAL_NONE};
+	uint8_t rec[141] = {3, ENTELEA_TRIAL_NONE};
 
 	zassert_equal(entelea_storage_meta_write(rec, sizeof(rec)), ENTELEA_OK);
 	entelea_trial_test_reset();
@@ -619,7 +651,7 @@ ZTEST(framework_trial, test_single_or_different_valid_copies_are_ambiguous)
 	zassert_equal(entelea_trial_restore(), ENTELEA_OK);
 	zassert_equal(entelea_trial_flush(), ENTELEA_OK);
 	rec[1] = ENTELEA_TRIAL_PENDING_CONFIRM;
-	rec[6] = 1;
+	rec[4] = 1;
 	zassert_equal(entelea_storage_meta_write(rec, sizeof(rec)), ENTELEA_OK);
 	entelea_trial_test_reset();
 	zassert_equal(entelea_trial_gate(0, dg), ENTELEA_E_IO,
@@ -630,7 +662,7 @@ ZTEST(framework_trial, test_single_or_different_valid_copies_are_ambiguous)
 ZTEST(framework_trial, test_interrupted_mirrored_flush_stays_closed)
 {
 	uint8_t dg[32] = {0};
-	entelea_trial_candidate_t c = {.slot = 0};
+	entelea_trial_candidate_t c = {.slot = 0, .budget_steps = TEST_BUDGET};
 	entelea_store_ops_t failure;
 	entelea_result_t r;
 
@@ -651,39 +683,43 @@ ZTEST(framework_trial, test_interrupted_mirrored_flush_stays_closed)
 	assert_unknown_closed("interrupted mirrored flush");
 }
 
-/* RF1 #9（G4）：v2 记录布局与纪元延续；坏记录（版本/域外/零纪元/v1 长度/
- * 超长）→ TIMEOUT+UNKNOWN，两槽门拒。 */
-ZTEST(framework_trial, test_rf1_v2_record_and_bad_records)
+/* RF1 #9（G4）/ F4：v3 记录布局与纪元延续；坏记录（版本/域外/零纪元/零步数/
+ * 步数超上限/权限列表文法坏/旧 v2 长度/超长）→ TIMEOUT+UNKNOWN，两槽门拒。 */
+ZTEST(framework_trial, test_rf1_v3_record_and_bad_records)
 {
 	entelea_trial_test_reset();
 	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
 	entelea_trial_candidate_t c;
 	entelea_trial_candidate_t cur;
 	uint8_t rec[ENTELEA_STORAGE_META_MAX];
-	uint8_t good[42];
+	uint8_t good[141];
 	uint16_t len = 0;
 
 	memset(&c, 0, sizeof(c));
 	c.digest[0] = 0xC4;
 	c.digest[31] = 0x4C;
-	c.permissions = 0xA1B2;
+	set_perm(&c, "pwm:set:1");
+	c.budget_steps = 5000;
 	c.version = 7;
 	c.slot = 1;
 	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
 	zassert_equal(entelea_trial_flush(), ENTELEA_OK);
 	zassert_equal(entelea_storage_meta_read(rec, sizeof(rec), &len),
 		      ENTELEA_OK);
-	zassert_equal(len, 42, "v2 记录 42B");
-	zassert_equal(rec[0], 2, "ver");
+	zassert_equal(len, 141, "v3 记录 141B");
+	zassert_equal(rec[0], 3, "ver");
 	zassert_equal(rec[1], ENTELEA_TRIAL_PENDING_CONFIRM, "state");
 	zassert_equal(rec[2], 7, "version");
 	zassert_equal(rec[3], 1, "slot");
-	zassert_equal(rec[4], 0xB2, "perm LE");
-	zassert_equal(rec[5], 0xA1, "perm LE");
-	zassert_equal(rec[6], 1, "epoch LE");
-	zassert_equal(rec[7] | rec[8] | rec[9], 0, "epoch LE");
-	zassert_equal(rec[10], 0xC4, "digest");
-	zassert_equal(rec[41], 0x4C, "digest");
+	zassert_equal(rec[4], 1, "epoch LE");
+	zassert_equal(rec[5] | rec[6] | rec[7], 0, "epoch LE");
+	zassert_equal(rec[8], 0x88, "budget LE (5000)");
+	zassert_equal(rec[9], 0x13, "budget LE (5000)");
+	zassert_equal(rec[10] | rec[11], 0, "budget LE");
+	zassert_equal(rec[12], 9, "perm_len");
+	zassert_equal(memcmp(rec + 13, "pwm:set:1", 9), 0, "perm 文本");
+	zassert_equal(rec[109], 0xC4, "digest 偏移 13+96");
+	zassert_equal(rec[140], 0x4C, "digest 末字节");
 
 	entelea_trial_test_reset();
 	zassert_equal(entelea_trial_restore(), ENTELEA_OK);
@@ -691,6 +727,7 @@ ZTEST(framework_trial, test_rf1_v2_record_and_bad_records)
 	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_PENDING_CONFIRM);
 	zassert_equal(cur.slot, 1);
 	zassert_equal(cur.epoch, 1U);
+	zassert_equal(cur.budget_steps, 5000U, "步数跨重启");
 	zassert_equal(entelea_trial_confirm(&cur), ENTELEA_OK);
 	zassert_equal(entelea_trial_end(), ENTELEA_OK);
 	zassert_equal(entelea_trial_flush(), ENTELEA_OK, "NONE 记录携带纪元计数");
@@ -704,12 +741,12 @@ ZTEST(framework_trial, test_rf1_v2_record_and_bad_records)
 	zassert_equal(entelea_trial_flush(), ENTELEA_OK);
 	zassert_equal(entelea_storage_meta_read(good, sizeof(good), &len),
 		      ENTELEA_OK);
-	zassert_equal(len, 42);
+	zassert_equal(len, 141);
 
 	memcpy(rec, good, sizeof(good));
-	rec[0] = 1;
+	rec[0] = 2;
 	restore_from(rec, sizeof(good));
-	assert_unknown_closed("ver!=2");
+	assert_unknown_closed("ver!=3");
 
 	memcpy(rec, good, sizeof(good));
 	rec[1] = 0x77;
@@ -722,22 +759,49 @@ ZTEST(framework_trial, test_rf1_v2_record_and_bad_records)
 	assert_unknown_closed("slot 域外");
 
 	memcpy(rec, good, sizeof(good));
+	rec[4] = 0;
+	rec[5] = 0;
 	rec[6] = 0;
 	rec[7] = 0;
-	rec[8] = 0;
-	rec[9] = 0;
 	restore_from(rec, sizeof(good));
 	assert_unknown_closed("epoch=0");
 
-	/* v1 布局（ver=1|state|version|rsv|perm16|digest32，38B）：不迁移。 */
-	memset(rec, 0, sizeof(rec));
-	rec[0] = 1;
-	rec[1] = ENTELEA_TRIAL_PENDING_CONFIRM;
-	restore_from(rec, 4 + 2 + 32);
-	assert_unknown_closed("v1 记录");
+	memcpy(rec, good, sizeof(good));
+	rec[8] = 0;
+	rec[9] = 0;
+	rec[10] = 0;
+	rec[11] = 0;
+	restore_from(rec, sizeof(good));
+	assert_unknown_closed("budget=0");
 
 	memcpy(rec, good, sizeof(good));
-	rec[42] = 0;
+	rec[8] = 0x01; /* 100000001 = 0x05F5E101 */
+	rec[9] = 0xE1;
+	rec[10] = 0xF5;
+	rec[11] = 0x05;
+	restore_from(rec, sizeof(good));
+	assert_unknown_closed("budget>1e8");
+
+	memcpy(rec, good, sizeof(good));
+	rec[12] = ENTELEA_TRIAL_PERM_MAX + 1U;
+	restore_from(rec, sizeof(good));
+	assert_unknown_closed("perm_len>96");
+
+	memcpy(rec, good, sizeof(good));
+	rec[12] = 3;
+	memcpy(rec + 13, "zzz", 3);
+	restore_from(rec, sizeof(good));
+	assert_unknown_closed("perm 文法非法");
+
+	/* v2 旧布局（42B）：不迁移，按坏记录处置。 */
+	memset(rec, 0, sizeof(rec));
+	rec[0] = 2;
+	rec[1] = ENTELEA_TRIAL_PENDING_CONFIRM;
+	restore_from(rec, 42);
+	assert_unknown_closed("v2 记录");
+
+	memcpy(rec, good, sizeof(good));
+	rec[141] = 0;
 	restore_from(rec, sizeof(good) + 1U);
 	assert_unknown_closed("超长记录");
 
@@ -747,4 +811,69 @@ ZTEST(framework_trial, test_rf1_v2_record_and_bad_records)
 	assert_unknown_closed("UNKNOWN cannot be replaced");
 	entelea_storage_test_reset();
 	entelea_trial_test_reset();
+}
+
+/* F1（D-B）：授权查询仅在 ACTIVE 且槽与字节相符时授予确认的权限与步数；
+ * 试用结束即失效；失败时输出清零。 */
+ZTEST(framework_trial, test_grant_only_for_active_matching_candidate)
+{
+	entelea_trial_test_reset();
+	entelea_trial_candidate_t c;
+	entelea_trial_candidate_t cur;
+	entelea_trial_grant_t g;
+	uint8_t dg[32];
+
+	memset(&c, 0, sizeof(c));
+	memset(dg, 0x42, sizeof(dg));
+	memcpy(c.digest, dg, sizeof(dg));
+	set_perm(&c, "gpio:read:0");
+	c.budget_steps = 500;
+	c.slot = 1;
+	zassert_equal(entelea_trial_grant(1, dg, NULL), ENTELEA_E_PARAM);
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
+	zassert_equal(entelea_trial_grant(1, dg, &g), ENTELEA_E_PERM,
+		      "PENDING 无授权");
+	zassert_equal(g.perm_len, 0, "失败时输出清零");
+	entelea_trial_current(&cur);
+	zassert_equal(entelea_trial_confirm(&cur), ENTELEA_OK);
+	zassert_equal(entelea_trial_grant(1, dg, &g), ENTELEA_OK, "ACTIVE 同字节");
+	zassert_equal(g.perm_len, 11U);
+	zassert_equal(memcmp(g.perm, "gpio:read:0", 11), 0);
+	zassert_equal(g.budget_steps, 500U);
+	zassert_equal(entelea_trial_grant(0, dg, &g), ENTELEA_E_PERM,
+		      "非候选槽无授权");
+	dg[0] ^= 1U;
+	zassert_equal(entelea_trial_grant(1, dg, &g), ENTELEA_E_PERM,
+		      "换字节无授权");
+	dg[0] ^= 1U;
+	zassert_equal(entelea_trial_end(), ENTELEA_OK);
+	zassert_equal(entelea_trial_grant(1, dg, &g), ENTELEA_E_PERM,
+		      "试用结束即失效");
+	zassert_equal(g.perm_len, 0);
+}
+
+/* admission 字段校验（与生产 submit 共用）：步数域外与权限文法错误在状态
+ * 检查之前拒绝，不改变状态。 */
+ZTEST(framework_trial, test_admission_field_validation_keeps_state)
+{
+	entelea_trial_test_reset();
+	entelea_trial_candidate_t c;
+
+	memset(&c, 0, sizeof(c));
+	c.slot = 0;
+	c.budget_steps = 0;
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_E_RANGE, "步数 0");
+	c.budget_steps = ENTELEA_TRIAL_STEPS_MAX + 1U;
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_E_RANGE, "步数超上限");
+	c.budget_steps = TEST_BUDGET;
+	set_perm(&c, "gpio:read:0;");
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_E_PARAM, "末尾空声明");
+	set_perm(&c, "gpio:read:0;;pwm:set:1");
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_E_PARAM, "中间空声明");
+	set_perm(&c, "gpio:bogus:0");
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_E_PARAM, "未知操作");
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_UNINITIALIZED,
+		      "字段拒绝不改变状态");
+	set_perm(&c, "");
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK, "空列表=无权限合法");
 }

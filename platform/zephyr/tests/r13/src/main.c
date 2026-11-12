@@ -118,7 +118,8 @@ ZTEST(framework_r13, test_cross_mechanism_contract_representative)
 	memset(&tc, 0, sizeof(tc));
 	tc.digest[0] = 0x5A;
 	tc.slot = 0;
-	zassert_equal(entelea_trial_submit(&tc), ENTELEA_OK);
+	tc.budget_steps = 1000;
+	zassert_equal(entelea_trial_submit_with_digest_for_test(&tc), ENTELEA_OK);
 	zassert_equal(entelea_trial_gate(0, tc.digest), ENTELEA_E_PERM,
 		      "R12 确认前门拒");
 	entelea_trial_current(&shown);
@@ -126,7 +127,8 @@ ZTEST(framework_r13, test_cross_mechanism_contract_representative)
 	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_ACTIVE, "R12 确认后 ACTIVE");
 	zassert_equal(entelea_trial_gate(0, tc.digest), ENTELEA_OK,
 		      "R12 确认后门放行同字节");
-	zassert_equal(entelea_trial_submit(&tc), ENTELEA_E_BUSY, "R12 单候选");
+	zassert_equal(entelea_trial_submit_with_digest_for_test(&tc),
+		      ENTELEA_E_BUSY, "R12 单候选");
 }
 
 ZTEST_SUITE(framework_r13, NULL, r13_setup, NULL, NULL, NULL);

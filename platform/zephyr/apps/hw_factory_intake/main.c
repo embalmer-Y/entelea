@@ -181,7 +181,9 @@ int main(void)
 
 		memset(&fc, 0, sizeof(fc));
 		memcpy(fc.package_digest, FACTORY_DIGEST, 32);
-		fc.permissions = FACTORY_PERMISSIONS;
+		/* Forge 位图 FACTORY_PERMISSIONS 尚无到权限列表的映射（待 owner 决定）：
+		 * 本诊断以空列表提交，即无 natives 授权；计算型产物不受影响。 */
+		fc.permissions_len = 0;
 		fc.runtime_version = FACTORY_VERSION;
 		fc.payload_kind = FACTORY_KIND;
 		fc.budget_steps = FACTORY_BUDGET;
