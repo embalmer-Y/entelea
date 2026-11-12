@@ -14,7 +14,7 @@ from openhands.tools.terminal import TerminalTool
 
 CRED = Path("/home/emb/project/.cloud-credentials.json")
 LEDGER = Path("/home/emb/project/.cloud-usage/ledger.md")
-FORGE = Path("/home/emb/project/workspace/forge")
+FORGE = Path(__file__).resolve().parent.parent
 RUN_DIR = FORGE / "artifacts" / "run002"
 MODEL = "bigmodel/glm-5.3-flash"
 

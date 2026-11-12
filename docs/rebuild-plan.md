@@ -47,10 +47,9 @@
 
 用户已确认以 `/home/emb/project` 为工作区，保留新树 `entelea` 与
 固定来源/对象库 `entelea-legacy`；11个顶层历史项目、旧环境、资料及缓存
-整体外移到 `/home/emb/project-archive/entelea-handoff-2026-11-08`，
-保留原目录名、隐藏文件及未提交状态，不删除或提交这些旧仓库。
-外移清单及恢复边界记录在该目录的 `relocation-manifest.json`；
-它是搬迁记录，不是第二份迁移/开发进度台账。
+曾整体外移到 `/home/emb/project-archive/entelea-handoff-2026-11-08`（2026-11-08），
+并于 2026-11-12 按所有者决定删除；删除后本项目不依赖其中任何内容。
+
 Galatea/Kaleido 的参考位置见唯一台账 `external_references`。
 根 AGENTS 仅作路由；架构与模块入口见 [wiki](wiki/README.md)。
 该交接不启动 R02，也不改变 R00/R01 的完成状态。
