@@ -2,13 +2,14 @@
 /*
  * APP 业务状态 kv（迁自旧 store/kv.c，R03 合同见本目录 contract.md）：
  * 每 APP 一份有界 blob（≤250B），跨升级/回滚按 app_id 哈希归属保留。
- * 布局（格式不变）：8KB = 两页 × 4KB × 15 槽 × 264B（14B 头 + ≤250B）。
+ * 布局：8KB = 两页 × 4KB × 15 槽 × 264B（14B 头 + ≤250B）。
+ * 页尾空隙存新写入槽的 CRC16 和独立提交标记；旧槽仍可读但无法校验。
  * 追加式写（同 app 重存 = 新槽，load 取两页最大 seq 有效槽）。
- * RF1（review P1-5/P1-6）：提交标记最后落（体先写、magic 后写）；逐槽
- * 三分类（擦除/有效/垃圾，不断尾）；读错误显式传播；写失败烧毁该槽
- * （NOR 不重写已编程槽）；压实先全部读入缓冲再擦对页，副本保留原
- * seq、按 seq 升序写（最大 seq 最后落）——对页未写完时其最大 seq 小于
- * 源页，复位后源页仍权威，压实窗口掉电不丢数据。
+ * RF1（review P1-5/P1-6）：体、校验侧带、原 magic、侧带提交标记依次写；
+ * 未提交槽跳过，已提交的损坏槽显式报错；写失败烧毁该槽
+ * （NOR 不重写已编程槽）；压实先全部读入缓冲，再确认活动页已有所有
+ * 保留记录的完整副本，才擦对页。副本保留原 seq、按 seq 升序写；
+ * 提交标记部分写入时恢复会拒绝而非回退。
  * 容量：至多 14 个 app 跨压实保留（超出弃最久未写 app——有界语义）。
  */
 #include <string.h>
@@ -27,6 +28,24 @@
 #define KV_OFF_SEQ   8
 #define KV_OFF_LEN   12
 #define KV_OFF_DATA  14
+#define KV_TAG_BASE  (KV_SLOT_SZ * KV_SLOTS)
+#define KV_TAG_SIZE  8U
+#define KV_TAG_MAGIC 0xA56CU
+#define KV_TAG_COMMIT 0x3143564BU
+
+_Static_assert(KV_TAG_BASE + KV_SLOTS * KV_TAG_SIZE <= KV_PAGE_SZ,
+	       "KV integrity tags must fit in the page tail");
+
+struct kv_slot {
+	uint8_t data[KV_SLOT_SZ];
+	uint8_t tag[KV_TAG_SIZE];
+};
+
+enum slot_kind {
+	SLOT_INCOMPLETE,
+	SLOT_VALID,
+	SLOT_CORRUPT,
+};
 
 static struct {
 	bool ready;
@@ -35,46 +54,80 @@ static struct {
 	uint32_t next_seq; /* 全局单调（1 起；0/0xFFFFFFFF 不用） */
 } kv;
 
-static entelea_result_t slot_read(uint8_t page, uint8_t i, uint8_t *s)
+static entelea_result_t slot_read(uint8_t page, uint8_t i, struct kv_slot *s)
 {
-	return entelea_store_backend.read(ENTELEA_PART_KV,
-					  page * KV_PAGE_SZ + i * KV_SLOT_SZ, s,
-					  KV_SLOT_SZ) == ENTELEA_OK
-		       ? ENTELEA_OK
-		       : ENTELEA_E_IO;
+	if (entelea_store_backend.read(ENTELEA_PART_KV,
+				       page * KV_PAGE_SZ + i * KV_SLOT_SZ,
+				       s->data, sizeof(s->data)) != ENTELEA_OK ||
+	    entelea_store_backend.read(ENTELEA_PART_KV,
+				       page * KV_PAGE_SZ + KV_TAG_BASE + i * KV_TAG_SIZE,
+				       s->tag, sizeof(s->tag)) != ENTELEA_OK) {
+		return ENTELEA_E_IO;
+	}
+	return ENTELEA_OK;
 }
 
-/* 有效 = magic 落定（体先于 magic 写成）且 seq/len 合法。 */
-static bool slot_valid(const uint8_t *s)
+static bool all_erased(const uint8_t *p, size_t n)
 {
-	uint32_t seq = entelea_get_le32(s + KV_OFF_SEQ);
-	uint16_t len = entelea_get_le16(s + KV_OFF_LEN);
-
-	return entelea_get_le32(s + KV_OFF_MAGIC) == KV_MAGIC && seq != 0 &&
-	       seq != UINT32_MAX && len >= 1 && len <= ENTELEA_KV_BLOB_MAX;
-}
-
-static bool slot_erased(const uint8_t *s)
-{
-	for (uint32_t k = 0; k < KV_SLOT_SZ; k++) {
-		if (s[k] != 0xFF) {
+	for (size_t i = 0; i < n; i++) {
+		if (p[i] != 0xFFU) {
 			return false;
 		}
 	}
 	return true;
 }
 
-/* 两段写：槽 4B 对齐且写块 ≤4（native_sim 1、ESP32-P4 4），体与 magic
- * 不共写单元——magic 可读即体已完整。 */
-static entelea_result_t slot_commit(uint8_t page, uint8_t i, const uint8_t *s)
+static enum slot_kind slot_kind(const struct kv_slot *s)
+{
+	const uint32_t magic = entelea_get_le32(s->data + KV_OFF_MAGIC);
+	const uint32_t seq = entelea_get_le32(s->data + KV_OFF_SEQ);
+	const uint16_t len = entelea_get_le16(s->data + KV_OFF_LEN);
+	const bool fields_valid = magic == KV_MAGIC && seq != 0 &&
+				  seq != UINT32_MAX && len >= 1 &&
+				  len <= ENTELEA_KV_BLOB_MAX;
+	const bool legacy = all_erased(s->tag, sizeof(s->tag));
+	const uint32_t commit = entelea_get_le32(s->tag + 4);
+
+	if (legacy) {
+		return fields_valid ? SLOT_VALID : SLOT_INCOMPLETE;
+	}
+	if (commit == UINT32_MAX) {
+		return SLOT_INCOMPLETE;
+	}
+	if (commit != KV_TAG_COMMIT ||
+	    entelea_get_le16(s->tag + 2) != KV_TAG_MAGIC || !fields_valid ||
+	    entelea_get_le16(s->tag) !=
+		    entelea_crc16(s->data + KV_OFF_HASH, KV_OFF_DATA - KV_OFF_HASH + len)) {
+		return SLOT_CORRUPT;
+	}
+	return SLOT_VALID;
+}
+
+static bool slot_erased(const struct kv_slot *s)
+{
+	return all_erased(s->data, sizeof(s->data)) &&
+	       all_erased(s->tag, sizeof(s->tag));
+}
+
+static entelea_result_t slot_commit(uint8_t page, uint8_t i,
+				    const struct kv_slot *s)
 {
 	uint32_t off = page * KV_PAGE_SZ + i * KV_SLOT_SZ;
+	uint32_t tag_off = page * KV_PAGE_SZ + KV_TAG_BASE + i * KV_TAG_SIZE;
+	bool tagged = !all_erased(s->tag, sizeof(s->tag));
+	struct kv_slot back;
 
 	if (entelea_store_backend.write(ENTELEA_PART_KV, off + KV_OFF_HASH,
-					s + KV_OFF_HASH,
+					s->data + KV_OFF_HASH,
 					KV_SLOT_SZ - KV_OFF_HASH) != ENTELEA_OK ||
-	    entelea_store_backend.write(ENTELEA_PART_KV, off, s, KV_OFF_HASH) !=
-		    ENTELEA_OK) {
+	    (tagged && entelea_store_backend.write(ENTELEA_PART_KV, tag_off,
+						  s->tag, 4) != ENTELEA_OK) ||
+	    entelea_store_backend.write(ENTELEA_PART_KV, off, s->data,
+					KV_OFF_HASH) != ENTELEA_OK ||
+	    (tagged && entelea_store_backend.write(ENTELEA_PART_KV, tag_off + 4,
+						  s->tag + 4, 4) != ENTELEA_OK) ||
+	    slot_read(page, i, &back) != ENTELEA_OK ||
+	    memcmp(&back, s, sizeof(back)) != 0) {
 		return ENTELEA_E_IO;
 	}
 	return ENTELEA_OK;
@@ -83,33 +136,42 @@ static entelea_result_t slot_commit(uint8_t page, uint8_t i, const uint8_t *s)
 /* 页扫描：最大有效 seq + 已用槽数（末个非擦除槽 + 1；垃圾槽不复用）。 */
 static entelea_result_t page_scan(uint8_t page, uint32_t *max_seq, uint8_t *used)
 {
-	uint8_t s[KV_SLOT_SZ];
+	struct kv_slot s;
 
 	*max_seq = 0;
 	*used = 0;
 	for (uint8_t i = 0; i < KV_SLOTS; i++) {
-		if (slot_read(page, i, s) != ENTELEA_OK) {
+		if (slot_read(page, i, &s) != ENTELEA_OK) {
 			return ENTELEA_E_IO;
 		}
-		if (slot_valid(s) && entelea_get_le32(s + KV_OFF_SEQ) > *max_seq) {
-			*max_seq = entelea_get_le32(s + KV_OFF_SEQ);
+		enum slot_kind kind = slot_kind(&s);
+
+		if (kind == SLOT_CORRUPT) {
+			return ENTELEA_E_IO;
 		}
-		if (!slot_erased(s)) {
+		if (kind == SLOT_VALID && entelea_get_le32(s.data + KV_OFF_SEQ) > *max_seq) {
+			*max_seq = entelea_get_le32(s.data + KV_OFF_SEQ);
+		}
+		if (!slot_erased(&s)) {
 			*used = (uint8_t)(i + 1);
 		}
 	}
 	return ENTELEA_OK;
 }
 
-static void slot_encode(uint8_t *s, uint32_t hash, const uint8_t *data,
+static void slot_encode(struct kv_slot *s, uint32_t hash, const uint8_t *data,
 			uint16_t len, uint32_t seq)
 {
-	memset(s, 0xFF, KV_SLOT_SZ);
-	entelea_put_le32(s + KV_OFF_MAGIC, KV_MAGIC);
-	entelea_put_le32(s + KV_OFF_HASH, hash);
-	entelea_put_le32(s + KV_OFF_SEQ, seq);
-	entelea_put_le16(s + KV_OFF_LEN, len);
-	memcpy(s + KV_OFF_DATA, data, len);
+	memset(s, 0xFF, sizeof(*s));
+	entelea_put_le32(s->data + KV_OFF_MAGIC, KV_MAGIC);
+	entelea_put_le32(s->data + KV_OFF_HASH, hash);
+	entelea_put_le32(s->data + KV_OFF_SEQ, seq);
+	entelea_put_le16(s->data + KV_OFF_LEN, len);
+	memcpy(s->data + KV_OFF_DATA, data, len);
+	entelea_put_le16(s->tag, entelea_crc16(s->data + KV_OFF_HASH,
+					       KV_OFF_DATA - KV_OFF_HASH + len));
+	entelea_put_le16(s->tag + 2, KV_TAG_MAGIC);
+	entelea_put_le32(s->tag + 4, KV_TAG_COMMIT);
 }
 
 struct kv_ref {
@@ -122,19 +184,24 @@ struct kv_ref {
 /* 两页每 app 最新有效槽（≤14；超出弃 seq 最旧）。 */
 static entelea_result_t collect_latest(struct kv_ref *refs, size_t *count)
 {
-	uint8_t s[KV_SLOT_SZ];
+	struct kv_slot s;
 	size_t n = 0;
 
 	for (uint8_t p = 0; p < KV_PAGES; p++) {
 		for (uint8_t i = 0; i < KV_SLOTS; i++) {
-			if (slot_read(p, i, s) != ENTELEA_OK) {
+			if (slot_read(p, i, &s) != ENTELEA_OK) {
 				return ENTELEA_E_IO;
 			}
-			if (!slot_valid(s)) {
+			enum slot_kind kind = slot_kind(&s);
+
+			if (kind == SLOT_CORRUPT) {
+				return ENTELEA_E_IO;
+			}
+			if (kind != SLOT_VALID) {
 				continue;
 			}
-			uint32_t hash = entelea_get_le32(s + KV_OFF_HASH);
-			uint32_t seq = entelea_get_le32(s + KV_OFF_SEQ);
+			uint32_t hash = entelea_get_le32(s.data + KV_OFF_HASH);
+			uint32_t seq = entelea_get_le32(s.data + KV_OFF_SEQ);
 			size_t hit = n;
 
 			for (size_t k = 0; k < n; k++) {
@@ -145,6 +212,16 @@ static entelea_result_t collect_latest(struct kv_ref *refs, size_t *count)
 			}
 			if (hit < n) {
 				if (refs[hit].seq > seq) {
+					continue;
+				}
+				if (refs[hit].seq == seq) {
+					struct kv_slot previous;
+
+					if (slot_read(refs[hit].page, refs[hit].slot,
+						      &previous) != ENTELEA_OK ||
+					    memcmp(&previous, &s, sizeof(s)) != 0) {
+						return ENTELEA_E_IO;
+					}
 					continue;
 				}
 			} else if (n == KV_KEEP_MAX) {
@@ -169,12 +246,11 @@ static entelea_result_t collect_latest(struct kv_ref *refs, size_t *count)
 	return ENTELEA_OK;
 }
 
-/* 页满压实：先读后擦、先写后切。失败 = 源页保持活动（next_slot 仍满），
- * 下次 save 重试（目标页重擦）。 */
+/* 页满压实：先读后擦、先写后切。不得擦除目标页上唯一的保留记录。 */
 static entelea_result_t compact(void)
 {
 	static struct kv_ref refs[KV_KEEP_MAX];
-	static uint8_t buf[KV_KEEP_MAX][KV_SLOT_SZ];
+	static struct kv_slot buf[KV_KEEP_MAX];
 	size_t n = 0;
 	entelea_result_t r = collect_latest(refs, &n);
 
@@ -192,21 +268,47 @@ static entelea_result_t compact(void)
 		refs[j] = k;
 	}
 	for (size_t i = 0; i < n; i++) {
-		if (slot_read(refs[i].page, refs[i].slot, buf[i]) != ENTELEA_OK ||
-		    !slot_valid(buf[i]) ||
-		    entelea_get_le32(buf[i] + KV_OFF_HASH) != refs[i].hash ||
-		    entelea_get_le32(buf[i] + KV_OFF_SEQ) != refs[i].seq) {
+		if (slot_read(refs[i].page, refs[i].slot, &buf[i]) != ENTELEA_OK ||
+		    slot_kind(&buf[i]) != SLOT_VALID ||
+		    entelea_get_le32(buf[i].data + KV_OFF_HASH) != refs[i].hash ||
+		    entelea_get_le32(buf[i].data + KV_OFF_SEQ) != refs[i].seq) {
 			return ENTELEA_E_IO;
 		}
 	}
 	uint8_t target = kv.active_page ^ 1U;
+
+	for (size_t i = 0; i < n; i++) {
+		if (refs[i].page != target) {
+			continue;
+		}
+		struct kv_slot source;
+		bool found = false;
+
+		for (uint8_t slot = 0; slot < KV_SLOTS; slot++) {
+			if (slot_read(kv.active_page, slot, &source) != ENTELEA_OK) {
+				return ENTELEA_E_IO;
+			}
+			enum slot_kind kind = slot_kind(&source);
+
+			if (kind == SLOT_CORRUPT) {
+				return ENTELEA_E_IO;
+			}
+			if (kind == SLOT_VALID && memcmp(&source, &buf[i], sizeof(source)) == 0) {
+				found = true;
+				break;
+			}
+		}
+		if (!found) {
+			return ENTELEA_E_STATE;
+		}
+	}
 
 	if (entelea_store_backend.erase_off(ENTELEA_PART_KV, target * KV_PAGE_SZ,
 					    KV_PAGE_SZ) != ENTELEA_OK) {
 		return ENTELEA_E_IO;
 	}
 	for (size_t i = 0; i < n; i++) {
-		if (slot_commit(target, (uint8_t)i, buf[i]) != ENTELEA_OK) {
+		if (slot_commit(target, (uint8_t)i, &buf[i]) != ENTELEA_OK) {
 			return ENTELEA_E_IO;
 		}
 	}
@@ -228,7 +330,7 @@ int32_t entelea_kv_load(uint32_t app_hash, uint8_t *out, uint16_t max)
 	if (r != ENTELEA_OK) {
 		return r;
 	}
-	uint8_t s[KV_SLOT_SZ];
+	struct kv_slot s;
 	bool found = false;
 	uint32_t best_seq = 0;
 	uint8_t bp = 0;
@@ -236,15 +338,31 @@ int32_t entelea_kv_load(uint32_t app_hash, uint8_t *out, uint16_t max)
 
 	for (uint8_t p = 0; p < KV_PAGES; p++) {
 		for (uint8_t i = 0; i < KV_SLOTS; i++) {
-			if (slot_read(p, i, s) != ENTELEA_OK) {
+			if (slot_read(p, i, &s) != ENTELEA_OK) {
+				kv.ready = false;
 				return ENTELEA_E_IO;
 			}
-			if (!slot_valid(s) ||
-			    entelea_get_le32(s + KV_OFF_HASH) != app_hash) {
+			enum slot_kind kind = slot_kind(&s);
+
+			if (kind == SLOT_CORRUPT) {
+				kv.ready = false;
+				return ENTELEA_E_IO;
+			}
+			if (kind != SLOT_VALID ||
+			    entelea_get_le32(s.data + KV_OFF_HASH) != app_hash) {
 				continue;
 			}
-			uint32_t seq = entelea_get_le32(s + KV_OFF_SEQ);
+			uint32_t seq = entelea_get_le32(s.data + KV_OFF_SEQ);
 
+			if (found && seq == best_seq) {
+				struct kv_slot previous;
+
+				if (slot_read(bp, bi, &previous) != ENTELEA_OK ||
+				    memcmp(&previous, &s, sizeof(s)) != 0) {
+					kv.ready = false;
+					return ENTELEA_E_IO;
+				}
+			}
 			if (!found || seq > best_seq) {
 				found = true;
 				best_seq = seq;
@@ -256,16 +374,18 @@ int32_t entelea_kv_load(uint32_t app_hash, uint8_t *out, uint16_t max)
 	if (!found) {
 		return ENTELEA_E_NOTFOUND;
 	}
-	if (slot_read(bp, bi, s) != ENTELEA_OK || !slot_valid(s) ||
-	    entelea_get_le32(s + KV_OFF_SEQ) != best_seq) {
+	if (slot_read(bp, bi, &s) != ENTELEA_OK || slot_kind(&s) != SLOT_VALID ||
+	    entelea_get_le32(s.data + KV_OFF_HASH) != app_hash ||
+	    entelea_get_le32(s.data + KV_OFF_SEQ) != best_seq) {
+		kv.ready = false;
 		return ENTELEA_E_IO;
 	}
-	uint16_t len = entelea_get_le16(s + KV_OFF_LEN);
+	uint16_t len = entelea_get_le16(s.data + KV_OFF_LEN);
 
 	if (len > max) {
 		return ENTELEA_E_RANGE; /* 容量不足如实 */
 	}
-	memcpy(out, s + KV_OFF_DATA, len);
+	memcpy(out, s.data + KV_OFF_DATA, len);
 	return (int32_t)len;
 }
 
@@ -289,12 +409,15 @@ entelea_result_t entelea_kv_save(uint32_t app_hash, const uint8_t *data,
 	if (kv.next_seq == UINT32_MAX) {
 		return ENTELEA_E_STATE;
 	}
-	uint8_t s[KV_SLOT_SZ];
+	struct kv_slot s;
 
-	slot_encode(s, app_hash, data, len, kv.next_seq);
-	r = slot_commit(kv.active_page, kv.next_slot, s);
+	slot_encode(&s, app_hash, data, len, kv.next_seq);
+	r = slot_commit(kv.active_page, kv.next_slot, &s);
 	kv.next_seq++; /* 失败亦烧毁槽与 seq：已编程字节不重写 */
 	kv.next_slot++;
+	if (r != ENTELEA_OK) {
+		kv.ready = false;
+	}
 	return r;
 }
 

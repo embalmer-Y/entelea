@@ -446,6 +446,33 @@ static void deps_up(void)
 	}
 }
 
+ZTEST(framework_assist, test_unknown_io_is_not_retried)
+{
+	char out[128] = "stale";
+	entelea_model_msg_t msgs[1] = {
+		{.role = "user", .content = "ping"}};
+	entelea_model_usage_t usage;
+
+	entelea_model_test_reset();
+	entelea_net_test_reset();
+	bind_d12_fake();
+	entelea_model_bind(&mock_transport, NULL);
+	deps_up();
+	mock_calls = 0;
+	memset(mock_next_rc, 0, sizeof(mock_next_rc));
+	mock_next_rc[0] = ENTELEA_E_IO;
+	mock_next_rc[1] = ENTELEA_OK;
+	mock_tokens_per_call = 1;
+	strcpy(mock_answer, "pong");
+	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &usage),
+		      ENTELEA_E_IO, "未知发送效果不能自动重发");
+	zassert_equal(mock_calls, 1, "失败后不得再次触及传输");
+	zassert_equal(entelea_d12_model_calls(), 1);
+	zassert_equal(out[0], '\0', "失败不得保留旧回答");
+	entelea_model_test_reset();
+	entelea_net_test_reset();
+}
+
 ZTEST(framework_assist, test_model_adapter_policy)
 {
 	char out[128];
@@ -475,18 +502,29 @@ ZTEST(framework_assist, test_model_adapter_policy)
 	deps_up();
 	zassert_true(entelea_model_ready());
 
-	/* E_IO 重试至封顶：3 次全 E_IO → 失败；usage 逐调用累计。 */
+	/* 仅明确未发送可重试：3 次失败达到封顶。 */
 	mock_calls = 0;
-	mock_next_rc[0] = mock_next_rc[1] = mock_next_rc[2] = ENTELEA_E_IO;
+	mock_next_rc[0] = mock_next_rc[1] = mock_next_rc[2] = ENTELEA_E_NOT_SENT;
 	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
-		      ENTELEA_E_IO);
+		      ENTELEA_E_NOT_SENT);
 	zassert_equal(mock_calls, 3, "首发+2 重试封顶");
 	zassert_equal(entelea_model_usage_total().prompt_tokens, 30,
 		      "失败尝试用量如实累计（3x10，review P3-4 激活）");
+	/* RF1 G5（审计 #11）：每次传输尝试=一次 D12 请求（逐尝试过闸+
+	 * 逐尝试上报）——3 次失败即 3 连败闩风暴。 */
+	zassert_equal(entelea_d12_model_calls(), 3, "逐尝试计入频度");
+	zassert_true(entelea_d12_storm_latched(), "3 次传输失败闩风暴");
+	zassert_equal(entelea_dep_state(ENTELEA_DEP_MODEL), ENTELEA_DEP_DOWN);
+	mock_calls = 0;
+	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
+		      ENTELEA_E_STATE, "风暴闩内拒");
+	zassert_equal(mock_calls, 0, "闩内不触传输");
+	entelea_d12_storm_clear(); /* 外部释放面（命令/到场） */
+	deps_up(); /* 此处为测试夹具；真实恢复须两次实际成功探测。 */
 
 	/* 第 2 次成功：恰一次重试。 */
 	mock_calls = 0;
-	mock_next_rc[0] = ENTELEA_E_IO;
+	mock_next_rc[0] = ENTELEA_E_NOT_SENT;
 	mock_next_rc[1] = ENTELEA_OK;
 	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
 		      ENTELEA_OK);
@@ -516,6 +554,116 @@ ZTEST(framework_assist, test_model_adapter_policy)
 	entelea_net_test_reset();
 }
 
+/* RF1 G5（审计 #11）：重试同受频度闸——窗满即停，返回闸结果且不再
+ * 触传输（旧实现仅首发过闸，6 次 ask 实发 18 次请求）。 */
+ZTEST(framework_assist, test_model_retry_gated_by_d12)
+{
+	char out[128];
+	entelea_model_msg_t msgs[1] = {
+		{.role = "user", .content = "ping"}};
+	entelea_model_usage_t u;
+
+	entelea_model_test_reset();
+	entelea_net_test_reset();
+	bind_d12_fake();
+	entelea_model_bind(&mock_transport, NULL);
+	deps_up();
+	memset(mock_next_rc, 0, sizeof(mock_next_rc));
+	strcpy(mock_answer, "pong");
+	mock_tokens_per_call = 1;
+	mock_calls = 0;
+	for (int i = 0; i < 5; i++) {
+		zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out),
+						5000, &u), ENTELEA_OK);
+	}
+	zassert_equal(entelea_d12_model_calls(), 5);
+	/* 第 6 槽首发未发送；重试被窗拒 → E_BUSY，传输仅 1 次。 */
+	mock_calls = 0;
+	mock_next_rc[0] = mock_next_rc[1] = mock_next_rc[2] = ENTELEA_E_NOT_SENT;
+	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
+		      ENTELEA_E_BUSY, "重试过闸被拒");
+	zassert_equal(mock_calls, 1, "被闸重试不触传输");
+	zassert_equal(out[0], '\0', "失败路径不留半答");
+	zassert_equal(entelea_d12_model_calls(), 6);
+	zassert_false(entelea_d12_storm_latched(), "闸拒不算传输失败");
+	entelea_model_test_reset();
+	entelea_net_test_reset();
+}
+
+ZTEST(framework_assist, test_model_probe_and_real_recovery_observations)
+{
+	char out[128];
+	entelea_model_msg_t msgs[1] = {
+		{.role = "user", .content = "ping"}};
+	const entelea_model_transport_t invalid = {.chat = NULL};
+
+	entelea_model_test_reset();
+	entelea_net_test_reset();
+	bind_d12_fake();
+	entelea_model_bind(&invalid, NULL);
+	zassert_equal(entelea_model_probe(msgs, 1, out, sizeof(out), 5000, NULL),
+		      ENTELEA_E_UNINIT, "空回调不可解引用");
+	entelea_model_bind(&mock_transport, NULL);
+	mock_calls = 0;
+	memset(mock_next_rc, 0, sizeof(mock_next_rc));
+	strcpy(mock_answer, "pong");
+	mock_tokens_per_call = 1;
+	zassert_equal(entelea_model_probe(msgs, 1, out, sizeof(out), 5000, NULL),
+		      ENTELEA_E_STATE, "网络未就绪不允许探测");
+	zassert_equal(mock_calls, 0);
+	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 1), ENTELEA_OK);
+	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 2), ENTELEA_OK);
+	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, NULL),
+		      ENTELEA_E_STATE, "模型未恢复时普通调用拒绝");
+	zassert_equal(entelea_model_probe(msgs, 1, out, sizeof(out), 5000, NULL),
+		      ENTELEA_OK);
+	zassert_equal(entelea_dep_state(ENTELEA_DEP_MODEL), ENTELEA_DEP_DOWN,
+		      "探测本身不伪造恢复观测");
+	zassert_equal(entelea_dep_report(ENTELEA_DEP_MODEL, true, 3), ENTELEA_OK);
+	zassert_equal(entelea_dep_state(ENTELEA_DEP_MODEL), ENTELEA_DEP_DEGRADED);
+	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, NULL),
+		      ENTELEA_E_STATE);
+	zassert_equal(entelea_model_probe(msgs, 1, out, sizeof(out), 5000, NULL),
+		      ENTELEA_OK);
+	zassert_equal(entelea_dep_report(ENTELEA_DEP_MODEL, true, 4), ENTELEA_OK);
+	zassert_true(entelea_model_ready());
+	zassert_equal(mock_calls, 2, "两条成功观测来自两次真实传输回调");
+	zassert_equal(entelea_d12_model_calls(), 2);
+
+	mock_next_rc[2] = ENTELEA_E_PERM;
+	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, NULL),
+		      ENTELEA_E_PERM);
+	zassert_equal(mock_calls, 3, "鉴权失败不重试");
+	zassert_equal(entelea_dep_state(ENTELEA_DEP_MODEL), ENTELEA_DEP_DOWN);
+	zassert_false(entelea_model_ready());
+	entelea_model_test_reset();
+	entelea_net_test_reset();
+}
+
+ZTEST(framework_assist, test_model_usage_saturates)
+{
+	char out[128];
+	entelea_model_msg_t msgs[1] = {
+		{.role = "user", .content = "ping"}};
+
+	entelea_model_test_reset();
+	entelea_net_test_reset();
+	bind_d12_fake();
+	entelea_model_bind(&mock_transport, NULL);
+	deps_up();
+	mock_calls = 0;
+	memset(mock_next_rc, 0, sizeof(mock_next_rc));
+	strcpy(mock_answer, "pong");
+	mock_tokens_per_call = UINT32_MAX;
+	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, NULL),
+		      ENTELEA_OK);
+	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, NULL),
+		      ENTELEA_OK);
+	zassert_equal(entelea_model_usage_total().prompt_tokens, UINT32_MAX);
+	zassert_equal(entelea_model_usage_total().completion_tokens, UINT32_MAX);
+	entelea_model_test_reset();
+	entelea_net_test_reset();
+}
 
 /* ---- B-3 任务受理面：接线 R04 任务机+来源化反馈 ---- */
 ZTEST(framework_assist, test_task_acceptance_wiring)

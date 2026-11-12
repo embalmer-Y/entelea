@@ -20,6 +20,8 @@ extern "C" {
 
 #define ENTELEA_WASM_HEAP_SIZE 262144U /* 池（旧 DEC-27 256KB 基线） */
 #define ENTELEA_WASM_STACK_SIZE 4096U
+#define ENTELEA_WASM_INSTRUCTIONS_PER_MS 1000U
+#define ENTELEA_WASM_DEFAULT_INSTRUCTIONS 100000000U
 
 /** [boot] WAMR 进程级单次 init（池模式注入）。重复调用幂等。natives 注册
  * 失败 = E_IO 且回滚运行时（保持未初始化，可重试）。 */
@@ -37,10 +39,17 @@ entelea_result_t entelea_wasm_load(uint8_t slot, entelea_principal_t owner,
  * ABI 仅 ()->i32 与 (i32)->i32：前者 arg 必须为 0，后者收到 arg；其余
  * 签名 = E_PARAM。上述拒绝均不执行、不销毁实例。超时 ms 经步预算近似，
  * 到期 → E_TIMEOUT 有界停止（判别=WAMR 异常串 "instruction limit"）；
- * 其余 trap → E_IO；两者都销毁实例。预算按 1000 指令/ms 计、封顶 1e8。 */
+ * 其余 trap → E_IO；两者都销毁实例。预算按 1000 指令/ms 近似换算，
+ * 封顶 1e8；显式传 0 表示零指令，不是默认值，也不表示实际墙钟期限。 */
 entelea_result_t entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx,
 				   const char *fn, int32_t arg,
 				   uint32_t timeout_ms, int32_t *ret_out);
+
+/** 使用默认 1e8 指令预算调用；其余语义与 entelea_wasm_call 相同。 */
+entelea_result_t entelea_wasm_call_default(uint32_t app_id,
+					  entelea_principal_t ctx,
+					  const char *fn, int32_t arg,
+					  int32_t *ret_out);
 
 /** 停止并销毁实例（模块保留——WAMR 换包重启路径语义）。 */
 entelea_result_t entelea_wasm_stop(uint32_t app_id);

@@ -2,8 +2,8 @@
 /*
  * R06 avq/pubq 有界传输队列实现（B-1；合同 net/contract.md）。
  * avq=drop-oldest 媒体帧环（拷贝入静态池——借用寿命不外泄）；
- * pubq=拒新发布环（满=E_BUSY；弹出仅在 sink 送达后=at-least-once
- * 至传输面）。无定时器——flush 由调用方驱动（确定性）。
+ * pubq=拒新发布环（满=E_BUSY；sink 回调后弹出，不确认传输结果）。
+ * 无定时器——flush 由调用方驱动（确定性）。
  */
 #include <string.h>
 #include <entelea/netqueue.h>
@@ -146,7 +146,7 @@ uint32_t entelea_netqueue_flush(void)
 			n++;
 		}
 	}
-	/* pubq：sink 送达后才弹（无 sink=不弹不丢——待传输）。 */
+	/* 无 sink 时 pubq 保持待处理；回调不提供送达确认。 */
 	while (sink != NULL && pubq_count > 0) {
 		entelea_pubq_entry_t e;
 

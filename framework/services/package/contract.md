@@ -12,7 +12,7 @@
 ## 分步安装链（staging→verify→activate）
 
 - stage_begin（擦 slot）→ stage_chunk（顺序写+回读；越界拒）→
-  verify → activate（meta 双副本记录 "ACTV<slot>"）。
+  verify → activate（KV 中记录活动槽，不能授予执行资格）。
 - 验签管线：摘要重哈希 → COSE_Sign1 精确子集（tag18+array4+phdr
   {1:-8}+map(0)+payload+sig(64)）→ 内嵌 payload 副本逐块比对裸段
   （签 A 装 B 防御）→ tweetnacl ed25519（逐字节未改上游；PROVENANCE
@@ -39,12 +39,18 @@
   结束后同槽新候选、未确认）= E_PERM，不执行、不销毁实例。
 - call：ctx ≠ owner = E_PERM；导出 ABI 仅 ()->i32 / (i32)->i32（前者
   arg 必须为 0，后者收到 arg），其余 = E_PARAM——这些拒绝不执行、不销毁
-  实例。**步预算指令配额**（1000 指令/ms，封顶 1e8）：到期 → E_TIMEOUT
-  有界停止；其余 trap → E_IO；两者都销毁实例。
+  实例。**步预算指令配额**（1000 指令/ms 换算，封顶 1e8）：到期 →
+  E_TIMEOUT 有界停止；其余 trap → E_IO；两者都销毁实例。调用方不指定
+  自定义预算时使用 `entelea_wasm_call_default`，其默认值为 1e8 指令；
+  原 `entelea_wasm_call` 的显式 0 仍表示零指令，不表示默认值。该预算
+  不是墙钟硬截止；现有上限比获批方案允许的绝对上限 2e9 更严格。
 - natives：只按 load 绑定的 owner 裁决（user_data；Wasm 传入整数不可转
   principal；owner={0} 未绑定 = 一律拒）。natives 注册失败 = init E_IO 并
   回滚运行时。代表 native "entelea"."host_probe" (i)i（gpio:read:0 门），
   VM→native 真路径由导入夹具覆盖；全符号集随 R06+ 消费面扩展。
+  owner 权限尚未与用户确认的 trial 位图绑定，见
+  [交付合同](../delivery/contract.md)；
+  不能仅凭 owner 绑定宣称用户确认的权限得到执行。
 
 ## D03 Lua 接入合同（关键可行性验证——不冒充正式支持）
 

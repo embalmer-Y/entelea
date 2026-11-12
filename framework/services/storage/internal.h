@@ -6,7 +6,7 @@
 #include <string.h>
 #include <entelea/storage.h>
 
-/* CRC16-CCITT（poly 0x1021，init 0xFFFF）——meta/noinit 校验。 */
+/* CRC16-CCITT（poly 0x1021，init 0xFFFF）。 */
 static inline uint16_t entelea_crc16(const uint8_t *data, size_t len)
 {
 	uint16_t crc = 0xFFFFU;

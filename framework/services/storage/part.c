@@ -42,6 +42,7 @@ static uint8_t ram_trust[TRUST_SIZE];
 static uint8_t ram_kv[KV_SIZE];
 static uint8_t ram_slot_a[SLOT_SIZE];
 static uint8_t ram_slot_b[SLOT_SIZE];
+static bool ram_meta_initialized;
 #endif
 
 #ifdef RAM_BACKEND_INERT
@@ -84,6 +85,18 @@ static uint8_t *part_ram(entelea_store_part_t part, uint32_t *size)
 	}
 }
 
+static void ram_prepare(entelea_store_part_t part)
+{
+#ifndef RAM_BACKEND_INERT
+	if (part == ENTELEA_PART_META && !ram_meta_initialized) {
+		memset(ram_meta, 0xFF, sizeof(ram_meta));
+		ram_meta_initialized = true;
+	}
+#else
+	(void)part;
+#endif
+}
+
 static entelea_result_t ram_read(entelea_store_part_t part, uint32_t off, void *buf,
 				 uint32_t len)
 {
@@ -94,6 +107,7 @@ static entelea_result_t ram_read(entelea_store_part_t part, uint32_t off, void *
 	if (base == NULL || off > size || len > size - off) {
 		return ENTELEA_E_RANGE;
 	}
+	ram_prepare(part);
 	memcpy(buf, base + off, len);
 	return ENTELEA_OK;
 }
@@ -105,10 +119,10 @@ static entelea_result_t ram_write(entelea_store_part_t part, uint32_t off,
 	uint8_t *base = part_ram(part, &size);
 
 	RAM_INERT_GUARD();
-
 	if (base == NULL || off > size || len > size - off) {
 		return ENTELEA_E_RANGE;
 	}
+	ram_prepare(part);
 	memcpy(base + off, buf, len);
 	return ENTELEA_OK;
 }
@@ -120,10 +134,10 @@ static entelea_result_t ram_erase_off(entelea_store_part_t part, uint32_t off,
 	uint8_t *base = part_ram(part, &size);
 
 	RAM_INERT_GUARD();
-
 	if (base == NULL || off > size || len > size - off) {
 		return ENTELEA_E_RANGE;
 	}
+	ram_prepare(part);
 	memset(base + off, 0xFF, len);
 	return ENTELEA_OK;
 }
@@ -135,6 +149,10 @@ static entelea_result_t ram_erase(entelea_store_part_t part)
 
 #ifdef RAM_BACKEND_INERT
 	return ENTELEA_OK; /* 无数组=无事可擦（不报错） */
+#else
+	if (part == ENTELEA_PART_META) {
+		ram_meta_initialized = true;
+	}
 #endif
 
 	if (base == NULL) {

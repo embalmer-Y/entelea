@@ -72,7 +72,12 @@ target_sources(app PRIVATE
 )
 target_compile_definitions(app PRIVATE ENTELEA_TEST=1)
 # RF1：natives 注册失败注入（宿主→WAMR 跨目标文件引用经链接器重定向）。
-target_link_options(app PUBLIC -Wl,--wrap=wasm_runtime_register_natives)
+target_link_options(app PUBLIC -Wl,--wrap=wasm_runtime_register_natives
+  -Wl,--wrap=wasm_runtime_set_instruction_count_limit)
+option(TEST_TRIAL_PERMISSION_GAP "Run the known trial permission acceptance gap" OFF)
+if(TEST_TRIAL_PERMISSION_GAP)
+  target_compile_definitions(app PRIVATE TEST_TRIAL_PERMISSION_GAP=1)
+endif()
 # 三方源 -w（钉版上游零补丁纪律）；32 位汇编栈注记。
 set_source_files_properties(${WAMR_RUNTIME_LIB_SOURCE} PROPERTIES COMPILE_OPTIONS "-w")
 if(NOT CONFIG_64BIT)

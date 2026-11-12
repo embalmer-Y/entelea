@@ -108,6 +108,39 @@ ZTEST(framework_store, test_meta_params_and_bounds)
 		      ENTELEA_E_RANGE, "未启用分区拒绝（namespace 隔离）");
 }
 
+ZTEST(framework_store, test_mirrored_meta_requires_matching_complete_copies)
+{
+	const uint8_t original[] = {1, 2, 3, 4};
+	const uint8_t changed[] = {4, 3, 2, 1};
+	uint8_t out[sizeof(original)] = {0xAA, 0xAA, 0xAA, 0xAA};
+	uint16_t len = 0xBEEF;
+
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	zassert_equal(entelea_storage_meta_read_mirrored(NULL, sizeof(out), &len),
+		      ENTELEA_E_PARAM);
+	zassert_equal(entelea_storage_meta_read_mirrored(out, sizeof(out), NULL),
+		      ENTELEA_E_PARAM);
+	zassert_equal(entelea_storage_meta_write(original, sizeof(original)),
+		      ENTELEA_OK);
+	zassert_equal(entelea_storage_meta_read_mirrored(out, sizeof(out), &len),
+		      ENTELEA_E_IO, "one valid copy is not mirrored");
+	zassert_equal(len, 0xBEEF);
+	zassert_equal(entelea_storage_meta_write(original, sizeof(original)),
+		      ENTELEA_OK);
+	zassert_equal(entelea_storage_meta_read_mirrored(out, sizeof(out) - 1, &len),
+		      ENTELEA_E_RANGE);
+	zassert_equal(out[0], 0xAA, "capacity failure must not write output");
+	zassert_equal(len, 0xBEEF);
+	zassert_equal(entelea_storage_meta_read_mirrored(out, sizeof(out), &len),
+		      ENTELEA_OK);
+	zassert_equal(len, sizeof(original));
+	zassert_mem_equal(out, original, sizeof(original));
+	zassert_equal(entelea_storage_meta_write(changed, sizeof(changed)), ENTELEA_OK);
+	zassert_equal(entelea_storage_meta_read_mirrored(out, sizeof(out), &len),
+		      ENTELEA_E_IO, "different valid copies are ambiguous");
+	zassert_mem_equal(out, original, sizeof(original));
+}
+
 /* ---- noinit：fresh 语义 + one-shot + 超长 + 接线 ---- */
 ZTEST(framework_store, test_noinit_semantics)
 {
@@ -245,9 +278,12 @@ ZTEST(framework_store, test_audit_ring_flip_and_recovery)
 	 * 截断——烧毁槽之后的有效记录被丢弃；旧注入（64B erase_off）在
 	 * flash 上擦整页、在 RAM 上只清 64B，双后端语义不同。现注入双后端
 	 * 等价：整页 0 擦除 → 槽0 垃圾 + 槽1 手工编码有效记录（seq 200）。 */
-	uint8_t garbage[64] = {0xDE, 0xAD};
+	uint8_t garbage[64];
 	uint8_t rec[64];
 
+	memset(garbage, 0xFF, sizeof(garbage));
+	garbage[0] = 0xDE;
+	garbage[1] = 0xAD;
 	memset(rec, 0xFF, sizeof(rec));
 	rec[0] = 0x31; /* magic "TSA1" LE */
 	rec[1] = 0x41;
@@ -715,6 +751,11 @@ ZTEST(framework_store, test_meta_boundary_cross_rw)
  * 并拒绝（RAM 变体同样检出二次编程，flash 变体与模拟器纪律一致）。 */
 static entelea_store_ops_t inj_base;
 static bool inj_mounted;
+static entelea_store_ops_t bit_error_base;
+static bool bit_error_mounted;
+static entelea_store_part_t bit_error_part;
+static uint32_t bit_error_off;
+static uint8_t bit_error_mask;
 static struct {
 	uint32_t writes;
 	uint32_t tear_at;
@@ -816,6 +857,10 @@ static void store_after(void *fixture)
 		(void)entelea_storage_mount(&inj_base);
 		inj_mounted = false;
 	}
+	if (bit_error_mounted) {
+		(void)entelea_storage_mount(&bit_error_base);
+		bit_error_mounted = false;
+	}
 }
 
 #define APP1 0xA001U
@@ -827,6 +872,479 @@ static void kv_expect(uint32_t app, const void *val, int32_t len)
 
 	zassert_equal(entelea_kv_load(app, b, sizeof(b)), len, "app %x", app);
 	zassert_mem_equal(b, val, (size_t)len, "app %x", app);
+}
+
+static entelea_result_t bit_error_read(entelea_store_part_t part, uint32_t off,
+				       void *buf, uint32_t len)
+{
+	entelea_result_t r = bit_error_base.read(part, off, buf, len);
+
+	if (r == ENTELEA_OK && part == bit_error_part && bit_error_off >= off &&
+	    bit_error_off - off < len) {
+		((uint8_t *)buf)[bit_error_off - off] ^= bit_error_mask;
+	}
+	return r;
+}
+
+static void flip_storage_bit(entelea_store_part_t part, uint32_t off, uint8_t mask)
+{
+	entelea_store_ops_t ops;
+
+	zassert_false(bit_error_mounted);
+	bit_error_base = entelea_store_backend;
+	ops = bit_error_base;
+	ops.read = bit_error_read;
+	bit_error_part = part;
+	bit_error_off = off;
+	bit_error_mask = mask;
+	zassert_equal(entelea_storage_mount(&ops), ENTELEA_OK);
+	bit_error_mounted = true;
+}
+
+static void flip_storage_byte(entelea_store_part_t part, uint32_t off)
+{
+	flip_storage_bit(part, off, 1U);
+}
+
+static void clear_storage_flip(void)
+{
+	zassert_true(bit_error_mounted);
+	zassert_equal(entelea_storage_mount(&bit_error_base), ENTELEA_OK);
+	bit_error_mounted = false;
+}
+
+ZTEST(framework_store, test_committed_kv_bit_corruption_is_not_success)
+{
+	const uint32_t offsets[] = {0, 4, 8, 12, 14, 14 + 249,
+				    3960, 3962, 3964};
+	uint8_t value[ENTELEA_KV_BLOB_MAX];
+	uint8_t out[ENTELEA_KV_BLOB_MAX];
+
+	memset(value, 0x5A, sizeof(value));
+	for (size_t i = 0; i < ARRAY_SIZE(offsets); i++) {
+		zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+		entelea_kv_test_reset();
+		zassert_equal(entelea_kv_save(APP1, value, sizeof(value)), ENTELEA_OK);
+		flip_storage_byte(ENTELEA_PART_KV, offsets[i]);
+		memset(out, 0xA5, sizeof(out));
+		zassert_equal(entelea_kv_load(APP1, out, sizeof(out)), ENTELEA_E_IO,
+			      "corrupted committed offset %u must not return data",
+			      (unsigned)offsets[i]);
+		zassert_equal(out[0], 0xA5);
+		entelea_kv_test_reset();
+		zassert_equal(entelea_kv_init(), ENTELEA_E_IO);
+		zassert_equal(entelea_kv_save(APP2, value, sizeof(value)), ENTELEA_E_IO);
+		clear_storage_flip();
+	}
+}
+
+ZTEST(framework_store, test_committed_audit_bit_corruption_is_not_success)
+{
+	const uint32_t offsets[] = {0, 4, 8, 16, 20, 22, 24, 28, 32, 34, 36};
+	entelea_storage_audit_entry_t entry = {
+		.t_ms = 25, .ch_idx = 3, .actor = 4, .kind = 2,
+		.res = -4, .value_u = 9,
+	};
+	entelea_storage_audit_entry_t out[1];
+
+	for (size_t i = 0; i < ARRAY_SIZE(offsets); i++) {
+		zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+		zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+		zassert_equal(entelea_storage_audit_append(&entry, 7), ENTELEA_OK);
+		flip_storage_byte(ENTELEA_PART_AUDIT, offsets[i]);
+		memset(out, 0xA5, sizeof(out));
+		zassert_equal(entelea_storage_audit_read(out, 1), ENTELEA_E_IO,
+			      "corrupted committed offset %u must not be reported",
+			      (unsigned)offsets[i]);
+		zassert_equal(((uint8_t *)out)[0], 0xA5);
+		zassert_equal(entelea_storage_audit_init(), ENTELEA_E_IO);
+		zassert_equal(entelea_storage_audit_append(&entry, 7), ENTELEA_E_STATE);
+		clear_storage_flip();
+	}
+}
+
+ZTEST(framework_store, test_every_protected_bit_detected)
+{
+	uint8_t value[ENTELEA_KV_BLOB_MAX];
+	uint8_t out[ENTELEA_KV_BLOB_MAX];
+	entelea_storage_audit_entry_t entry = {.value_u = 42};
+	entelea_storage_audit_entry_t audit[1];
+
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	entelea_kv_test_reset();
+	memset(value, 0x5A, sizeof(value));
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"OLD", 3), ENTELEA_OK);
+	zassert_equal(entelea_kv_save(APP1, value, sizeof(value)), ENTELEA_OK);
+	for (uint32_t pos = 0; pos < 264 + 8; pos++) {
+		uint32_t off = pos < 264 ? 264 + pos : 3960 + 8 + pos - 264;
+
+		for (uint8_t bit = 0; bit < 8; bit++) {
+			zassert_equal(entelea_kv_init(), ENTELEA_OK);
+			flip_storage_bit(ENTELEA_PART_KV, off, (uint8_t)(1U << bit));
+			zassert_equal(entelea_kv_load(APP1, out, sizeof(out)), ENTELEA_E_IO,
+				      "KV byte %u bit %u", (unsigned)pos, bit);
+			clear_storage_flip();
+		}
+	}
+	zassert_equal(entelea_kv_load(APP1, out, sizeof(out)), sizeof(value));
+	zassert_mem_equal(out, value, sizeof(value));
+
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+	zassert_equal(entelea_storage_audit_append(&entry, 0), ENTELEA_OK);
+	for (uint32_t pos = 0; pos < 40; pos++) {
+		for (uint8_t bit = 0; bit < 8; bit++) {
+			zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+			flip_storage_bit(ENTELEA_PART_AUDIT, pos, (uint8_t)(1U << bit));
+			zassert_equal(entelea_storage_audit_read(audit, 1), ENTELEA_E_IO,
+				      "audit byte %u bit %u", (unsigned)pos, bit);
+			clear_storage_flip();
+		}
+	}
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+	zassert_equal(entelea_storage_audit_read(audit, 1), 1);
+	zassert_equal(audit[0].value_u, 42);
+}
+
+ZTEST(framework_store, test_write_readback_mismatch_is_not_success)
+{
+	uint8_t out[8];
+	entelea_storage_audit_entry_t entry = {.value_u = 42};
+	entelea_storage_audit_entry_t audit[1];
+
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	entelea_kv_test_reset();
+	zassert_equal(entelea_kv_init(), ENTELEA_OK);
+	flip_storage_byte(ENTELEA_PART_KV, 14);
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"DATA", 4), ENTELEA_E_IO);
+	clear_storage_flip();
+	zassert_equal(entelea_kv_load(APP1, out, sizeof(out)), 4);
+	zassert_mem_equal(out, "DATA", 4, "failed readback leaves effect unknown");
+
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+	flip_storage_byte(ENTELEA_PART_AUDIT, 28);
+	zassert_equal(entelea_storage_audit_append(&entry, 0), ENTELEA_E_IO);
+	clear_storage_flip();
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+	zassert_equal(entelea_storage_audit_read(audit, 1), 1);
+	zassert_equal(audit[0].value_u, 42);
+}
+
+ZTEST(framework_store, test_legacy_kv_survives_compaction_without_relabelling)
+{
+	uint8_t legacy[264];
+	uint8_t tag[8];
+	uint8_t old_format[264];
+	uint8_t out[8];
+	uint8_t v;
+
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	entelea_kv_test_reset();
+	memset(legacy, 0xFF, sizeof(legacy));
+	legacy[0] = 0x31; legacy[1] = 0x4B; legacy[2] = 0x53; legacy[3] = 0x54;
+	legacy[4] = 0x01; legacy[5] = 0xA0; legacy[6] = 0; legacy[7] = 0;
+	legacy[8] = 1; legacy[9] = legacy[10] = legacy[11] = 0;
+	legacy[12] = 3; legacy[13] = 0;
+	memcpy(legacy + 14, "OLD", 3);
+	zassert_equal(entelea_storage_test_backend_write(ENTELEA_PART_KV, 0,
+							legacy, sizeof(legacy)),
+		      ENTELEA_OK);
+	kv_expect(APP1, "OLD", 3);
+	for (v = 0; v < 15; v++) {
+		zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_OK);
+	}
+	entelea_kv_test_reset();
+	kv_expect(APP1, "OLD", 3);
+	zassert_equal(entelea_storage_test_backend_read(ENTELEA_PART_KV, 4096 + 3960,
+						       tag, sizeof(tag)),
+		      ENTELEA_OK);
+	for (size_t i = 0; i < sizeof(tag); i++) {
+		zassert_equal(tag[i], 0xFF, "compaction must not claim legacy CRC");
+	}
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"NEW", 3), ENTELEA_OK);
+	entelea_kv_test_reset();
+	zassert_equal(entelea_kv_load(APP1, out, sizeof(out)), 3);
+	zassert_mem_equal(out, "NEW", 3);
+	zassert_equal(entelea_storage_test_backend_read(ENTELEA_PART_KV,
+						       4096 + 3 * 264,
+						       old_format, sizeof(old_format)),
+		      ENTELEA_OK);
+	zassert_mem_equal(old_format, legacy, 8, "legacy magic and app hash unchanged");
+	zassert_equal(old_format[12], 3);
+	zassert_mem_equal(old_format + 14, "NEW", 3);
+	flip_storage_byte(ENTELEA_PART_KV, 4096 + 3 * 264 + 14);
+	zassert_equal(entelea_kv_load(APP1, out, sizeof(out)), ENTELEA_E_IO);
+	clear_storage_flip();
+}
+
+#ifndef ENTELEA_TEST_FLASH_BACKEND
+ZTEST(framework_store, test_ram_persisted_bit_corruption_across_reinit)
+{
+	uint8_t byte;
+	uint8_t out[8];
+
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	entelea_kv_test_reset();
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"DATA", 4), ENTELEA_OK);
+	zassert_equal(entelea_storage_test_backend_read(ENTELEA_PART_KV, 14,
+						       &byte, 1), ENTELEA_OK);
+	byte ^= 1U;
+	zassert_equal(entelea_storage_test_backend_write(ENTELEA_PART_KV, 14,
+							&byte, 1), ENTELEA_OK);
+	entelea_kv_test_reset();
+	zassert_equal(entelea_kv_load(APP1, out, sizeof(out)), ENTELEA_E_IO);
+}
+#endif
+
+ZTEST(framework_store, test_legacy_audit_record_remains_readable)
+{
+	uint8_t legacy[64];
+	uint8_t raw[64];
+	entelea_storage_audit_entry_t out[2];
+	entelea_storage_audit_entry_t newer = {.t_ms = 9, .ch_idx = 7, .value_u = 42};
+
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	memset(legacy, 0xFF, sizeof(legacy));
+	legacy[0] = 0x31; legacy[1] = 0x41; legacy[2] = 0x53; legacy[3] = 0x54;
+	legacy[4] = 1; legacy[5] = legacy[6] = legacy[7] = 0;
+	legacy[8] = 5; memset(legacy + 9, 0, 7);
+	legacy[16] = 3; legacy[17] = 0;
+	zassert_equal(entelea_storage_test_backend_write(ENTELEA_PART_AUDIT, 0,
+							legacy, sizeof(legacy)),
+		      ENTELEA_OK);
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+	zassert_equal(entelea_storage_audit_read(out, 2), 1);
+	zassert_equal(out[0].seq, 1);
+	zassert_equal(out[0].t_ms, 5);
+	zassert_equal(out[0].ch_idx, 3);
+	zassert_equal(entelea_storage_audit_append(&newer, 0), ENTELEA_OK);
+	zassert_equal(entelea_storage_test_backend_read(ENTELEA_PART_AUDIT, 64,
+						       raw, sizeof(raw)),
+		      ENTELEA_OK);
+	zassert_mem_equal(raw, legacy, 4, "legacy magic unchanged");
+	zassert_equal(raw[4], 2);
+	zassert_equal(raw[8], 9);
+	zassert_equal(raw[16], 7);
+	zassert_equal(raw[28], 42);
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+	zassert_equal(entelea_storage_audit_read(out, 2), 2);
+	zassert_equal(out[1].value_u, 42);
+}
+
+ZTEST(framework_store, test_failed_write_may_have_committed_full_effect)
+{
+	uint8_t out[8];
+	entelea_storage_audit_entry_t e = {.value_u = 42};
+	entelea_storage_audit_entry_t audit[1];
+
+	inj_begin();
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"OLD", 3), ENTELEA_OK);
+	inj_tear(4, 4);
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"NEW", 3), ENTELEA_E_IO);
+	entelea_kv_test_reset();
+	zassert_equal(entelea_kv_load(APP1, out, sizeof(out)), 3);
+	zassert_mem_equal(out, "NEW", 3, "reported error does not imply no effect");
+
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+	inj_tear(3, 4);
+	zassert_equal(entelea_storage_audit_append(&e, 0), ENTELEA_E_IO);
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+	zassert_equal(entelea_storage_audit_read(audit, 1), 1);
+	zassert_equal(audit[0].value_u, 42);
+	inj_end();
+}
+
+ZTEST(framework_store, test_partial_final_marker_stops_instead_of_falling_back)
+{
+	uint8_t out[8];
+	uint8_t old_magic[4];
+	entelea_storage_audit_entry_t e = {.value_u = 42};
+
+	inj_begin();
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"OLD", 3), ENTELEA_OK);
+	inj_tear(4, 2);
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"NEW", 3), ENTELEA_E_IO);
+	zassert_equal(entelea_kv_load(APP1, out, sizeof(out)), ENTELEA_E_IO);
+	zassert_equal(entelea_storage_test_backend_read(ENTELEA_PART_KV, 0,
+						       old_magic, sizeof(old_magic)),
+		      ENTELEA_OK);
+	zassert_equal(old_magic[0], 0x31, "previous record not erased");
+	inj_end();
+
+	inj_begin();
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+	zassert_equal(entelea_storage_audit_append(&e, 0), ENTELEA_OK);
+	inj_tear(3, 2);
+	zassert_equal(entelea_storage_audit_append(&e, 0), ENTELEA_E_IO);
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_E_IO);
+	zassert_equal(entelea_storage_test_backend_read(ENTELEA_PART_AUDIT, 0,
+						       old_magic, sizeof(old_magic)),
+		      ENTELEA_OK);
+	zassert_equal(old_magic[0], 0x31, "previous audit record not erased");
+	inj_end();
+}
+
+ZTEST(framework_store, test_every_compaction_write_failure_preserves_source)
+{
+	for (uint32_t phase = 1; phase <= 9; phase++) {
+		uint8_t v;
+		uint8_t first[17];
+
+		inj_begin();
+		zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"A1", 2),
+			      ENTELEA_OK);
+		for (v = 0; v < 14; v++) {
+			zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_OK);
+		}
+		inj_tear(phase, 2);
+		v = 99;
+		zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_E_IO,
+			      "compaction write %u", (unsigned)phase);
+		zassert_equal(entelea_storage_test_backend_read(ENTELEA_PART_KV, 0,
+							       first, sizeof(first)),
+			      ENTELEA_OK);
+		zassert_equal(first[0], 0x31, "source magic remains");
+		zassert_mem_equal(first + 14, "A1", 2, "source data remains");
+		entelea_kv_test_reset();
+		if (phase == 4 || phase == 8) {
+			zassert_equal(entelea_kv_init(), ENTELEA_E_IO,
+				      "partial final marker is ambiguous");
+		} else {
+			kv_expect(APP1, "A1", 2);
+			v = 13;
+			kv_expect(APP2, &v, 1);
+		}
+		inj_end();
+	}
+}
+
+ZTEST(framework_store, test_compaction_preserves_unique_target_record)
+{
+	uint8_t protected_slot[264], protected_tag[8], legacy[264], after[264], out[4];
+	uint8_t value = 42;
+
+	inj_begin();
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"KEEP", 4), ENTELEA_OK);
+	zassert_equal(entelea_storage_test_backend_read(ENTELEA_PART_KV, 0,
+						       protected_slot, sizeof(protected_slot)),
+		      ENTELEA_OK);
+	zassert_equal(entelea_storage_test_backend_read(ENTELEA_PART_KV, 3960,
+						       protected_tag, sizeof(protected_tag)),
+		      ENTELEA_OK);
+	zassert_equal(entelea_storage_test_backend_write(ENTELEA_PART_KV, 4096,
+							protected_slot, sizeof(protected_slot)),
+		      ENTELEA_OK);
+	zassert_equal(entelea_storage_test_backend_write(ENTELEA_PART_KV, 4096 + 3960,
+							protected_tag, sizeof(protected_tag)),
+		      ENTELEA_OK);
+	zassert_equal(entelea_store_backend.erase_off(ENTELEA_PART_KV, 0, 4096),
+		      ENTELEA_OK);
+	for (uint32_t i = 0; i < 15; i++) {
+		memset(legacy, 0xFF, sizeof(legacy));
+		legacy[0] = 0x31; legacy[1] = 0x4B; legacy[2] = 0x53; legacy[3] = 0x54;
+		legacy[4] = 0x02; legacy[5] = 0xA0; legacy[6] = 0; legacy[7] = 0;
+		legacy[8] = (uint8_t)(i + 2); legacy[9] = legacy[10] = legacy[11] = 0;
+		legacy[12] = 1; legacy[13] = 0; legacy[14] = (uint8_t)i;
+		zassert_equal(entelea_storage_test_backend_write(ENTELEA_PART_KV, i * 264,
+								legacy, sizeof(legacy)),
+			      ENTELEA_OK);
+	}
+	entelea_kv_test_reset();
+	zassert_equal(entelea_kv_load(APP1, out, sizeof(out)), 4,
+		      "unique target record is readable before compaction");
+	zassert_mem_equal(out, "KEEP", 4);
+	inj_tear(1, 2);
+	entelea_result_t r = entelea_kv_save(APP2, &value, 1);
+
+	zassert_not_equal(r, ENTELEA_OK, "unsafe compaction must not succeed");
+	entelea_kv_test_reset();
+	zassert_equal(entelea_kv_load(APP1, out, sizeof(out)), 4,
+		      "unique target record must survive interrupted compaction");
+	zassert_mem_equal(out, "KEEP", 4);
+	zassert_equal(r, ENTELEA_E_STATE, "unsafe layout requires explicit recovery");
+	zassert_equal(entelea_storage_test_backend_read(ENTELEA_PART_KV, 4096,
+						       after, sizeof(after)),
+		      ENTELEA_OK);
+	zassert_mem_equal(after, protected_slot, sizeof(after), "target was not erased");
+	inj_end();
+}
+
+ZTEST(framework_store, test_compaction_accepts_duplicate_target_record)
+{
+	uint8_t protected_slot[264], protected_tag[8], out[4], value;
+
+	inj_begin();
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"KEEP", 4), ENTELEA_OK);
+	zassert_equal(entelea_storage_test_backend_read(ENTELEA_PART_KV, 0,
+						       protected_slot, sizeof(protected_slot)),
+		      ENTELEA_OK);
+	zassert_equal(entelea_storage_test_backend_read(ENTELEA_PART_KV, 3960,
+						       protected_tag, sizeof(protected_tag)),
+		      ENTELEA_OK);
+	zassert_equal(entelea_storage_test_backend_write(ENTELEA_PART_KV, 4096,
+							protected_slot, sizeof(protected_slot)),
+		      ENTELEA_OK);
+	zassert_equal(entelea_storage_test_backend_write(ENTELEA_PART_KV, 4096 + 3960,
+							protected_tag, sizeof(protected_tag)),
+		      ENTELEA_OK);
+	for (value = 0; value < 14; value++) {
+		zassert_equal(entelea_kv_save(APP2, &value, 1), ENTELEA_OK);
+	}
+	entelea_kv_test_reset();
+	value = 42;
+	zassert_equal(entelea_kv_save(APP2, &value, 1), ENTELEA_OK,
+		      "identical source copy permits safe compaction");
+	entelea_kv_test_reset();
+	zassert_equal(entelea_kv_load(APP1, out, sizeof(out)), 4);
+	zassert_mem_equal(out, "KEEP", 4);
+	kv_expect(APP2, &value, 1);
+	inj_end();
+}
+
+ZTEST(framework_store, test_kv_conflicting_equal_sequence_fails_closed)
+{
+	uint8_t protected_slot[264], protected_tag[8], legacy[264], after[264], out[8];
+	uint8_t value;
+
+	inj_begin();
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"KEEP", 4), ENTELEA_OK);
+	zassert_equal(entelea_storage_test_backend_read(ENTELEA_PART_KV, 0,
+						       protected_slot, sizeof(protected_slot)),
+		      ENTELEA_OK);
+	zassert_equal(entelea_storage_test_backend_read(ENTELEA_PART_KV, 3960,
+						       protected_tag, sizeof(protected_tag)),
+		      ENTELEA_OK);
+	zassert_equal(entelea_storage_test_backend_write(ENTELEA_PART_KV, 4096,
+							protected_slot, sizeof(protected_slot)),
+		      ENTELEA_OK);
+	zassert_equal(entelea_storage_test_backend_write(ENTELEA_PART_KV, 4096 + 3960,
+							protected_tag, sizeof(protected_tag)),
+		      ENTELEA_OK);
+	zassert_equal(entelea_store_backend.erase_off(ENTELEA_PART_KV, 0, 4096),
+		      ENTELEA_OK);
+	entelea_kv_test_reset();
+	for (value = 0; value < 14; value++) {
+		zassert_equal(entelea_kv_save(APP2, &value, 1), ENTELEA_OK);
+	}
+	memset(legacy, 0xFF, sizeof(legacy));
+	legacy[0] = 0x31; legacy[1] = 0x4B; legacy[2] = 0x53; legacy[3] = 0x54;
+	legacy[4] = 0x01; legacy[5] = 0xA0; legacy[6] = 0; legacy[7] = 0;
+	legacy[8] = 1; legacy[9] = legacy[10] = legacy[11] = 0;
+	legacy[12] = 4; legacy[13] = 0;
+	memcpy(legacy + 14, "DIFF", 4);
+	zassert_equal(entelea_storage_test_backend_write(ENTELEA_PART_KV, 0,
+							legacy, sizeof(legacy)),
+		      ENTELEA_OK);
+	entelea_kv_test_reset();
+	zassert_equal(entelea_kv_load(APP1, out, sizeof(out)), ENTELEA_E_IO,
+		      "conflicting records with the same sequence are ambiguous");
+	value = 42;
+	zassert_equal(entelea_kv_save(APP2, &value, 1), ENTELEA_E_IO,
+		      "compaction must not choose one conflicting copy");
+	zassert_equal(entelea_storage_test_backend_read(ENTELEA_PART_KV, 0,
+						       after, sizeof(after)),
+		      ENTELEA_OK);
+	zassert_mem_equal(after, legacy, sizeof(after), "target was not erased");
+	inj_end();
 }
 
 /* P1-5：满页复位后续写 + 压实。旧实现：复位时把满页的对页当空页续写
@@ -874,7 +1392,11 @@ ZTEST(framework_store, test_kv_torn_write_rejected)
 	entelea_kv_test_reset();
 	kv_expect(APP1, "OLD", 3);
 
-	inj_tear(2, 2); /* 撕裂提交标记 */
+	inj_tear(2, 2); /* 撕裂校验侧带 */
+	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"NEW2", 4),
+		      ENTELEA_E_IO);
+	kv_expect(APP1, "OLD", 3);
+	inj_tear(3, 2); /* 撕裂原槽提交标记：侧带最终标记尚未写入 */
 	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"NEW2", 4),
 		      ENTELEA_E_IO);
 	kv_expect(APP1, "OLD", 3);
@@ -941,7 +1463,7 @@ ZTEST(framework_store, test_kv_compaction_tear_keeps_data)
 	for (v = 0; v < 14; v++) {
 		zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_OK);
 	}
-	inj_tear(3, 20); /* 压实写序：app1 体/标记、app2 体（撕裂）… */
+	inj_tear(5, 20); /* app1 完整复制后，app2 的体撕裂 */
 	v = 50;
 	zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_E_IO);
 	kv_expect(APP1, "A1", 2);
@@ -963,15 +1485,15 @@ ZTEST(framework_store, test_kv_compaction_tear_keeps_data)
 	v = 89;
 	kv_expect(APP2, &v, 1);
 
-	/* 平局：重置为满页（APP1 + 14×APP2），压实写序 = APP1 体/标记、
-	 * APP2 体/标记、新记录体（第 5 次写撕裂）。 */
+	/* 平局：重置为满页（APP1 + 14×APP2），压实复制两槽后
+	 * 新记录体（第 9 次写）撕裂。 */
 	inj_end();
 	inj_begin();
 	zassert_equal(entelea_kv_save(APP1, (const uint8_t *)"A1", 2), ENTELEA_OK);
 	for (v = 0; v < 14; v++) {
 		zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_OK);
 	}
-	inj_tear(5, 20);
+	inj_tear(9, 20);
 	v = 70;
 	zassert_equal(entelea_kv_save(APP2, &v, 1), ENTELEA_E_IO);
 	v = 13;

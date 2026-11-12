@@ -2,6 +2,7 @@
 /* R04 能力/权限/任务/资源测试（fault-class 矩阵：伪造句柄/越权/撞名/
  * 重复受理/过期取消/并发终态/预算竞争/半注册回滚/仲裁压制/非幂等重试面）。 */
 #include <string.h>
+#include <zephyr/irq_offload.h>
 #include <zephyr/ztest.h>
 #include <entelea/capability.h>
 #include <entelea/events.h>
@@ -38,6 +39,12 @@ static const entelea_clock_t virt_clock = {
 	.sampled = false,
 };
 
+static const entelea_clock_t other_clock = {
+	.read_ms = virt_read_ms,
+	.user = NULL,
+	.clock_id = 0x7A4C,
+};
+
 static void *r04_setup(void)
 {
 	entelea_safety_test_reset();
@@ -46,6 +53,101 @@ static void *r04_setup(void)
 	entelea_task_test_reset();
 	entelea_power_test_reset();
 	return NULL;
+}
+
+struct denied_record {
+	uint16_t app_id;
+	uint16_t detail;
+};
+
+struct denied_isr_input {
+	entelea_principal_t principal;
+	entelea_result_t result;
+};
+
+struct copy_fill_input {
+	entelea_result_t result[ENTELEA_EVT_QUEUE_DEPTH - 1];
+};
+
+static struct denied_record denied_records[2];
+static size_t denied_count;
+K_SEM_DEFINE(deny_block_started, 0, 1);
+K_SEM_DEFINE(deny_block_release, 0, 1);
+K_SEM_DEFINE(deny_delivered, 0, 2);
+
+static void deny_block_work(struct k_work *work)
+{
+	ARG_UNUSED(work);
+	k_sem_give(&deny_block_started);
+	(void)k_sem_take(&deny_block_release, K_FOREVER);
+}
+K_WORK_DEFINE(deny_blocker, deny_block_work);
+
+static void deny_observer(const entelea_event_t *evt, void *user)
+{
+	ARG_UNUSED(user);
+	if (evt->data != NULL && evt->len == sizeof(denied_records[0]) &&
+	    denied_count < ARRAY_SIZE(denied_records)) {
+		memcpy(&denied_records[denied_count++], evt->data,
+		       sizeof(denied_records[0]));
+		k_sem_give(&deny_delivered);
+	}
+}
+
+static void denied_isr(const void *arg)
+{
+	struct denied_isr_input *input = (struct denied_isr_input *)arg;
+
+	input->result = entelea_perm_check(input->principal, ENTELEA_PERM_GPIO,
+					    ENTELEA_PERM_WRITE, 0);
+}
+
+static void fill_isr(const void *arg)
+{
+	struct copy_fill_input *input = (struct copy_fill_input *)arg;
+
+	for (uint32_t i = 0; i < ARRAY_SIZE(input->result); i++) {
+		const entelea_event_t event = {
+			.id = ENTELEA_EVT_BOOT_DONE, .data = &i, .len = sizeof(i),
+		};
+
+		input->result[i] = entelea_evt_publish_copy(&event);
+	}
+}
+
+ZTEST(framework_r04, test_isr_denial_events_preserve_distinct_payloads)
+{
+	struct denied_isr_input first = {.principal = {.app_id = 17}};
+	struct denied_isr_input second = {.principal = {.app_id = 29}};
+	struct copy_fill_input fill = {0};
+	uint32_t dropped = entelea_evt_queue_dropped();
+
+	denied_count = 0;
+	k_sem_reset(&deny_delivered);
+	zassert_equal(entelea_evt_subscribe(ENTELEA_EVT_PERM_DENIED, deny_observer,
+					     NULL), ENTELEA_OK);
+	zassert_true(k_work_submit(&deny_blocker) >= 0);
+	zassert_equal(k_sem_take(&deny_block_started, K_SECONDS(5)), 0);
+	irq_offload(denied_isr, &first);
+	irq_offload(denied_isr, &second);
+	irq_offload(fill_isr, &fill);
+	k_sem_give(&deny_block_release);
+	int first_delivered = k_sem_take(&deny_delivered, K_SECONDS(5));
+	int second_delivered = k_sem_take(&deny_delivered, K_SECONDS(5));
+
+	zassert_equal(first.result, ENTELEA_E_PERM);
+	zassert_equal(second.result, ENTELEA_E_PERM);
+	zassert_equal(first_delivered, 0);
+	zassert_equal(second_delivered, 0);
+	zassert_equal(denied_records[0].app_id, 17, "first ISR payload must survive");
+	zassert_equal(denied_records[1].app_id, 29, "second ISR payload must survive");
+	zassert_equal(denied_records[0].detail, ENTELEA_PERM_WRITE);
+	zassert_equal(denied_records[1].detail, ENTELEA_PERM_WRITE);
+	for (size_t i = 0; i < ARRAY_SIZE(fill.result) - 1; i++) {
+		zassert_equal(fill.result[i], ENTELEA_OK, "queue slot %u", (unsigned)i);
+	}
+	zassert_equal(fill.result[ARRAY_SIZE(fill.result) - 1], ENTELEA_E_BUSY);
+	zassert_equal(entelea_evt_queue_dropped(), dropped + 1);
 }
 
 /* ---- principal：文法/绑定/伪造/过期 ---- */
@@ -153,6 +255,85 @@ ZTEST(framework_r04, test_principal_stale_copy_after_rebind)
 					 ENTELEA_PERM_WRITE, 0),
 		      ENTELEA_OK);
 	entelea_principal_unbind(&a2);
+}
+
+ZTEST(framework_r04, test_principal_generation_exhaustion_never_revives_stale)
+{
+	entelea_perm_table_t empty, privileged;
+	entelea_principal_t first, current;
+
+	entelea_perm_test_reset();
+	entelea_perm_table_init(&empty);
+	entelea_perm_table_init(&privileged);
+	zassert_equal(entelea_perm_parse("power:write:0", &privileged), ENTELEA_OK);
+	zassert_equal(entelea_principal_bind(&first, 11, &empty), ENTELEA_OK);
+	current = first;
+	entelea_principal_unbind(&current);
+
+	for (uint32_t i = 1; i < UINT16_MAX; i++) {
+		zassert_equal(entelea_principal_bind(&current, 11, &empty), ENTELEA_OK);
+		entelea_principal_unbind(&current);
+	}
+	zassert_equal(entelea_principal_bind(&current, 11, &privileged), ENTELEA_OK);
+	zassert_equal(entelea_perm_check(first, ENTELEA_PERM_POWER,
+					 ENTELEA_PERM_WRITE, 0),
+		      ENTELEA_E_PERM, "generation wrap must not revive the old owner");
+	entelea_principal_unbind(&first);
+	zassert_equal(entelea_perm_check(current, ENTELEA_PERM_POWER,
+					 ENTELEA_PERM_WRITE, 0),
+		      ENTELEA_OK, "old owner must not revoke the current owner");
+	entelea_principal_unbind(&current);
+}
+
+ZTEST(framework_r04, test_all_principal_generations_exhausted)
+{
+	entelea_perm_table_t empty;
+	entelea_principal_t current;
+
+	entelea_perm_test_reset();
+	entelea_perm_table_init(&empty);
+	for (uint32_t slot = 0; slot < 4; slot++) {
+		for (uint32_t i = 0; i < UINT16_MAX; i++) {
+			zassert_equal(entelea_principal_bind(&current, 11, &empty),
+				      ENTELEA_OK, "slot=%u generation=%u",
+				      (unsigned)slot, (unsigned)i);
+			entelea_principal_unbind(&current);
+		}
+	}
+	zassert_equal(entelea_principal_bind(&current, 11, &empty), ENTELEA_E_NOMEM,
+		      "all retired slots must refuse a new binding");
+	zassert_equal(current._handle, 0, "failure must not return a usable handle");
+	entelea_perm_test_reset();
+}
+
+ZTEST(framework_r04, test_message_target_requires_bounded_terminator)
+{
+	entelea_perm_table_t table;
+	entelea_principal_t principal;
+	char target[ENTELEA_PERM_MSG_NAME_MAX + 1];
+	char valid[ENTELEA_PERM_MSG_NAME_MAX];
+
+	entelea_perm_table_init(&table);
+	memset(target, 'x', sizeof(target) - 1);
+	target[sizeof(target) - 1] = '\0';
+	memcpy(table.msg_targets[0], target, sizeof(table.msg_targets[0]));
+	memset(valid, 'y', sizeof(valid) - 1);
+	valid[sizeof(valid) - 1] = '\0';
+	memcpy(table.msg_targets[2], valid, sizeof(valid));
+	memcpy(table.msg_targets[3], "bad name!", sizeof("bad name!"));
+	zassert_equal(entelea_principal_bind(&principal, 100, &table), ENTELEA_OK);
+	zassert_equal(entelea_perm_check_msg(principal, target), ENTELEA_E_PERM,
+		      "40-byte name must not read into the next entry");
+	target[ENTELEA_PERM_MSG_NAME_MAX - 1] = '\0';
+	zassert_equal(entelea_perm_check_msg(principal, target), ENTELEA_E_PERM,
+		      "39-byte prefix of an unterminated entry must not match");
+	zassert_equal(entelea_perm_check_msg(principal, valid), ENTELEA_OK,
+		      "valid 39-byte name remains authorized");
+	zassert_equal(entelea_perm_check_msg(principal, "bad name!"), ENTELEA_E_PERM,
+		      "malformed manually supplied names must not authorize");
+	zassert_equal(entelea_perm_check_msg(principal, ""), ENTELEA_E_PERM);
+	zassert_equal(entelea_perm_check_msg(principal, NULL), ENTELEA_E_PARAM);
+	entelea_principal_unbind(&principal);
 }
 
 /* ---- 能力注册：原子回滚/acquire 门/detach ---- */
@@ -489,6 +670,60 @@ ZTEST(framework_r04, test_task_deadline)
 	virt_now = 15000;
 	zassert_equal(entelea_task_submit(ctx, "dl3", 4, 16000, &id2), ENTELEA_OK,
 		      "过期即让位（受理扫描内惰性取消）");
+	entelea_task_test_reset();
+	entelea_perm_test_reset();
+}
+
+ZTEST(framework_r04, test_task_start_requires_known_monotonic_time)
+{
+	entelea_task_test_reset();
+	entelea_perm_test_reset();
+	clock_dead = false;
+	clock_fail_next = false;
+	virt_now = 100;
+	entelea_perm_table_t table;
+	entelea_principal_t ctx;
+	entelea_task_id_t id;
+	entelea_task_t task;
+
+	entelea_perm_table_init(&table);
+	zassert_equal(entelea_principal_bind(&ctx, 12, &table), ENTELEA_OK);
+	zassert_equal(entelea_task_bind_clock(&virt_clock), ENTELEA_OK);
+	zassert_equal(entelea_task_submit(ctx, "blind", 1, 200, &id),
+		      ENTELEA_OK);
+	clock_dead = true;
+	zassert_equal(entelea_task_start(ctx, id), ENTELEA_E_STATE,
+		      "时间不可知时不得开始带截止的任务");
+	zassert_equal(entelea_task_get(id, &task), ENTELEA_OK);
+	zassert_equal(task.state, ENTELEA_TASK_ACCEPTED);
+	zassert_equal(entelea_task_cancel(ctx, id), ENTELEA_OK,
+		      "时间不可知时仍可取消");
+	zassert_equal(entelea_task_release(ctx, id), ENTELEA_OK);
+
+	zassert_equal(entelea_task_submit(ctx, "no-deadline", 2, 0, &id),
+		      ENTELEA_OK);
+	zassert_equal(entelea_task_start(ctx, id), ENTELEA_OK,
+		      "无截止任务不依赖时钟");
+	zassert_equal(entelea_task_cancel(ctx, id), ENTELEA_OK);
+	zassert_equal(entelea_task_release(ctx, id), ENTELEA_OK);
+
+	clock_dead = false;
+	zassert_equal(entelea_task_submit(ctx, "rollback", 3, 200, &id),
+		      ENTELEA_OK);
+	zassert_equal(entelea_task_bind_clock(&other_clock), ENTELEA_E_BUSY,
+		      "在途截止任务不得换到另一时基");
+	zassert_equal(entelea_task_bind_clock(&virt_clock), ENTELEA_OK);
+	virt_now = 99;
+	zassert_equal(entelea_task_start(ctx, id), ENTELEA_E_STATE,
+		      "时钟回退不能放行");
+	zassert_equal(entelea_task_get(id, &task), ENTELEA_OK);
+	zassert_equal(task.state, ENTELEA_TASK_ACCEPTED);
+	virt_now = 101;
+	zassert_equal(entelea_task_start(ctx, id), ENTELEA_OK);
+	zassert_equal(entelea_task_cancel(ctx, id), ENTELEA_OK);
+	zassert_equal(entelea_task_release(ctx, id), ENTELEA_OK);
+	zassert_equal(entelea_task_bind_clock(&other_clock), ENTELEA_OK,
+		      "所有截止任务终态后可切换时基");
 	entelea_task_test_reset();
 	entelea_perm_test_reset();
 }

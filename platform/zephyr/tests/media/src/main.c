@@ -211,4 +211,53 @@ ZTEST(framework_media, test_class_independence)
 	entelea_media_capture_stop(ENTELEA_MEDIA_IMAGE);
 }
 
+ZTEST(framework_media, test_rebind_rejected_until_capture_stopped)
+{
+	entelea_media_test_reset();
+	entelea_perm_test_reset();
+	entelea_perm_table_t table;
+	entelea_principal_t ctx;
+
+	entelea_perm_table_init(&table);
+	zassert_equal(entelea_perm_parse("av:read:0", &table), ENTELEA_OK);
+	zassert_equal(entelea_principal_bind(&ctx, 8, &table), ENTELEA_OK);
+	zassert_equal(bind_fake(ENTELEA_MEDIA_PCM), ENTELEA_OK);
+	zassert_equal(bind_fake(ENTELEA_MEDIA_IMAGE), ENTELEA_OK);
+	zassert_equal(entelea_media_capture_start(ENTELEA_MEDIA_PCM, ctx),
+		      ENTELEA_OK);
+	zassert_equal(
+		entelea_media_bind(ENTELEA_MEDIA_PCM, entelea_media_fake_backend,
+				   (void *)(uintptr_t)ENTELEA_MEDIA_IMAGE),
+		ENTELEA_E_BUSY, "采集中的原后端不能被替换");
+	zassert_equal(entelea_media_state(ENTELEA_MEDIA_PCM),
+		      ENTELEA_MEDIA_CAPTURING);
+	zassert_equal(bind_fake(ENTELEA_MEDIA_IMAGE), ENTELEA_OK,
+		      "其他类别不受影响");
+	entelea_media_capture_stop(ENTELEA_MEDIA_PCM);
+	zassert_equal(entelea_media_fake_backend.state(
+			      (void *)(uintptr_t)ENTELEA_MEDIA_PCM),
+		      ENTELEA_MEDIA_IDLE, "原后端仍可停止");
+	zassert_equal(
+		entelea_media_bind(ENTELEA_MEDIA_PCM, entelea_media_fake_backend,
+				   (void *)(uintptr_t)ENTELEA_MEDIA_IMAGE),
+		ENTELEA_OK, "停止后可重绑");
+
+	zassert_equal(bind_fake(ENTELEA_MEDIA_PCM), ENTELEA_OK);
+	zassert_equal(entelea_media_capture_start(ENTELEA_MEDIA_PCM, ctx),
+		      ENTELEA_OK);
+	entelea_media_fake_fail_next(ENTELEA_MEDIA_PCM);
+	entelea_media_frame_t frame;
+
+	zassert_equal(entelea_media_poll(ENTELEA_MEDIA_PCM, &frame), ENTELEA_E_IO);
+	zassert_equal(
+		entelea_media_bind(ENTELEA_MEDIA_PCM, entelea_media_fake_backend,
+				   (void *)(uintptr_t)ENTELEA_MEDIA_IMAGE),
+		ENTELEA_E_BUSY, "失败态的后端须先显式停止");
+	entelea_media_capture_stop(ENTELEA_MEDIA_PCM);
+	zassert_equal(
+		entelea_media_bind(ENTELEA_MEDIA_PCM, entelea_media_fake_backend,
+				   (void *)(uintptr_t)ENTELEA_MEDIA_IMAGE),
+		ENTELEA_OK);
+}
+
 ZTEST_SUITE(framework_media, NULL, media_setup, NULL, NULL, NULL);

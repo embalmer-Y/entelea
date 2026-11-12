@@ -5,7 +5,7 @@
  * 仓库；用后 mbedtls 风格 zeroize——本闸手写显式清零）。
  * 两轮（防抖真测）：connect→DHCP→dep good×2→UP→disconnect→
  * dep bad→DOWN（立即）；第二轮再 UP（DOWN→UP 需连续 2 次 good——
- * DEGRADED 中间态可见）。任一环节失败 → system_fail fail-safe。
+ * DEGRADED 中间态可见）。诊断失败停用网络依赖，不伪装成硬件安全故障。
  * 主线程阻塞等待安全：patrol 在 sysworkq（喂狗+通道重排）。 */
 #include <errno.h>
 #include <string.h>
@@ -24,6 +24,9 @@
 #include <entelea/wdt.h>
 #include "boot_steps.h"
 #include "clock.h"
+#include "wifi_credentials.h"
+#include "wifi_observer.h"
+#include "../../../secure_zero.h"
 
 #define CHK(cond, msg) do { \
 	bool ok_ = (cond); \
@@ -35,21 +38,17 @@
 
 static entelea_clock_t platform_clock;
 
-struct gate_credentials {
-	uint8_t ssid[32];
-	uint8_t psk[63];
-	uint8_t ssid_length;
-	uint8_t psk_length;
-};
-
 static struct net_mgmt_event_callback wifi_cb;
 static struct net_mgmt_event_callback ipv4_cb;
+static struct net_mgmt_event_callback iface_cb;
 static struct net_if *test_iface;
+static struct entelea_wifi_observer wifi_observer;
 static K_SEM_DEFINE(connected, 0, 1);
 static K_SEM_DEFINE(disconnected, 0, 1);
 static K_SEM_DEFINE(dhcp_bound, 0, 1);
 static atomic_t connect_status;
 static atomic_t disconnect_status;
+static bool connect_requested;
 
 static int uart_read_exact(const struct device *uart, uint8_t *buf,
 			   size_t size, k_timepoint_t end)
@@ -67,35 +66,31 @@ static int uart_read_exact(const struct device *uart, uint8_t *buf,
 	return 0;
 }
 
-static int read_credentials(struct gate_credentials *credentials)
+struct credential_uart_reader {
+	const struct device *uart;
+	k_timepoint_t end;
+};
+
+static int p4c1_uart_read(void *user, uint8_t *dst, size_t size)
+{
+	const struct credential_uart_reader *reader = user;
+
+	return uart_read_exact(reader->uart, dst, size, reader->end);
+}
+
+static int read_credentials(struct entelea_wifi_credentials *credentials)
 {
 	/* P4C1：magic + u8 ssid_len + u8 psk_len + ssid + psk（30s 窗）。 */
-	const struct device *uart = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
-	k_timepoint_t end = sys_timepoint_calc(K_SECONDS(30));
-	uint8_t header[6];
-	int ret;
+	struct credential_uart_reader reader = {
+		.uart = DEVICE_DT_GET(DT_CHOSEN(zephyr_console)),
+		.end = sys_timepoint_calc(K_SECONDS(30)),
+	};
 
-	if (!device_is_ready(uart)) {
+	if (!device_is_ready(reader.uart)) {
 		return -ENODEV;
 	}
 	printk("[hw-wifi] CONFIG_WAIT (P4C1: ssid/psk over console)\n");
-	ret = uart_read_exact(uart, header, sizeof(header), end);
-	if (ret) {
-		return ret;
-	}
-	if (memcmp(header, "P4C1", 4) || !header[4] || header[4] > 32 ||
-	    header[5] < 8 || header[5] > 63) {
-		return -EINVAL;
-	}
-	credentials->ssid_length = header[4];
-	credentials->psk_length = header[5];
-	ret = uart_read_exact(uart, credentials->ssid,
-			      credentials->ssid_length, end);
-	if (ret) {
-		return ret;
-	}
-	return uart_read_exact(uart, credentials->psk,
-			       credentials->psk_length, end);
+	return entelea_wifi_read_p4c1(credentials, p4c1_uart_read, &reader);
 }
 
 static void network_event(struct net_mgmt_event_callback *cb, uint64_t event,
@@ -107,24 +102,41 @@ static void network_event(struct net_mgmt_event_callback *cb, uint64_t event,
 		return;
 	}
 	if (event == NET_EVENT_IPV4_DHCP_BOUND) {
+		entelea_wifi_observer_event(&wifi_observer, ENTELEA_WIFI_DHCP_BOUND,
+					    (uint64_t)k_uptime_get());
 		k_sem_give(&dhcp_bound);
+		return;
+	}
+	if (event == NET_EVENT_IPV4_DHCP_STOP ||
+	    event == NET_EVENT_IPV4_ADDR_DEL) {
+		entelea_wifi_observer_event(&wifi_observer, ENTELEA_WIFI_DHCP_LOST,
+					    (uint64_t)k_uptime_get());
+		return;
+	}
+	if (event == NET_EVENT_IF_DOWN) {
+		entelea_wifi_observer_event(&wifi_observer,
+					    ENTELEA_WIFI_DISCONNECTED,
+					    (uint64_t)k_uptime_get());
 		return;
 	}
 	status = cb->info_length == sizeof(struct wifi_status) ? cb->info : NULL;
 	if (event == NET_EVENT_WIFI_CONNECT_RESULT) {
 		atomic_set(&connect_status, status ? status->status : -EIO);
+		entelea_wifi_observer_event(&wifi_observer,
+			status && status->status == 0 ? ENTELEA_WIFI_ASSOCIATED :
+							ENTELEA_WIFI_DISCONNECTED,
+			(uint64_t)k_uptime_get());
 		k_sem_give(&connected);
 	} else if (event == NET_EVENT_WIFI_DISCONNECT_RESULT) {
 		atomic_set(&disconnect_status, status ? status->status : -EIO);
+		entelea_wifi_observer_event(&wifi_observer,
+					    ENTELEA_WIFI_DISCONNECTED,
+					    (uint64_t)k_uptime_get());
 		k_sem_give(&disconnected);
-		/* P3-8（review）：命令化 disconnect 事件=命令响应；非命令性
-		 * 掉链（AP 侧断）同经此事件——观测源真化：直连 dep bad
-		 * （[thread] 面——mgmt 回调线程可调）。 */
-		(void)entelea_dep_report(ENTELEA_DEP_NET, false, 0);
 	}
 }
 
-static int connect_and_report(const struct gate_credentials *credentials,
+static int connect_and_report(const struct entelea_wifi_credentials *credentials,
 			      int attempt)
 {
 	char address[NET_IPV4_ADDR_LEN];
@@ -142,7 +154,10 @@ static int connect_and_report(const struct gate_credentials *credentials,
 	k_sem_reset(&connected);
 	k_sem_reset(&dhcp_bound);
 	atomic_set(&connect_status, -EINPROGRESS);
+	entelea_wifi_observer_event(&wifi_observer, ENTELEA_WIFI_DISCONNECTED,
+				    (uint64_t)k_uptime_get());
 	printk("[hw-wifi] CONNECT_BEGIN attempt=%d\n", attempt);
+	connect_requested = true;
 	ret = net_mgmt(NET_REQUEST_WIFI_CONNECT, test_iface, &params,
 		       sizeof(params));
 	if (ret) {
@@ -169,15 +184,22 @@ static int connect_and_report(const struct gate_credentials *credentials,
 	printk("[hw-wifi] DHCP_BOUND attempt=%d address=%s\n", attempt,
 	       address);
 
-	/* 观测源实装：真实关联+DHCP 成功 = network 依赖 good。防抖（连续
-	 * 2 次）→ UP；中间态 DEGRADED 在第 1 次后可见。 */
-	(void)entelea_dep_report(ENTELEA_DEP_NET, true, 0);
+	if (!entelea_wifi_observer_sample(&wifi_observer,
+					  net_if_is_up(test_iface),
+					  (uint64_t)k_uptime_get())) {
+		return -EIO;
+	}
 	entelea_dep_state_t mid = entelea_dep_state(ENTELEA_DEP_NET);
 
 	printk("[hw-wifi] dep NET after 1st good=%s\n",
 	       mid == ENTELEA_DEP_DEGRADED ? "DEGRADED" :
 	       mid == ENTELEA_DEP_UP ? "UP" : "DOWN");
-	(void)entelea_dep_report(ENTELEA_DEP_NET, true, 0);
+	k_sleep(K_MSEC(ENTELEA_NET_HB_PERIOD_MS));
+	if (!entelea_wifi_observer_sample(&wifi_observer,
+					  net_if_is_up(test_iface),
+					  (uint64_t)k_uptime_get())) {
+		return -EIO;
+	}
 	if (entelea_dep_state(ENTELEA_DEP_NET) != ENTELEA_DEP_UP) {
 		return -EIO;
 	}
@@ -205,11 +227,10 @@ static int disconnect_and_report(void)
 	net_dhcpv4_stop(test_iface);
 	printk("[hw-wifi] DISCONNECT_OK\n");
 
-	/* 观测源实装：断链 = bad → DOWN 立即（失败侧保守）。 */
-	(void)entelea_dep_report(ENTELEA_DEP_NET, false, 0);
 	if (entelea_dep_state(ENTELEA_DEP_NET) != ENTELEA_DEP_DOWN) {
 		return -EIO;
 	}
+	connect_requested = false;
 	printk("[hw-wifi] dep NET DOWN (bad -> immediate)\n");
 	return 0;
 }
@@ -227,11 +248,10 @@ int main(void)
 	entelea_supervision_boot(entelea_platform_boot_steps,
 				 ENTELEA_PLATFORM_BOOT_STEP_COUNT);
 
-	static struct gate_credentials credentials = {0};
+	static struct entelea_wifi_credentials credentials = {0};
 	int passed = 0;
 	int ret;
-	static volatile uint8_t *cred_z =
-		(volatile uint8_t *)&credentials; /* fail 路径同清（P3-1） */
+	bool callbacks_registered = false;
 
 	test_iface = net_if_get_default();
 	CHK(test_iface && device_is_ready(net_if_get_device(test_iface)),
@@ -244,9 +264,14 @@ int main(void)
 				     NET_EVENT_WIFI_CONNECT_RESULT |
 				     NET_EVENT_WIFI_DISCONNECT_RESULT);
 	net_mgmt_init_event_callback(&ipv4_cb, network_event,
-				     NET_EVENT_IPV4_DHCP_BOUND);
+				     NET_EVENT_IPV4_DHCP_BOUND |
+				     NET_EVENT_IPV4_DHCP_STOP |
+				     NET_EVENT_IPV4_ADDR_DEL);
+	net_mgmt_init_event_callback(&iface_cb, network_event, NET_EVENT_IF_DOWN);
 	net_mgmt_add_event_callback(&wifi_cb);
 	net_mgmt_add_event_callback(&ipv4_cb);
+	net_mgmt_add_event_callback(&iface_cb);
+	callbacks_registered = true;
 	for (int attempt = 1; attempt <= 2; attempt++) {
 		ret = connect_and_report(&credentials, attempt);
 		if (ret == 0) {
@@ -259,21 +284,33 @@ int main(void)
 		passed++;
 		k_sleep(K_SECONDS(1));
 	}
+	CHK(passed == 2, "association+dhcp+dep-up/down x2/2");
 	net_mgmt_del_event_callback(&wifi_cb);
 	net_mgmt_del_event_callback(&ipv4_cb);
-	/* 凭据显式清零（无 mbedtls 依赖的手写 zeroize）。 */
-	for (size_t i = 0; i < sizeof(credentials); i++) {
-		cred_z[i] = 0;
-	}
-	CHK(passed == 2, "association+dhcp+dep-up/down x2/2");
+	net_mgmt_del_event_callback(&iface_cb);
+	callbacks_registered = false;
+	entelea_secure_zero(&credentials, sizeof(credentials));
 	printk("[hw-wifi] PASS: wifi/netmon loop closed (net dep live)\n");
 	k_sleep(K_FOREVER); /* 安全常驻（patrol 喂狗） */
 	return 0;
 
 fail:
-	for (size_t i = 0; i < sizeof(credentials); i++) {
-		cred_z[i] = 0; /* 读中途失败的部分凭据同清（review P3-1） */
+	if (callbacks_registered && connect_requested) {
+		int cleanup_ret = disconnect_and_report();
+
+		if (cleanup_ret != 0) {
+			net_dhcpv4_stop(test_iface);
+			printk("[hw-wifi] disconnect unconfirmed rc=%d\n", cleanup_ret);
+		}
 	}
-	entelea_safety_system_fail(ENTELEA_FAIL_BOOT(7));
+	if (callbacks_registered) {
+		net_mgmt_del_event_callback(&wifi_cb);
+		net_mgmt_del_event_callback(&ipv4_cb);
+		net_mgmt_del_event_callback(&iface_cb);
+	}
+	(void)entelea_dep_mark_down(ENTELEA_DEP_NET);
+	entelea_secure_zero(&credentials, sizeof(credentials));
+	printk("[hw-wifi] diagnostic stopped; network dependency DOWN\n");
+	k_sleep(K_FOREVER);
 	return 0;
 }

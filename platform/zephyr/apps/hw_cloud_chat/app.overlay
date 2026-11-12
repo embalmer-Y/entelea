@@ -18,3 +18,15 @@
 &sdhc0 {
 	status = "disabled";
 };
+
+&retainedmem {
+	status = "okay";
+	ranges;
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	d12retained: d12-retained {
+		compatible = "zephyr,retained-ram";
+		status = "okay";
+	};
+};

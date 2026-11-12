@@ -4,9 +4,9 @@
  * 安全异常类掉电留存。8KB = 两页 × 4KB（擦除块对齐）× 64 槽 × 64B 定长。
  * "单条覆盖最旧"不可行（擦除单位=页）→ 两页乒乓：active 页写满 → 翻页
  * 续写（页首写前擦对页）——掉电始终保留最近 ~64 条（翻页瞬间 ≤128）。
- * RF1（review P1-6）：提交标记最后落（体先写、magic 后写）；逐槽三分类
- * （擦除/有效/垃圾，不断尾、坏槽不复用）；读错误显式传播（init 不就绪、
- * read 返回负错误码——读失败≠空环）；写失败烧毁该槽与 seq。
+ * RF1（review P1-6）：体及 CRC、原 magic、独立提交标记依次写；
+ * 未提交槽跳过，已提交的损坏槽显式报错；读错误使 init 不就绪、
+ * read 返回负错误码；写失败烧毁该槽与 seq。
  * 相对旧实现调整：boot 打印留在平台层（本模块 printk-free，经 read API
  * 消费）。全量内存环保留（旧 commit.c 面）归 R04 观测面，本环只落异常类。
  */
@@ -27,7 +27,8 @@ static struct {
 	uint32_t next_seq;   /* 全局单调（1 起；0/0xFFFFFFFF 不用） */
 } au;
 
-/* 槽小端布局（64B）：magic|seq|t_ms|ch_idx|actor|kind|_pad|evt|res|value|pad */
+/* 槽小端布局（64B）：magic|seq|t_ms|ch_idx|actor|kind|_pad|evt|res|
+ * value|crc16|tag|commit|pad。旧槽的 crc/tag/commit 均为擦除值。 */
 #define OFF_MAGIC  0
 #define OFF_SEQ    4
 #define OFF_TMS    8
@@ -38,6 +39,17 @@ static struct {
 #define OFF_EVT   22
 #define OFF_RES   24
 #define OFF_VALUE 28
+#define OFF_CRC   32
+#define OFF_TAG   34
+#define OFF_COMMIT 36
+#define AUDIT_TAG_MAGIC 0xA56CU
+#define AUDIT_TAG_COMMIT 0x31435641U
+
+enum slot_kind {
+	SLOT_INCOMPLETE,
+	SLOT_VALID,
+	SLOT_CORRUPT,
+};
 
 static void put_le64(uint8_t *p, uint64_t v)
 {
@@ -59,6 +71,9 @@ static void slot_encode(uint8_t *s, const entelea_storage_audit_entry_t *e,
 	entelea_put_le16(s + OFF_EVT, evt);
 	entelea_put_le32(s + OFF_RES, (uint32_t)(int32_t)e->res);
 	entelea_put_le32(s + OFF_VALUE, e->value_u);
+	entelea_put_le16(s + OFF_CRC, entelea_crc16(s + OFF_SEQ, OFF_CRC - OFF_SEQ));
+	entelea_put_le16(s + OFF_TAG, AUDIT_TAG_MAGIC);
+	entelea_put_le32(s + OFF_COMMIT, AUDIT_TAG_COMMIT);
 }
 
 static void slot_decode(const uint8_t *s, entelea_storage_audit_entry_t *e)
@@ -83,13 +98,28 @@ static entelea_result_t slot_read(uint8_t page, uint8_t i, uint8_t *s)
 		       : ENTELEA_E_IO;
 }
 
-/* 有效 = magic 落定（体先于 magic 写成）且 seq 合法。 */
-static bool slot_valid(const uint8_t *s)
+static enum slot_kind slot_kind(const uint8_t *s)
 {
 	uint32_t seq = entelea_get_le32(s + OFF_SEQ);
+	uint32_t commit = entelea_get_le32(s + OFF_COMMIT);
+	bool fields_valid = entelea_get_le32(s + OFF_MAGIC) == AUDIT_MAGIC &&
+			    seq != 0 && seq != UINT32_MAX;
+	bool legacy = entelea_get_le32(s + OFF_CRC) == UINT32_MAX &&
+		      commit == UINT32_MAX;
 
-	return entelea_get_le32(s + OFF_MAGIC) == AUDIT_MAGIC && seq != 0 &&
-	       seq != UINT32_MAX;
+	if (legacy) {
+		return fields_valid ? SLOT_VALID : SLOT_INCOMPLETE;
+	}
+	if (commit == UINT32_MAX) {
+		return SLOT_INCOMPLETE;
+	}
+	if (commit != AUDIT_TAG_COMMIT ||
+	    entelea_get_le16(s + OFF_TAG) != AUDIT_TAG_MAGIC || !fields_valid ||
+	    entelea_get_le16(s + OFF_CRC) !=
+		    entelea_crc16(s + OFF_SEQ, OFF_CRC - OFF_SEQ)) {
+		return SLOT_CORRUPT;
+	}
+	return SLOT_VALID;
 }
 
 static bool slot_erased(const uint8_t *s)
@@ -102,16 +132,19 @@ static bool slot_erased(const uint8_t *s)
 	return true;
 }
 
-/* 两段写（槽 64B 对齐、写块 ≤4）：体先、magic 后。 */
 static entelea_result_t slot_commit(uint8_t page, uint8_t i, const uint8_t *s)
 {
 	uint32_t off = page * AUDIT_PAGE_SZ + i * AUDIT_SLOT_SZ;
+	uint8_t back[AUDIT_SLOT_SZ];
 
 	if (entelea_store_backend.write(ENTELEA_PART_AUDIT, off + OFF_SEQ,
-					s + OFF_SEQ,
-					AUDIT_SLOT_SZ - OFF_SEQ) != ENTELEA_OK ||
+					s + OFF_SEQ, OFF_COMMIT - OFF_SEQ) != ENTELEA_OK ||
 	    entelea_store_backend.write(ENTELEA_PART_AUDIT, off, s, OFF_SEQ) !=
-		    ENTELEA_OK) {
+		    ENTELEA_OK ||
+	    entelea_store_backend.write(ENTELEA_PART_AUDIT, off + OFF_COMMIT,
+					s + OFF_COMMIT, 4) != ENTELEA_OK ||
+	    slot_read(page, i, back) != ENTELEA_OK ||
+	    memcmp(back, s, sizeof(back)) != 0) {
 		return ENTELEA_E_IO;
 	}
 	return ENTELEA_OK;
@@ -130,7 +163,12 @@ static entelea_result_t page_scan(uint8_t page, uint32_t *max_seq,
 		if (slot_read(page, i, s) != ENTELEA_OK) {
 			return ENTELEA_E_IO;
 		}
-		if (slot_valid(s) && entelea_get_le32(s + OFF_SEQ) > *max_seq) {
+		enum slot_kind kind = slot_kind(s);
+
+		if (kind == SLOT_CORRUPT) {
+			return ENTELEA_E_IO;
+		}
+		if (kind == SLOT_VALID && entelea_get_le32(s + OFF_SEQ) > *max_seq) {
 			*max_seq = entelea_get_le32(s + OFF_SEQ);
 		}
 		if (!slot_erased(s)) {
@@ -192,6 +230,9 @@ entelea_result_t entelea_storage_audit_append(
 		au.next_slot = 0;
 		au.active_page ^= 1U; /* 写满翻页（对页在下次页首写前擦） */
 	}
+	if (r != ENTELEA_OK) {
+		au.ready = false;
+	}
 	return r;
 }
 
@@ -214,9 +255,16 @@ int32_t entelea_storage_audit_read(entelea_storage_audit_entry_t *out,
 			uint8_t slot[AUDIT_SLOT_SZ];
 
 			if (slot_read(p, i, slot) != ENTELEA_OK) {
+				au.ready = false;
 				return ENTELEA_E_IO;
 			}
-			if (slot_valid(slot)) {
+			enum slot_kind kind = slot_kind(slot);
+
+			if (kind == SLOT_CORRUPT) {
+				au.ready = false;
+				return ENTELEA_E_IO;
+			}
+			if (kind == SLOT_VALID) {
 				slot_decode(slot, &all[n]);
 				n++;
 			}

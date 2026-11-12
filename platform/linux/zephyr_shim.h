@@ -3,17 +3,33 @@
 #define ENTELEA_LINUX_ZEPHYR_SHIM_H
 /* Linux 宿主的 Zephyr 内核面最小垫片：framework 机制源无修改地在
  * Linux 编译（D02"同源合同"纪律——一套源码、两侧平台适配）。
- * 提供：k_mutex 族、k_sleep、k_is_in_isr、irq_lock/unlock、atomic_t、
+ * 提供：k_mutex/k_spinlock、k_sleep、k_is_in_isr、irq_lock/unlock、atomic_t、
  * K_MSGQ/sysworkq 面（事件 ISR 队列在 Linux 宿主降级为同步分发——
  * 无 ISR 上下文；k_work 不上机：wdt 巡检经测试直调）。 */
 #define _POSIX_C_SOURCE 200809L
 #include <pthread.h>
+#include <sched.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <time.h>
 
 struct k_mutex { pthread_mutex_t m; };
 #define Z_MUTEX_INITIALIZER(name) { PTHREAD_MUTEX_INITIALIZER }
+struct k_spinlock { atomic_bool locked; };
+typedef unsigned int k_spinlock_key_t;
+static inline k_spinlock_key_t k_spin_lock(struct k_spinlock *lock)
+{
+	while (atomic_exchange_explicit(&lock->locked, true, memory_order_acquire)) {
+		sched_yield();
+	}
+	return 0;
+}
+static inline void k_spin_unlock(struct k_spinlock *lock, k_spinlock_key_t key)
+{
+	(void)key;
+	atomic_store_explicit(&lock->locked, false, memory_order_release);
+}
 static inline int k_mutex_lock(struct k_mutex *mu, int64_t timeout)
 {
 	(void)timeout;

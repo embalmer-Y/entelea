@@ -1,4 +1,4 @@
-# R01 构建与依赖边界
+# 构建与依赖边界
 
 默认只构建可移植公共库和主机测试，无 Zephyr/WAMR/HAL 依赖，
 不自动下载依赖、应用补丁、访问设备或调用模型。
@@ -17,26 +17,26 @@ cmake --build build/common-only
 
 ## 工作区、Zephyr 构建与 SDK 目录合同
 
-本节是用户确认的后续构建布局，不是已经交付的 Zephyr 构建入口。
-R01 只有主机公共库；R02 的应用装配、依赖准备、SDK/工具链前置校验
-尚未实现，不能因路径已规定就声称固件可构建或平台验收通过。
+现有 Zephyr 入口为 `tools/build_zephyr.py`，按目标核验固定源码、
+模块、SDK/工具链并检查生效配置。实际构建和运行证据见对应验证文档；
+构建入口存在不等于任一目标的物理或产品验收通过。
 
 | 类别 | 目录与约束 |
 | --- | --- |
 | 新版受管理源码 | 按需放仓库忽略的 `.deps/<dependency>`，如 `.deps/zephyr`、`.deps/hal_espressif`；不提前创建空目录或复制全部旧依赖 |
 | 外部源码复用 | 可显式指定固定、完整核验通过的外部 checkout，只读消费；现有 `../entelea-legacy/.deps` 保持不变，不能借复用之名修补归档 |
 | 构建产物 | 统一放本仓库 `build/<batch>-<target>`；R01 保留已记录的 `build/r01` 等路径，R02 的 native/板级/诊断/实验目标各用独立目录 |
-| Python 环境 | 未来有需要时按批准的依赖/锁文件建立本仓库 `.venv`；不继承旧 `agent-venv` 或搬迁前的 shebang，不为纯 R01 测试额外安装包 |
+| Python 环境 | 按已批准依赖使用明确的解释器；旧环境只可在路径有效时只读复用，不假定搬迁前 shebang 仍可执行，不自动安装包 |
 | Zephyr SDK | 安装在 Project 外，通过显式 `ZEPHYR_SDK_INSTALL_DIR` 选择；只读复用，不自动发现替代 SDK、不执行共享安装的 setup、不修改注册表或 shell 配置 |
 
 本机已只读核实的参考环境是 `/home/emb/zephyr-sdk-1.0.1`：
 `sdk_version` 为 `1.0.1`，实际 RISC-V GCC 为 `14.3.0`，
 编译器位于 `gnu/riscv64-zephyr-elf/bin/riscv64-zephyr-elf-gcc`。
 这是本机参考位置/版本，不是跨机器硬编码路径，也不批准所有未来板卡组合。
-R02 在冻结实际参考板时还须明确该目标的 SDK/工具链版本及验证范围；
-不同主机或目标的变更要显式记录，不能凭目录名认定版本。
+参考板与本机工具链的历史核验范围见 `docs/r16-validation.md`；
+不同主机或目标的变更仍须显式记录，不能凭目录名认定版本。
 
-R02 构建入口在调用 CMake/Twister 前必须落实并负测：
+构建入口在调用 CMake/Twister 前须落实并负测：
 
 1. 显式选择 `ZEPHYR_BASE` 和实际模块目录，核验固定提交、完整批准补丁、
    staged/untracked/mode 差异；现有核验器可复用，不只做 reverse-check。
@@ -58,15 +58,16 @@ SDK 没有移动。外移工具/虚拟环境/缓存可能仍含旧绝对路径�
 
 ## 来源与核验
 
-[固定依赖](dependencies.json)目前只涵盖未来首个Zephyr/Wasm目标的
+[固定依赖](dependencies.json)涵盖已采用的 Zephyr/Wasm 目标的
 Zephyr、WAMR、HAL，不宣称完整SDK/所有可选模块可重现。
 其他模块在需要时从固定旧 `docs/provenance.md` / 锁文件选择并重新核验。
 主机公共库不消费这三个依赖；元数据通过不表示固件构建通过。
 
-Forge 的编程引擎已选 OpenHands Software Agent SDK，但版本/接入尚未验证。
+Forge 的编程引擎已选 OpenHands Software Agent SDK，独立工作区已有
+1.60.2 接入试验；工作区完整版本锚点、隔离和产品验收尚未闭合。
 它是独立工厂的 Python/工程依赖，不是 Zephyr SDK 或 MCU 公共库依赖，
-不加入此固件三项 pin；实际接入时在获批的新 Forge 工程中固定来源、许可
-及独立锁文件，不借本次文档决策自动安装。边界见
+不加入此固件三项 pin；需在独立 Forge 工程中固定来源、许可及锁文件。
+边界见
 [工厂引擎决策](../docs/rebuild-plan.md#71-工厂编程引擎已确认决策)。
 
 ```sh
@@ -95,12 +96,10 @@ patches/*.patch，内容完整性仍强制按基线SHA256核验。
 
 [源分类](source-policy.json)是CMake生产/兼容/测试/诊断源表。
 不按目录宽泛豁免：每个C源必须出现一次；诊断必须给出具体目标与具体源，
-只能在tests/diagnostics下，独立EXCLUDE_FROM_ALL，不能作为common/compat输入。
-本轮没有实际诊断目标，不复制旧硬件工程或为其建立空目录。
-新增源后需重新配置；配置及CTest均执行架构检查。
-公共头/机制限制依赖、直接时间源和输出调用；R01保护入口列表为空，
-因此任何非诊断源直接输出都失败。R02必须单独评审保护实现，
-不能把旧driver_dispatch路径当已迁入的隐式白名单。
+只能在tests/diagnostics下，独立EXCLUDE_FROM_ALL，不能作为common/compat输入。Zephyr 框架及平台/测试源也有明确分类；
+新增源后需更新分类并重新配置。公共头/机制限制依赖、直接时间源和
+输出调用；保护驱动入口在 `protected_output_sources` 中精确列出，
+不能把其他旧 driver 路径当隐式白名单。
 这是正则/显式来源机械约束，不是完整C调用图、漏洞审计或物理安全证明；
 不替代旧L5的全部规则，其暂不适用规则在对应实现批次恢复。
 
@@ -110,4 +109,5 @@ CTest包括C合同、架构、800项固定来源、Python治理负测、
 依赖元数据与旧C源码对拍。legacy_equivalence从固定Git对象读取，
 在临时目录仅替换私有include、编译时重命名原符号，与迁入真实ts符号及
 Python hashlib/独立CBOR字节向量对比；不修改归档、不由新算法生成oracle。
-完整TSAP/COSE验签、运行时隔离、Lua有界停止和实际安全输出均未在R01验证。
+R01 本身不覆盖完整 TSAP/COSE、运行时隔离、Lua VM 或物理输出；
+后续各批证据与当前未测边界见 [RF1 复核](../docs/rf1-validation.md)。

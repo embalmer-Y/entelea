@@ -83,6 +83,11 @@ entelea_result_t entelea_storage_meta_write(const void *buf, uint16_t len);
 entelea_result_t entelea_storage_meta_read(void *buf, uint16_t cap,
 					   uint16_t *len);
 
+/** [thread] 两副本必须均可读、CRC 有效且内容一致；否则 E_IO。
+ * 供不能接受回退到旧记录的调用方使用；cap 不足返回 E_RANGE。 */
+entelea_result_t entelea_storage_meta_read_mirrored(void *buf, uint16_t cap,
+						    uint16_t *len);
+
 /* ---- noinit 留痕（一次性） ---- */
 
 /** [any] 留痕（覆盖式；失败不可返回——静默丢弃，读取面如实呈现无留痕）。 */
@@ -109,13 +114,15 @@ typedef struct {
  * 且不就绪（读失败≠空环）。未就绪 append 拒绝（E_STATE）。 */
 entelea_result_t entelea_storage_audit_init(void);
 
-/** [thread] 追加一条（体先写、magic 后写；写满 64 槽翻页，页首写前擦
- * 对页）。写失败 = E_IO 且该槽/seq 烧毁不重写。低频异常类事件。 */
+/** [thread] 追加一条（体与 CRC、magic、独立提交标记依次写并回读；
+ * 写满 64 槽翻页）。写失败 = E_IO，效果可能已落盘；该槽不重写。
+ * 低频异常类事件。 */
 entelea_result_t entelea_storage_audit_append(
 	const entelea_storage_audit_entry_t *e, uint16_t evt);
 
 /** [thread] 按 seq 升序读最近 max 条（两页过渡态 ≤128）；返回条数，
- * 或负错误码（out 空 = E_PARAM；未就绪 = E_STATE；读错误 = E_IO）。 */
+ * 或负错误码（out 空 = E_PARAM；未就绪 = E_STATE；
+ * 读错误或受保护记录损坏 = E_IO）。 */
 int32_t entelea_storage_audit_read(entelea_storage_audit_entry_t *out,
 				   size_t max);
 

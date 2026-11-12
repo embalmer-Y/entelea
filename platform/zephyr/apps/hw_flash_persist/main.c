@@ -112,6 +112,9 @@ int main(void)
 		printk("[hw-flash] P3: already verified; parking resident\n");
 	} else {
 		/* ---- P1：写入面 ---- */
+		CHK(entelea_trial_restore() == ENTELEA_OK &&
+			    entelea_trial_state() == ENTELEA_TRIAL_NONE,
+		    "P1 trial storage is empty before the diagnostic meta write");
 		CHK(entelea_storage_meta_write(META_PAT, sizeof(META_PAT)) ==
 			    ENTELEA_OK,
 		    "P1 meta write");

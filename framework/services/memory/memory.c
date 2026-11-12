@@ -9,8 +9,10 @@
 #include <entelea/memory.h>
 
 static entelea_mem_entry_t chain[ENTELEA_MEM_CHAIN_MAX];
+static uint64_t chain_seq[ENTELEA_MEM_CHAIN_MAX];
 static uint32_t chain_len;
 static uint32_t evicted_count;
+static uint64_t write_seq;
 /* 墓碑列表（review P1 修复：单一墓碑被第二次 delete 覆盖会复活首个
  * 删除区间——改为累计列表）。容量有界；淘汰纪律（计划符合性审查 P2
  * 修复：原"满时覆盖 from 最小者"可使链内已删条目复活）：只复用被新区间
@@ -20,15 +22,16 @@ static uint32_t evicted_count;
 #define ENTELEA_MEM_TOMBSTONES_MAX 8
 static struct {
 	uint64_t from, to;
+	uint64_t through_seq;
 	bool active;
 } tombstones[ENTELEA_MEM_TOMBSTONES_MAX];
 static uint32_t tombstoned_count;
 
-static bool is_tombstoned(uint64_t t)
+static bool is_tombstoned(uint64_t t, uint64_t seq)
 {
 	for (int i = 0; i < ENTELEA_MEM_TOMBSTONES_MAX; i++) {
 		if (tombstones[i].active && t >= tombstones[i].from &&
-		    t <= tombstones[i].to) {
+		    t <= tombstones[i].to && seq <= tombstones[i].through_seq) {
 			return true;
 		}
 	}
@@ -46,13 +49,19 @@ entelea_result_t entelea_mem_write(bool consent, const entelea_mem_entry_t *e)
 	if (e->len == 0 || e->len > ENTELEA_MEM_ENTRY_MAX) {
 		return ENTELEA_E_PARAM;
 	}
+	if (write_seq == UINT64_MAX) {
+		return ENTELEA_E_RANGE;
+	}
 	if (chain_len == ENTELEA_MEM_CHAIN_MAX) {
 		memmove(&chain[0], &chain[1],
 			(chain_len - 1) * sizeof(chain[0]));
+		memmove(&chain_seq[0], &chain_seq[1],
+			(chain_len - 1) * sizeof(chain_seq[0]));
 		chain_len--;
 		evicted_count++; /* 有界：最旧让位（不拒写） */
 	}
-	chain[chain_len++] = *e;
+	chain[chain_len] = *e;
+	chain_seq[chain_len++] = ++write_seq;
 	return ENTELEA_OK;
 }
 
@@ -64,7 +73,7 @@ size_t entelea_mem_read(entelea_mem_entry_t *out, size_t max)
 	size_t n = 0;
 
 	for (uint32_t i = 0; i < chain_len && n < max; i++) {
-		if (is_tombstoned(chain[i].t_ms)) {
+		if (is_tombstoned(chain[i].t_ms, chain_seq[i])) {
 			continue; /* 删除后不复活 */
 		}
 		out[n++] = chain[i];
@@ -100,6 +109,7 @@ entelea_result_t entelea_mem_delete(uint64_t t_from_ms, uint64_t t_to_ms)
 	}
 	tombstones[slot].from = t_from_ms;
 	tombstones[slot].to = t_to_ms;
+	tombstones[slot].through_seq = write_seq;
 	tombstones[slot].active = true;
 	tombstoned_count++;
 	return ENTELEA_OK;
@@ -116,11 +126,22 @@ void entelea_mem_health(entelea_mem_health_t *out)
 }
 
 #ifdef ENTELEA_TEST
+entelea_result_t entelea_mem_test_set_write_seq(uint64_t seq)
+{
+	if (chain_len != 0 || tombstoned_count != 0) {
+		return ENTELEA_E_STATE;
+	}
+	write_seq = seq;
+	return ENTELEA_OK;
+}
+
 void entelea_mem_test_reset(void)
 {
 	memset(chain, 0, sizeof(chain));
+	memset(chain_seq, 0, sizeof(chain_seq));
 	chain_len = 0;
 	evicted_count = 0;
+	write_seq = 0;
 	memset(tombstones, 0, sizeof(tombstones));
 	tombstoned_count = 0;
 }

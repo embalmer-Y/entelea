@@ -15,6 +15,12 @@
 static entelea_trial_state_t state;
 static entelea_trial_candidate_t current;
 static uint32_t last_epoch; /* 最近一次 submit 赋出的纪元（0=从未） */
+static bool initialized;
+
+static entelea_result_t ensure_initialized(void)
+{
+	return initialized ? ENTELEA_OK : entelea_trial_restore();
+}
 
 static void clear_candidate(void)
 {
@@ -25,6 +31,15 @@ entelea_result_t entelea_trial_submit(const entelea_trial_candidate_t *cand)
 {
 	if (cand == NULL || cand->slot >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_PARAM;
+	}
+	entelea_result_t r = ensure_initialized();
+
+	if (r != ENTELEA_OK) {
+		return r;
+	}
+	if (state != ENTELEA_TRIAL_NONE &&
+	    current.slot == ENTELEA_TRIAL_SLOT_UNKNOWN) {
+		return ENTELEA_E_STATE;
 	}
 	if (state == ENTELEA_TRIAL_ACTIVE) {
 		return ENTELEA_E_BUSY; /* 单候选：ACTIVE 期不受理新候选 */
@@ -41,8 +56,11 @@ entelea_result_t entelea_trial_submit(const entelea_trial_candidate_t *cand)
 		return ENTELEA_E_BUSY; /* 槽保留：被拒/超时字节仍受门拒，
 					 * 换槽会使其脱离试用门——重推须同槽 */
 	}
+	if (last_epoch == UINT32_MAX) {
+		return ENTELEA_E_RANGE; /* 禁止回绕复用旧确认对象 */
+	}
 	current = *cand;
-	last_epoch = (last_epoch == UINT32_MAX) ? 1U : last_epoch + 1U;
+	last_epoch++;
 	current.epoch = last_epoch;
 	state = ENTELEA_TRIAL_PENDING_CONFIRM;
 	return ENTELEA_OK;
@@ -52,6 +70,11 @@ entelea_result_t entelea_trial_confirm(const entelea_trial_candidate_t *shown)
 {
 	if (shown == NULL) {
 		return ENTELEA_E_PARAM;
+	}
+	entelea_result_t r = ensure_initialized();
+
+	if (r != ENTELEA_OK) {
+		return r;
 	}
 	if (state != ENTELEA_TRIAL_PENDING_CONFIRM) {
 		return ENTELEA_E_STATE;
@@ -68,6 +91,11 @@ entelea_result_t entelea_trial_confirm(const entelea_trial_candidate_t *shown)
 
 entelea_result_t entelea_trial_reject(void)
 {
+	entelea_result_t r = ensure_initialized();
+
+	if (r != ENTELEA_OK) {
+		return r;
+	}
 	if (state != ENTELEA_TRIAL_PENDING_CONFIRM) {
 		return ENTELEA_E_STATE;
 	}
@@ -77,6 +105,11 @@ entelea_result_t entelea_trial_reject(void)
 
 entelea_result_t entelea_trial_timeout(void)
 {
+	entelea_result_t r = ensure_initialized();
+
+	if (r != ENTELEA_OK) {
+		return r;
+	}
 	if (state != ENTELEA_TRIAL_PENDING_CONFIRM) {
 		return ENTELEA_E_STATE;
 	}
@@ -86,6 +119,11 @@ entelea_result_t entelea_trial_timeout(void)
 
 entelea_result_t entelea_trial_end(void)
 {
+	entelea_result_t r = ensure_initialized();
+
+	if (r != ENTELEA_OK) {
+		return r;
+	}
 	if (state != ENTELEA_TRIAL_ACTIVE) {
 		return ENTELEA_E_STATE;
 	}
@@ -96,13 +134,18 @@ entelea_result_t entelea_trial_end(void)
 
 entelea_trial_state_t entelea_trial_state(void)
 {
-	return state;
+	return initialized ? state : ENTELEA_TRIAL_UNINITIALIZED;
 }
 
 void entelea_trial_current(entelea_trial_candidate_t *out)
 {
 	if (out != NULL) {
-		*out = current;
+		if (initialized) {
+			*out = current;
+		} else {
+			memset(out, 0, sizeof(*out));
+			out->slot = ENTELEA_TRIAL_SLOT_UNKNOWN;
+		}
 	}
 }
 
@@ -110,6 +153,11 @@ entelea_result_t entelea_trial_gate(uint8_t slot, const uint8_t digest[32])
 {
 	if (digest == NULL) {
 		return ENTELEA_E_PARAM;
+	}
+	entelea_result_t r = ensure_initialized();
+
+	if (r != ENTELEA_OK) {
+		return r;
 	}
 	if (state == ENTELEA_TRIAL_NONE ||
 	    (current.slot != ENTELEA_TRIAL_SLOT_UNKNOWN && slot != current.slot)) {
@@ -156,6 +204,17 @@ entelea_result_t entelea_factory_intake(const entelea_factory_candidate_t *fc,
 entelea_result_t entelea_trial_flush(void)
 {
 	uint8_t rec[TRIAL_REC_LEN];
+	uint8_t verify[TRIAL_REC_LEN];
+	uint16_t verify_len = 0;
+	entelea_result_t r = ensure_initialized();
+
+	if (r != ENTELEA_OK) {
+		return r;
+	}
+	if (state != ENTELEA_TRIAL_NONE &&
+	    current.slot == ENTELEA_TRIAL_SLOT_UNKNOWN) {
+		return ENTELEA_E_STATE;
+	}
 
 	rec[0] = TRIAL_PERSIST_VER;
 	rec[1] = (uint8_t)state;
@@ -168,20 +227,70 @@ entelea_result_t entelea_trial_flush(void)
 	rec[8] = (uint8_t)(last_epoch >> 16);
 	rec[9] = (uint8_t)(last_epoch >> 24);
 	memcpy(rec + 10, current.digest, sizeof(current.digest));
-	return entelea_storage_meta_write(rec, sizeof(rec));
+	r = entelea_storage_meta_write(rec, sizeof(rec));
+	if (r != ENTELEA_OK) {
+		return r;
+	}
+	r = entelea_storage_meta_write(rec, sizeof(rec));
+	if (r != ENTELEA_OK) {
+		return r;
+	}
+	r = entelea_storage_meta_read_mirrored(verify, sizeof(verify), &verify_len);
+	if (r != ENTELEA_OK || verify_len != sizeof(rec) ||
+	    memcmp(rec, verify, sizeof(rec)) != 0) {
+		return ENTELEA_E_IO;
+	}
+	return ENTELEA_OK;
+}
+
+static entelea_result_t meta_is_erased(bool *erased)
+{
+	uint8_t block[64];
+	uint32_t size = entelea_storage_part_size(ENTELEA_PART_META);
+
+	*erased = false;
+	if (size != 2U * ENTELEA_STORAGE_META_REC) {
+		return ENTELEA_E_IO;
+	}
+	for (uint32_t off = 0; off < size; off += sizeof(block)) {
+		if (entelea_storage_read(ENTELEA_PART_META, off, block,
+					 sizeof(block)) != ENTELEA_OK) {
+			return ENTELEA_E_IO;
+		}
+		for (size_t i = 0; i < sizeof(block); i++) {
+			if (block[i] != 0xFFU) {
+				return ENTELEA_OK;
+			}
+		}
+	}
+	*erased = true;
+	return ENTELEA_OK;
 }
 
 entelea_result_t entelea_trial_restore(void)
 {
 	uint8_t rec[TRIAL_REC_LEN];
 	uint16_t len = 0;
-	const entelea_result_t r = entelea_storage_meta_read(rec, sizeof(rec), &len);
+	entelea_result_t r;
+
+	if (initialized && !(state == ENTELEA_TRIAL_TIMEOUT &&
+			     current.slot == ENTELEA_TRIAL_SLOT_UNKNOWN)) {
+		return ENTELEA_OK;
+	}
+	r = entelea_storage_meta_read_mirrored(rec, sizeof(rec), &len);
 
 	clear_candidate();
+	initialized = true;
 	if (r == ENTELEA_E_IO) {
-		/* 双副本皆不可读（与从未落盘不可区分）→ NONE（残余见合同）。 */
-		state = ENTELEA_TRIAL_NONE;
-		return ENTELEA_OK;
+		bool erased = false;
+
+		if (meta_is_erased(&erased) == ENTELEA_OK && erased) {
+			state = ENTELEA_TRIAL_NONE;
+			return ENTELEA_OK;
+		}
+		state = ENTELEA_TRIAL_TIMEOUT;
+		current.slot = ENTELEA_TRIAL_SLOT_UNKNOWN;
+		return ENTELEA_E_IO;
 	}
 	const bool whole = r == ENTELEA_OK && len == sizeof(rec);
 	const uint32_t ep = whole ? (uint32_t)rec[6] | ((uint32_t)rec[7] << 8) |
@@ -194,11 +303,10 @@ entelea_result_t entelea_trial_restore(void)
 			    (rec[3] < ENTELEA_APP_SLOT_COUNT && ep != 0U));
 
 	if (!valid) {
-		/* 记录存在但超长/版本/域外/不自洽：fail-closed 约束态，候选槽
-		 * 不可知 → 两槽均受门拒，直至新候选提交并确认。 */
+		/* 记录不自洽：候选槽不可知，两槽均受门拒。 */
 		state = ENTELEA_TRIAL_TIMEOUT;
 		current.slot = ENTELEA_TRIAL_SLOT_UNKNOWN;
-		return ENTELEA_OK;
+		return ENTELEA_E_IO;
 	}
 	if (ep > last_epoch) {
 		last_epoch = ep; /* 单调：恢复不回退纪元计数 */
@@ -220,5 +328,6 @@ void entelea_trial_test_reset(void)
 	state = ENTELEA_TRIAL_NONE;
 	clear_candidate();
 	last_epoch = 0;
+	initialized = false;
 }
 #endif

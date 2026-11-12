@@ -78,6 +78,23 @@ ZTEST(framework_core, test_evt_subscribe_order_and_capacity)
 }
 
 static int isr_evt_seen;
+
+ZTEST(framework_core, test_evt_copy_rejects_bad_payloads)
+{
+	uint8_t bytes[5] = {0};
+	entelea_event_t evt = {.id = ENTELEA_EVT_BOOT_DONE, .data = bytes,
+			       .len = sizeof(bytes)};
+
+	zassert_equal(entelea_evt_publish_copy(NULL), ENTELEA_E_PARAM);
+	zassert_equal(entelea_evt_publish_copy(&evt), ENTELEA_E_RANGE);
+	evt.len = 1;
+	evt.data = NULL;
+	zassert_equal(entelea_evt_publish_copy(&evt), ENTELEA_E_PARAM);
+	evt.id = ENTELEA_EVT_ID_COUNT;
+	evt.len = 0;
+	zassert_equal(entelea_evt_publish_copy(&evt), ENTELEA_E_PARAM);
+}
+
 /* ISR 投递的 data 必须指向静态存储（借用寿命）：载荷经队列延迟分发。 */
 struct isr_payload_rec {
 	uint32_t magic;
@@ -334,6 +351,48 @@ static void isr_feed_fn(const void *arg)
 {
 	ARG_UNUSED(arg);
 	entelea_wdt_feed(ENTELEA_WDT_SYWORK);
+}
+
+static void interleaved_isr_feed(void)
+{
+	virt_now++;
+	irq_offload(isr_feed_fn, NULL);
+}
+
+ZTEST(framework_core, test_wdt_feed_between_clock_and_snapshot)
+{
+	entelea_wdt_test_reset();
+	zassert_equal(entelea_wdt_bind_clock(&virt_clock), ENTELEA_OK);
+	virt_now = 1000;
+	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 1000), ENTELEA_OK);
+	entelea_wdt_feed(ENTELEA_WDT_SYWORK);
+
+	entelea_wdt_test_after_elapsed_sample(interleaved_isr_feed);
+	entelea_wdt_src_t result = entelea_wdt_patrol_once();
+
+	entelea_wdt_test_after_elapsed_sample(NULL);
+	zassert_equal(result, ENTELEA_WDT_COUNT,
+		      "ISR feed after sampling time must not fabricate a timeout");
+	virt_now = 2002;
+	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_SYWORK,
+		      "a genuinely overdue feed must still be detected");
+	entelea_wdt_test_reset();
+}
+
+ZTEST(framework_core, test_wdt_elapsed_across_u32_wrap)
+{
+	entelea_wdt_test_reset();
+	zassert_equal(entelea_wdt_bind_clock(&virt_clock), ENTELEA_OK);
+	virt_now = (uint64_t)UINT32_MAX - 10;
+	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 100), ENTELEA_OK);
+	entelea_wdt_feed(ENTELEA_WDT_SYWORK);
+	virt_now = (uint64_t)UINT32_MAX + 20;
+	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT,
+		      "32-bit clock wrap must preserve a short interval");
+	virt_now = (uint64_t)UINT32_MAX + 100;
+	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_SYWORK,
+		      "a real timeout across 32-bit wrap must remain detectable");
+	entelea_wdt_test_reset();
 }
 
 ZTEST(framework_core, test_isr_context_clock_bookkeeping)

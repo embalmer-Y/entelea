@@ -14,6 +14,16 @@
 #include <wasm_export.h>
 #include "crypto/tweetnacl.h"
 
+static int observed_instruction_limit;
+
+void __real_wasm_runtime_set_instruction_count_limit(wasm_exec_env_t env, int limit);
+
+void __wrap_wasm_runtime_set_instruction_count_limit(wasm_exec_env_t env, int limit)
+{
+	observed_instruction_limit = limit;
+	__real_wasm_runtime_set_instruction_count_limit(env, limit);
+}
+
 static const unsigned char test_root_sk[64] = {
 #include "test_root_sk.inc"
 };
@@ -264,6 +274,7 @@ static void wasm_before(void *fixture)
 	entelea_wasm_test_reset();
 	entelea_perm_test_reset();
 	entelea_trial_test_reset();
+	observed_instruction_limit = -1;
 	d12_fake_now = 0;
 	entelea_d12_test_reset();
 	zassert_ok(entelea_clock_init(&d12_clock, d12_fake_read_ms,
@@ -395,7 +406,7 @@ ZTEST(framework_wasm, test_native_probe_principal_gate)
 	zassert_equal(entelea_principal_bind(&poor, 2, &empty), ENTELEA_OK);
 	zassert_equal(entelea_wasm_test_probe_decide(poor, 0), ENTELEA_E_PERM,
 		      "注入未授权身份 → E_PERM（不崩溃、不越权）");
-	/* 伪造/过期句柄恒 E_PERM（principal 合同面：bind 唯一构造）。 */
+	/* 域外句柄 E_PERM；完整匹配的 C 字段不由该断言证明不可伪造。 */
 	entelea_principal_t fake = {._handle = 91, .app_id = 0};
 
 	zassert_equal(entelea_wasm_test_probe_decide(fake, 0), ENTELEA_E_PERM,
@@ -571,6 +582,60 @@ ZTEST(framework_wasm, test_rf1_quota_stops_real_infinite_loop)
 	zassert_equal(entelea_wasm_instance_count(), 0, "到期销毁实例");
 }
 
+ZTEST(framework_wasm, test_default_instruction_budget_and_explicit_limits)
+{
+	entelea_principal_t ctx = {0};
+	uint32_t app = 0;
+	int32_t ret = -77;
+
+	stage_signed(0, WASM_PROBE, sizeof(WASM_PROBE));
+	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_OK);
+	zassert_equal(entelea_wasm_call_default(app, ctx, "spin", 3, &ret),
+		      ENTELEA_E_TIMEOUT, "default budget must stop a real loop");
+	zassert_equal(observed_instruction_limit, 100000000);
+	zassert_equal(ret, -77);
+	zassert_equal(entelea_wasm_instance_count(), 0);
+
+	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_OK);
+	zassert_equal(entelea_wasm_call(app, ctx, "run", 0, 1, &ret), ENTELEA_OK);
+	zassert_equal(observed_instruction_limit, 1000, "explicit smaller limit");
+	zassert_equal(entelea_wasm_call(app, ctx, "run", 0, UINT32_MAX, &ret),
+		      ENTELEA_OK);
+	zassert_equal(observed_instruction_limit, 100000000, "large limit stays bounded");
+	zassert_equal(entelea_wasm_call(app, ctx, "run", 0, 0, &ret),
+		      ENTELEA_E_TIMEOUT, "explicit zero keeps its old meaning");
+	zassert_equal(observed_instruction_limit, 0);
+}
+
+#ifdef TEST_TRIAL_PERMISSION_GAP
+/* Expected to fail until confirmed permissions are bound to runtime grants. */
+ZTEST(framework_wasm, test_trial_confirmation_restricts_runtime_permissions)
+{
+	entelea_principal_t owner = mk_principal(1, "gpio:read:0");
+	entelea_trial_candidate_t candidate = {0};
+	uint32_t app = 0;
+	int32_t ret = -77;
+
+	stage_signed(0, WASM_PROBE, sizeof(WASM_PROBE));
+	memcpy(candidate.digest, staged_dg, sizeof(candidate.digest));
+	zassert_equal(entelea_trial_submit(&candidate), ENTELEA_OK);
+	entelea_trial_current(&candidate);
+	zassert_equal(candidate.permissions, 0, "user confirmed no permissions");
+	zassert_equal(entelea_trial_confirm(&candidate), ENTELEA_OK);
+	entelea_result_t rc = entelea_wasm_load(0, owner, &app);
+
+	if (rc == ENTELEA_OK) {
+		rc = entelea_wasm_call(app, owner, "run", 0, 100, &ret);
+		zassert_true(rc == ENTELEA_E_PERM ||
+			     (rc == ENTELEA_OK && ret == ENTELEA_E_PERM),
+			     "unapproved gpio:read executed: rc=%d result=%d",
+			     (int)rc, (int)ret);
+	} else {
+		zassert_equal(rc, ENTELEA_E_PERM);
+	}
+}
+#endif
+
 /* RF1 #9（G4）：执行闸——试用候选须经用户确认，且执行字节=确认对象。
  * 未确认（PENDING）候选不得装载（原 load 不查试用态：推送即可执行）。 */
 ZTEST(framework_wasm, test_rf1_trial_pending_not_loadable)
@@ -612,6 +677,23 @@ ZTEST(framework_wasm, test_rf1_trial_confirm_bound_to_bytes)
 
 /* 门摘要域 = 整包文件 sha256 [0, pkg_len)（= Forge package_digest 域）：
  * 与测试侧独立计算的暂存字节摘要对拍；摘要读失败原样 E_IO、零副作用。 */
+ZTEST(framework_wasm, test_persisted_pending_is_gated_after_restart)
+{
+	entelea_trial_candidate_t c = {0};
+	entelea_principal_t ctx = {0};
+	uint32_t app = 0xAA;
+
+	stage_signed(0, WASM_SAMPLE, sizeof(WASM_SAMPLE));
+	memcpy(c.digest, staged_dg, sizeof(c.digest));
+	zassert_equal(entelea_trial_submit(&c), ENTELEA_OK);
+	zassert_equal(entelea_trial_flush(), ENTELEA_OK);
+	entelea_trial_test_reset();
+	zassert_equal(entelea_wasm_load(0, ctx, &app), ENTELEA_E_PERM,
+		      "the real load path must restore and enforce PENDING");
+	zassert_equal(app, 0xAA);
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_PENDING_CONFIRM);
+}
+
 ZTEST(framework_wasm, test_rf1_trial_digest_domain)
 {
 	entelea_principal_t ctx = {0};

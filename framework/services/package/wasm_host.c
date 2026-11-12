@@ -304,11 +304,13 @@ entelea_result_t entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx,
 	 * timeout_ms=0 = 零配额（首条指令即到期），不是“默认/无界”。 */
 	uint32_t quota = timeout_ms;
 
-	if (quota > 100000U) {
-		quota = 100000U; /* 提额需随批修订 D12 配额 */
+	if (quota > ENTELEA_WASM_DEFAULT_INSTRUCTIONS /
+			    ENTELEA_WASM_INSTRUCTIONS_PER_MS) {
+		quota = ENTELEA_WASM_DEFAULT_INSTRUCTIONS /
+			ENTELEA_WASM_INSTRUCTIONS_PER_MS;
 	}
 	wasm_runtime_set_instruction_count_limit(it->env,
-						 (int)(quota * 1000U));
+			(int)(quota * ENTELEA_WASM_INSTRUCTIONS_PER_MS));
 	bool ok = wasm_runtime_call_wasm(it->env, f, (uint32_t)np, argv);
 
 	if (!ok) {
@@ -327,6 +329,17 @@ entelea_result_t entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx,
 		*ret_out = (int32_t)argv[0];
 	}
 	return ENTELEA_OK;
+}
+
+entelea_result_t entelea_wasm_call_default(uint32_t app_id,
+					  entelea_principal_t ctx,
+					  const char *fn, int32_t arg,
+					  int32_t *ret_out)
+{
+	return entelea_wasm_call(app_id, ctx, fn, arg,
+				 ENTELEA_WASM_DEFAULT_INSTRUCTIONS /
+					 ENTELEA_WASM_INSTRUCTIONS_PER_MS,
+				 ret_out);
 }
 
 entelea_result_t entelea_wasm_stop(uint32_t app_id)

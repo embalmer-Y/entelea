@@ -64,11 +64,11 @@ ZTEST(framework_r13, test_cross_mechanism_contract_representative)
 	zassert_equal(entelea_safety_commit("k", (entelea_out_value_t){.b = 1}),
 		      ENTELEA_E_STATE, "R02 安全态拒");
 
-	/* R04 权限：伪造句柄拒。 */
+	/* R04 权限：域外句柄拒。 */
 	zassert_equal(entelea_perm_check((entelea_principal_t){9, 9},
 					   ENTELEA_PERM_GPIO,
 					   ENTELEA_PERM_WRITE, 0),
-		      ENTELEA_E_PERM, "R04 伪造句柄");
+		      ENTELEA_E_PERM, "R04 域外句柄");
 
 	/* R04 任务：取消效果域。 */
 	entelea_perm_table_t t;

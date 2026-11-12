@@ -20,7 +20,9 @@ enum {
 	ENTELEA_E_ROLLBACK_LIMIT = -10,
 	ENTELEA_E_UNINIT = -11,
 	ENTELEA_E_RANGE = -12,
-	ENTELEA_PENDING = -13
+	ENTELEA_PENDING = -13,
+	/* Transport guarantees that the request was not sent. */
+	ENTELEA_E_NOT_SENT = -14
 };
 
 #endif

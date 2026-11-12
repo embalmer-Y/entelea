@@ -10,10 +10,12 @@ set(ENTELEA_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
 zephyr_include_directories(${ENTELEA_ROOT}/framework/include
                            ${ENTELEA_ROOT}/platform/zephyr
                            ${CMAKE_CURRENT_SOURCE_DIR}) # mbedtls user config 头可达（子构建共享 zephyr_interface include）
-target_compile_definitions(app PRIVATE ENTELEA_NO_RAM_BACKEND=1)
+target_compile_definitions(app PRIVATE ENTELEA_NO_RAM_BACKEND=1
+                                      ENTELEA_REQUIRE_D12_BOOTGUARD=1)
 target_sources(app PRIVATE
   main.c
   ${ENTELEA_ROOT}/platform/zephyr/boot_steps.c
+  ${ENTELEA_ROOT}/platform/zephyr/d12_bootguard.c
   ${ENTELEA_ROOT}/framework/services/config/d12.c
   ${ENTELEA_ROOT}/platform/zephyr/clock.c
   ${ENTELEA_ROOT}/platform/zephyr/flash_store.c
@@ -26,6 +28,7 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/services/storage/audit.c
   ${ENTELEA_ROOT}/framework/services/config/prov.c
   ${ENTELEA_ROOT}/framework/services/net/netmon.c
+  ${ENTELEA_ROOT}/framework/services/assistant/model.c
   ${ENTELEA_ROOT}/framework/runtime/supervision/events.c
   ${ENTELEA_ROOT}/framework/runtime/supervision/wdt.c
   ${ENTELEA_ROOT}/framework/runtime/supervision/boot.c

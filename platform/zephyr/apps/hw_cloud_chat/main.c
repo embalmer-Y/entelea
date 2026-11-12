@@ -3,13 +3,11 @@
  * 凭据=P4C2 串口注入（P4C1 扩展：ssid/psk + host/api_key/model——
  * 不入镜像不入仓库，用后显式 zeroize）。判据行 [hw-cloud]：
  *   1. connect+DHCP+dep NET good（复用 F-1 面）
- *   2. 真 chat（prompt "Reply with exactly the word: ok"）→
- *      content 非空 + usage>0 + touched==1（B-2 教训：不强绑字面 ok）
- *      → dep MODEL good
+ *   2. 一次真实恢复探测 → MODEL DEGRADED（一条观测）
  *   3. 断链（disconnect）→ 再 chat = E_STATE（netmon 准入拒——云失败
  *      与硬件安全不同状态机的可观测面）+ touched 不变
- *   4. 复连 → 再 chat OK → 两轮 PASS 常驻
- * 失败 → system_fail fail-safe。 */
+ *   4. 复连 → 第二次真实恢复探测 → MODEL UP → 普通 chat
+ * 诊断失败只停用云与本诊断；真正的启动/监督故障仍走安全停机。 */
 #include <errno.h>
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -21,6 +19,7 @@
 #include <zephyr/net/dhcpv4.h>
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/wifi_mgmt.h>
+#include <entelea/d12.h>
 #include <entelea/model.h>
 #include <entelea/netmon.h>
 #include <entelea/safety.h>
@@ -29,6 +28,9 @@
 #include "boot_steps.h"
 #include "clock.h"
 #include "https_chat.h"
+#include "p4c2.h"
+#include "wifi_observer.h"
+#include "../../../secure_zero.h"
 
 #define CHK(cond, msg) do { \
 	bool ok_ = (cond); \
@@ -40,25 +42,18 @@
 
 static entelea_clock_t platform_clock;
 
-struct gate_credentials {
-	uint8_t ssid[32];
-	uint8_t psk[63];
-	char host[64];
-	char api_key[128];
-	char model[48];
-	uint8_t ssid_length;
-	uint8_t psk_length;
-};
-
 static struct net_mgmt_event_callback wifi_cb;
 static struct net_mgmt_event_callback ipv4_cb;
+static struct net_mgmt_event_callback iface_cb;
 static struct net_if *test_iface;
+static struct entelea_wifi_observer wifi_observer;
 static K_SEM_DEFINE(connected, 0, 1);
 static K_SEM_DEFINE(disconnected, 0, 1);
 static K_SEM_DEFINE(dhcp_bound, 0, 1);
 static atomic_t connect_status;
 static atomic_t disconnect_status;
 static int chat_touched;
+static bool connect_requested;
 
 static entelea_https_cfg_t cfg_live; /* P4C2 凭据运行时填 */
 
@@ -78,48 +73,31 @@ static int uart_read_exact(const struct device *uart, uint8_t *buf,
 	return 0;
 }
 
-static int read_str(const struct device *uart, char *dst, uint8_t len,
-		    k_timepoint_t end)
-{
-	int ret = uart_read_exact(uart, (uint8_t *)dst, len, end);
+struct credential_uart_reader {
+	const struct device *uart;
+	k_timepoint_t end;
+};
 
-	if (ret == 0) {
-		dst[len] = '\0';
-	}
-	return ret;
+static int p4c2_uart_read(void *user, uint8_t *dst, size_t size)
+{
+	const struct credential_uart_reader *reader = user;
+
+	return uart_read_exact(reader->uart, dst, size, reader->end);
 }
 
 static int read_credentials(struct gate_credentials *c)
 {
 	/* P4C2：magic + u8[5] 长度 + ssid/psk/host/key/model（60s 窗）。 */
-	const struct device *uart = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
-	k_timepoint_t end = sys_timepoint_calc(K_SECONDS(60));
-	uint8_t header[9];
-	int ret;
+	struct credential_uart_reader reader = {
+		.uart = DEVICE_DT_GET(DT_CHOSEN(zephyr_console)),
+		.end = sys_timepoint_calc(K_SECONDS(60)),
+	};
 
-	if (!device_is_ready(uart)) {
+	if (!device_is_ready(reader.uart)) {
 		return -ENODEV;
 	}
 	printk("[hw-cloud] CONFIG_WAIT (P4C2: ssid/psk/host/key/model over console)\n");
-	ret = uart_read_exact(uart, header, sizeof(header), end);
-	if (ret) {
-		return ret;
-	}
-	if (memcmp(header, "P4C2", 4) || !header[4] || header[4] > 32 ||
-	    header[5] < 8 || header[5] > 63 || !header[6] || header[6] > 63 ||
-	    header[7] < 20 || header[7] > 127 || !header[8] || header[8] > 47) {
-		return -EINVAL;
-	}
-	c->ssid_length = header[4];
-	c->psk_length = header[5];
-	if (read_str(uart, (char *)c->ssid, c->ssid_length, end) ||
-	    uart_read_exact(uart, c->psk, c->psk_length, end) ||
-	    read_str(uart, c->host, header[6], end) ||
-	    read_str(uart, c->api_key, header[7], end) ||
-	    read_str(uart, c->model, header[8], end)) {
-		return -ETIMEDOUT;
-	}
-	return 0;
+	return entelea_p4c2_read(c, p4c2_uart_read, &reader);
 }
 
 static void network_event(struct net_mgmt_event_callback *cb, uint64_t event,
@@ -131,17 +109,37 @@ static void network_event(struct net_mgmt_event_callback *cb, uint64_t event,
 		return;
 	}
 	if (event == NET_EVENT_IPV4_DHCP_BOUND) {
+		entelea_wifi_observer_event(&wifi_observer, ENTELEA_WIFI_DHCP_BOUND,
+					    (uint64_t)k_uptime_get());
 		k_sem_give(&dhcp_bound);
+		return;
+	}
+	if (event == NET_EVENT_IPV4_DHCP_STOP ||
+	    event == NET_EVENT_IPV4_ADDR_DEL) {
+		entelea_wifi_observer_event(&wifi_observer, ENTELEA_WIFI_DHCP_LOST,
+					    (uint64_t)k_uptime_get());
+		return;
+	}
+	if (event == NET_EVENT_IF_DOWN) {
+		entelea_wifi_observer_event(&wifi_observer,
+					    ENTELEA_WIFI_DISCONNECTED,
+					    (uint64_t)k_uptime_get());
 		return;
 	}
 	status = cb->info_length == sizeof(struct wifi_status) ? cb->info : NULL;
 	if (event == NET_EVENT_WIFI_CONNECT_RESULT) {
 		atomic_set(&connect_status, status ? status->status : -EIO);
+		entelea_wifi_observer_event(&wifi_observer,
+			status && status->status == 0 ? ENTELEA_WIFI_ASSOCIATED :
+							ENTELEA_WIFI_DISCONNECTED,
+			(uint64_t)k_uptime_get());
 		k_sem_give(&connected);
 	} else if (event == NET_EVENT_WIFI_DISCONNECT_RESULT) {
 		atomic_set(&disconnect_status, status ? status->status : -EIO);
+		entelea_wifi_observer_event(&wifi_observer,
+					    ENTELEA_WIFI_DISCONNECTED,
+					    (uint64_t)k_uptime_get());
 		k_sem_give(&disconnected);
-		(void)entelea_dep_report(ENTELEA_DEP_NET, false, 0);
 	}
 }
 
@@ -149,10 +147,10 @@ static int connect_and_report(const struct gate_credentials *c, int attempt)
 {
 	char address[NET_IPV4_ADDR_LEN];
 	struct wifi_connect_req_params params = {
-		.ssid = c->ssid,
-		.ssid_length = c->ssid_length,
-		.psk = c->psk,
-		.psk_length = c->psk_length,
+		.ssid = c->wifi.ssid,
+		.ssid_length = c->wifi.ssid_length,
+		.psk = c->wifi.psk,
+		.psk_length = c->wifi.psk_length,
 		.security = WIFI_SECURITY_TYPE_PSK,
 		.channel = WIFI_CHANNEL_ANY,
 		.timeout = 30,
@@ -162,7 +160,10 @@ static int connect_and_report(const struct gate_credentials *c, int attempt)
 	k_sem_reset(&connected);
 	k_sem_reset(&dhcp_bound);
 	atomic_set(&connect_status, -EINPROGRESS);
+	entelea_wifi_observer_event(&wifi_observer, ENTELEA_WIFI_DISCONNECTED,
+				    (uint64_t)k_uptime_get());
 	printk("[hw-cloud] CONNECT_BEGIN attempt=%d\n", attempt);
+	connect_requested = true;
 	ret = net_mgmt(NET_REQUEST_WIFI_CONNECT, test_iface, &params,
 		       sizeof(params));
 	if (ret) {
@@ -188,8 +189,16 @@ static int connect_and_report(const struct gate_credentials *c, int attempt)
 	}
 	printk("[hw-cloud] DHCP_BOUND attempt=%d address=%s\n", attempt,
 	       address);
-	(void)entelea_dep_report(ENTELEA_DEP_NET, true, 0);
-	(void)entelea_dep_report(ENTELEA_DEP_NET, true, 0);
+	for (int i = 0; i < 2; i++) {
+		if (!entelea_wifi_observer_sample(&wifi_observer,
+						  net_if_is_up(test_iface),
+						  (uint64_t)k_uptime_get())) {
+			return -EIO;
+		}
+		if (i == 0) {
+			k_sleep(K_MSEC(ENTELEA_NET_HB_PERIOD_MS));
+		}
+	}
 	if (entelea_dep_state(ENTELEA_DEP_NET) != ENTELEA_DEP_UP) {
 		return -EIO;
 	}
@@ -207,36 +216,57 @@ static int disconnect_quiet(void)
 	if (k_sem_take(&disconnected, K_SECONDS(15))) {
 		return -ETIMEDOUT;
 	}
+	if (atomic_get(&disconnect_status)) {
+		return -EIO;
+	}
 	net_dhcpv4_stop(test_iface);
 	if (entelea_dep_state(ENTELEA_DEP_NET) != ENTELEA_DEP_DOWN) {
 		return -EIO;
 	}
+	connect_requested = false;
 	printk("[hw-cloud] DISCONNECT_OK dep NET DOWN\n");
 	return 0;
 }
 
-static int chat_once(char *out, size_t out_max, entelea_model_usage_t *usage)
+static int chat_once(bool probe, char *out, size_t out_max,
+		     entelea_model_usage_t *usage)
 {
 	const entelea_model_msg_t msgs[1] = {
 		{ .role = "user",
 		  .content = "Reply with exactly the word: ok. Output nothing else." },
 	};
 
-	/* 准入面（host 版同语义）：NET 依赖非 UP 拒调（touched 不动）。
-	 * 云失败与硬件安全=不同状态机（R06/R08 合同）。 */
-	if (entelea_dep_state(ENTELEA_DEP_NET) != ENTELEA_DEP_UP) {
+	entelea_model_usage_t before = entelea_model_usage_total();
+	entelea_model_usage_t after = before;
+	int touched_before = chat_touched;
+	uint32_t calls_before = entelea_d12_model_calls();
+	entelea_result_t ret = probe
+		? entelea_model_probe(msgs, 1, out, out_max, 30000, &after)
+		: entelea_model_ask(msgs, 1, out, out_max, 30000, &after);
+
+	if (usage != NULL) {
+		usage->prompt_tokens = after.prompt_tokens - before.prompt_tokens;
+		usage->completion_tokens =
+			after.completion_tokens - before.completion_tokens;
+	}
+	if (chat_touched - touched_before !=
+	    (int)(entelea_d12_model_calls() - calls_before)) {
 		return ENTELEA_E_STATE;
 	}
-	return entelea_https_chat(&cfg_live, msgs, 1, out, out_max,
-				  30000, usage);
+	if (chat_touched > touched_before) {
+		(void)entelea_dep_report(ENTELEA_DEP_MODEL,
+					 ret == ENTELEA_OK && out[0] != '\0',
+					 (uint64_t)k_uptime_get());
+	}
+	return ret;
 }
 
 int main(void)
 {
 	static struct gate_credentials credentials = {0};
-	static volatile uint8_t *cred_z = (volatile uint8_t *)&credentials;
 	static char out[1024];
 	entelea_model_usage_t usage = {0};
+	bool callbacks_registered = false;
 	int ret;
 
 	if (entelea_platform_clock_init(&platform_clock) != ENTELEA_OK ||
@@ -249,6 +279,11 @@ int main(void)
 	printk("[hw-cloud] MCU real-cloud gate begins (r15 A-1)\n");
 	entelea_supervision_boot(entelea_platform_boot_steps,
 				 ENTELEA_PLATFORM_BOOT_STEP_COUNT);
+	if (entelea_platform_d12_safe_halt()) {
+		printk("[hw-cloud] D12 SAFE-HALT: cloud disabled\n");
+		k_sleep(K_FOREVER);
+		return 0;
+	}
 
 	test_iface = net_if_get_default();
 	CHK(test_iface && device_is_ready(net_if_get_device(test_iface)),
@@ -261,9 +296,14 @@ int main(void)
 				     NET_EVENT_WIFI_CONNECT_RESULT |
 				     NET_EVENT_WIFI_DISCONNECT_RESULT);
 	net_mgmt_init_event_callback(&ipv4_cb, network_event,
-				     NET_EVENT_IPV4_DHCP_BOUND);
+				     NET_EVENT_IPV4_DHCP_BOUND |
+				     NET_EVENT_IPV4_DHCP_STOP |
+				     NET_EVENT_IPV4_ADDR_DEL);
+	net_mgmt_init_event_callback(&iface_cb, network_event, NET_EVENT_IF_DOWN);
 	net_mgmt_add_event_callback(&wifi_cb);
 	net_mgmt_add_event_callback(&ipv4_cb);
+	net_mgmt_add_event_callback(&iface_cb);
+	callbacks_registered = true;
 
 	cfg_live.touched = &chat_touched;
 	{ /* host 字段可携 path（"host/api/v1" 形式——F-2 host 版
@@ -285,62 +325,84 @@ int main(void)
 	}
 	strcpy(cfg_live.api_key, credentials.api_key);
 	strcpy(cfg_live.model, credentials.model);
+	static const entelea_model_transport_t transport = {
+		.chat = entelea_https_chat,
+	};
 
-	/* 第一轮：连网→真 chat→MODEL good。 */
+	entelea_model_bind(&transport, &cfg_live);
+
+	/* 第一轮：一次真实探测仅产生一条 MODEL good 观测。 */
 	CHK(connect_and_report(&credentials, 1) == 0, "connect+dhcp+dep NET UP");
 	chat_touched = 0;
-	ret = chat_once(out, sizeof(out), &usage);
+	ret = chat_once(true, out, sizeof(out), &usage);
 	CHK(ret == ENTELEA_OK && out[0] != '\0' &&
-	    usage.completion_tokens > 0 && chat_touched == 1,
-	    "real TLS chat: content+usage+touched (attempt 1)");
+	    usage.completion_tokens > 0 && chat_touched >= 1,
+	    "first gated MODEL recovery probe");
 	printk("[hw-cloud] reply=%.60s usage=%u+%u\n", out,
 	       usage.prompt_tokens, usage.completion_tokens);
-	(void)entelea_dep_report(ENTELEA_DEP_MODEL, true, 0);
-	(void)entelea_dep_report(ENTELEA_DEP_MODEL, true, 0);
-	CHK(entelea_dep_state(ENTELEA_DEP_MODEL) == ENTELEA_DEP_UP,
-	    "dep MODEL UP");
+	CHK(entelea_dep_state(ENTELEA_DEP_MODEL) == ENTELEA_DEP_DEGRADED,
+	    "one successful probe leaves MODEL DEGRADED");
 
 	/* 失联拒对照：断链→chat 必须被拒（netmon 准入面）+touched 不变。 */
 	CHK(disconnect_quiet() == 0, "disconnect -> dep NET DOWN");
 	chat_touched = 99; /* 哨兵：调用被拒则不推进 */
-	ret = chat_once(out, sizeof(out), NULL);
+	ret = chat_once(false, out, sizeof(out), NULL);
 	CHK(ret != ENTELEA_OK && chat_touched == 99,
 	    "chat rejected while NET down (admission gate)");
 	printk("[hw-cloud] rejected rc=%d (E_STATE expected)\n", ret);
 
-	/* 第二轮：复连→再 chat OK→两轮闭环。DNS 重试（r15 实测：重连后
-	 * 首查偶发未就绪——DHCP DNS 服务器重注入时序，间隔重查即过）。 */
+	/* 第二条真实成功观测后，普通调用才可进入。 */
 	CHK(connect_and_report(&credentials, 2) == 0, "reconnect+dhcp (attempt 2)");
 	chat_touched = 0;
 	memset(&usage, 0, sizeof(usage));
-	ret = chat_once(out, sizeof(out), &usage);
-	if (ret != ENTELEA_OK) {
-		k_sleep(K_SECONDS(3));
-		chat_touched = 0;
-		ret = chat_once(out, sizeof(out), &usage);
-	}
+	ret = chat_once(true, out, sizeof(out), &usage);
 	CHK(ret == ENTELEA_OK && out[0] != '\0' &&
-	    usage.completion_tokens > 0 && chat_touched == 1,
-	    "real TLS chat (attempt 2)");
+	    usage.completion_tokens > 0 && chat_touched >= 1,
+	    "second gated MODEL recovery probe");
+	CHK(entelea_dep_state(ENTELEA_DEP_MODEL) == ENTELEA_DEP_UP,
+	    "two successful probes restore MODEL UP");
 	printk("[hw-cloud] reply2=%.60s usage=%u+%u\n", out,
 	       usage.prompt_tokens, usage.completion_tokens);
-	(void)disconnect_quiet();
+	chat_touched = 0;
+	memset(&usage, 0, sizeof(usage));
+	ret = chat_once(false, out, sizeof(out), &usage);
+	CHK(ret == ENTELEA_OK && out[0] != '\0' &&
+	    usage.completion_tokens > 0 && chat_touched >= 1,
+	    "ordinary model_ask after recovery");
+	CHK(disconnect_quiet() == 0, "disconnect after model call");
 
 	net_mgmt_del_event_callback(&wifi_cb);
 	net_mgmt_del_event_callback(&ipv4_cb);
-	for (size_t i = 0; i < sizeof(credentials); i++) {
-		cred_z[i] = 0; /* 全路径 zeroize（含 fail 标签共用） */
-	}
-	memset(&cfg_live, 0, sizeof(cfg_live));
-	printk("[hw-cloud] PASS: MCU real-cloud loop closed (TLS1.3 chat x2 + admission gate)\n");
+	net_mgmt_del_event_callback(&iface_cb);
+	entelea_model_bind(NULL, NULL);
+	entelea_secure_zero(&credentials, sizeof(credentials));
+	entelea_secure_zero(&cfg_live, sizeof(cfg_live));
+	entelea_secure_zero(out, sizeof(out));
+	printk("[hw-cloud] PASS: two recovery probes + gated model_ask\n");
 	k_sleep(K_FOREVER);
 	return 0;
 
 fail:
-	for (size_t i = 0; i < sizeof(credentials); i++) {
-		cred_z[i] = 0;
+	if (callbacks_registered && connect_requested) {
+		int cleanup_ret = disconnect_quiet();
+
+		if (cleanup_ret != 0) {
+			net_dhcpv4_stop(test_iface);
+			printk("[hw-cloud] disconnect unconfirmed rc=%d\n", cleanup_ret);
+		}
 	}
-	memset(&cfg_live, 0, sizeof(cfg_live));
-	entelea_safety_system_fail(ENTELEA_FAIL_BOOT(7));
+	if (callbacks_registered) {
+		net_mgmt_del_event_callback(&wifi_cb);
+		net_mgmt_del_event_callback(&ipv4_cb);
+		net_mgmt_del_event_callback(&iface_cb);
+	}
+	(void)entelea_dep_mark_down(ENTELEA_DEP_NET);
+	(void)entelea_dep_mark_down(ENTELEA_DEP_MODEL);
+	entelea_model_bind(NULL, NULL);
+	entelea_secure_zero(&credentials, sizeof(credentials));
+	entelea_secure_zero(&cfg_live, sizeof(cfg_live));
+	entelea_secure_zero(out, sizeof(out));
+	printk("[hw-cloud] diagnostic stopped; network/model dependencies DOWN\n");
+	k_sleep(K_FOREVER);
 	return 0;
 }

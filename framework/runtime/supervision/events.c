@@ -5,6 +5,8 @@
  * 静态顺序（禁运行期插队）。相对旧实现调整：时间戳来源由全局 ts_time_ms
  * 改为实例时钟绑定；容量常量出处不变（DEC-27）。
  */
+#include <stdbool.h>
+#include <string.h>
 #include <entelea/events.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/atomic.h>
@@ -18,6 +20,8 @@ static struct sub_slot subs[ENTELEA_EVT_ID_COUNT][ENTELEA_EVT_MAX_SUBS];
 
 struct queued_evt {
 	entelea_event_t evt;
+	uint32_t copied_payload;
+	bool copied;
 };
 K_MSGQ_DEFINE(evt_q, sizeof(struct queued_evt), ENTELEA_EVT_QUEUE_DEPTH, 8);
 
@@ -90,34 +94,58 @@ static void evt_drain_work(struct k_work *work)
 	struct queued_evt q;
 
 	while (k_msgq_get(&evt_q, &q, K_NO_WAIT) == 0) {
+		if (q.copied) {
+			q.evt.data = &q.copied_payload;
+		}
 		dispatch(&q.evt);
 	}
 }
 
 static struct k_work drain_work = Z_WORK_INITIALIZER(evt_drain_work);
 
-void entelea_evt_publish(const entelea_event_t *evt)
+static entelea_result_t publish_event(const entelea_event_t *evt, bool copy)
 {
 	if (evt == NULL || (int)evt->id < 0 || evt->id >= ENTELEA_EVT_ID_COUNT) {
-		return;
+		return ENTELEA_E_PARAM;
+	}
+	if (copy && evt->len > sizeof(uint32_t)) {
+		return ENTELEA_E_RANGE;
+	}
+	if (copy && evt->len != 0 && evt->data == NULL) {
+		return ENTELEA_E_PARAM;
+	}
+	struct queued_evt q = {.evt = *evt};
+
+	if (copy && evt->len != 0) {
+		memcpy(&q.copied_payload, evt->data, evt->len);
+		q.copied = true;
 	}
 	if (k_is_in_isr()) {
-		/* data 必须指向静态存储（借用寿命约束，见合同）。 */
-		struct queued_evt q = {.evt = *evt};
-
 		q.evt.t_ms = now_ms();
 		if (k_msgq_put(&evt_q, &q, K_NO_WAIT) != 0) {
 			atomic_inc(&dropped_count);
-			return;
+			return ENTELEA_E_BUSY;
 		}
 		k_work_submit_to_queue(&k_sys_work_q, &drain_work);
-		return;
+		return ENTELEA_OK;
 	}
 	/* 线程路径同步分发；时间戳与 ISR 路径同由总线加盖（发布瞬间）。 */
-	struct queued_evt q = {.evt = *evt};
-
+	if (q.copied) {
+		q.evt.data = &q.copied_payload;
+	}
 	q.evt.t_ms = now_ms();
 	dispatch(&q.evt);
+	return ENTELEA_OK;
+}
+
+void entelea_evt_publish(const entelea_event_t *evt)
+{
+	(void)publish_event(evt, false);
+}
+
+entelea_result_t entelea_evt_publish_copy(const entelea_event_t *evt)
+{
+	return publish_event(evt, true);
 }
 
 uint32_t entelea_evt_queue_dropped(void)

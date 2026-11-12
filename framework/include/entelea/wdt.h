@@ -49,8 +49,8 @@ entelea_result_t entelea_wdt_start(void);
 /** [any] 巡检周期 = min(periods)/2（观测/测试用）。 */
 uint32_t entelea_wdt_patrol_period_ms(void);
 
-/** [any] 全局停机（system_fail 调用）：置位后巡检不喂、不重排、不判逾，
- * wdt_start 拒绝——任何线程触发的故障停机语义相同。一次性，无解除路径。 */
+/** [any] 全局停机（system_fail 调用）：置位后新巡检不喂、不重排、不判逾，
+ * 已在飞的喂狗调用可能完成；wdt_start 拒绝。一次性，无解除路径。 */
 void entelea_wdt_halt(void);
 
 /** [any] 时钟读取失败/回退累计（单调护栏沿用最后有效值期间的观测）。 */
@@ -76,6 +76,7 @@ uint32_t entelea_wdt_clock_faults(void);
 void entelea_wdt_test_reset(void);
 entelea_wdt_src_t entelea_wdt_patrol_once(void);
 bool entelea_wdt_grace_active(entelea_wdt_src_t src);
+void entelea_wdt_test_after_elapsed_sample(void (*hook)(void));
 /** 确定性驱动一次巡检体（halted 语义测试用）；返回是否实际执行。 */
 bool entelea_wdt_test_patrol_tick(void);
 #endif

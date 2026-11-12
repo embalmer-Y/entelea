@@ -10,16 +10,20 @@
 #include <string.h>
 #include <entelea/affect.h>
 
-static entelea_affect_state_t affect;
+#define AFFECT_MIDPOINT 50
+#define AFFECT_STEP_MAX 10
+
+_Static_assert(ENTELEA_AFFECT_LEVELS == 4, "update initial affect levels");
+static entelea_affect_state_t affect = {
+	.level = {AFFECT_MIDPOINT, AFFECT_MIDPOINT,
+		  AFFECT_MIDPOINT, AFFECT_MIDPOINT},
+};
 static entelea_adapt_params_t adapt_history[ENTELEA_ADAPT_HISTORY];
 static uint32_t adapt_len;
 static uint32_t adapt_version;
 
 /* 确定性演进（建议值规则）：stimulus>0 升、<0 降、0 回中位（50）。
  * 步长 = |stimulus| 与 dt/1000 的饱和积（上限 10/步——变化有界）。 */
-#define AFFECT_MIDPOINT 50
-#define AFFECT_STEP_MAX 10
-
 entelea_result_t entelea_affect_tick(uint32_t dt_ms,
 				     const int8_t stimulus[ENTELEA_AFFECT_LEVELS])
 {

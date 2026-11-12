@@ -67,6 +67,10 @@ entelea_result_t entelea_evt_subscribe(entelea_event_id_t id,
  * ISR 投递的 data 必须指向静态存储。 */
 void entelea_evt_publish(const entelea_event_t *evt);
 
+/** [any] 发布时复制至多 4 字节载荷；回调期间有效。队列满 = E_BUSY
+ * 并计入丢弃数，载荷过大 = E_RANGE，参数非法 = E_PARAM。 */
+entelea_result_t entelea_evt_publish_copy(const entelea_event_t *evt);
+
 /** [any] 队列溢出累计丢弃数（观测，不清零）。 */
 uint32_t entelea_evt_queue_dropped(void);
 

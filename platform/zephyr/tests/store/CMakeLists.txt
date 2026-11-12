@@ -37,4 +37,5 @@ if(TEST_FLASH_BACKEND)
   # 板级批 A-1/A-2：同一套件走 flash 后端（native_sim=sim-flash
   # 真擦除语义）。EXPLICIT_ERASE 变体再强制 NOR 擦后写纪律。
   target_sources(app PRIVATE ${ENTELEA_ROOT}/platform/zephyr/flash_store.c)
+  target_compile_definitions(app PRIVATE ENTELEA_TEST_FLASH_BACKEND=1)
 endif()

@@ -3,12 +3,13 @@
  * 能力文法解析 + 调用者裁决（迁自旧 hal/perm.c 的裁决面，R04 合同
  * framework/execution/capability/contract.md）。
  * principal 绑定槽 = 宿主可信面（原生侧映射，APP 不可寻址）；
- * 越权/伪造/过期句柄一律拒绝并留痕（EVT_PERM_DENIED，观测面）。
+ * 越权、字段不匹配或过期句柄拒绝并留痕（EVT_PERM_DENIED，观测面）。
  * 相对旧实现：类/操作集裁至 R04 消费面（gpio/pwm/power/msg 为主，
  * 其余类仅登记文法——无消费者的 op 不放行新语义，fail-closed 保持）。
  */
 #include <ctype.h>
 #include <string.h>
+#include <zephyr/kernel.h>
 #include <entelea/events.h>
 #include <entelea/principal.h>
 
@@ -21,6 +22,16 @@ struct bound_ctx {
 	bool used;
 };
 static struct bound_ctx contexts[MAX_BOUND_CTX];
+static struct k_spinlock contexts_lock;
+
+#ifdef ENTELEA_TEST
+static void (*resolve_hook)(void);
+
+void entelea_perm_test_after_resolve(void (*hook)(void))
+{
+	resolve_hook = hook;
+}
+#endif
 
 void entelea_perm_table_init(entelea_perm_table_t *table)
 {
@@ -191,33 +202,35 @@ entelea_result_t entelea_principal_bind(entelea_principal_t *ctx, uint16_t app_i
 		return ENTELEA_E_PARAM;
 	}
 	ctx->_handle = 0;
+	k_spinlock_key_t key = k_spin_lock(&contexts_lock);
+
 	for (int i = 0; i < MAX_BOUND_CTX; i++) {
 		if (contexts[i].used && contexts[i].app_id == app_id) {
+			k_spin_unlock(&contexts_lock, key);
 			return ENTELEA_E_PARAM; /* app_id 撞名拒绝 */
 		}
 	}
 	for (int i = 0; i < MAX_BOUND_CTX; i++) {
-		if (!contexts[i].used) {
+		if (!contexts[i].used && contexts[i].gen != UINT16_MAX) {
 			contexts[i].used = true;
 			contexts[i].app_id = app_id;
 			contexts[i].table = *table;
 			contexts[i].gen++;
-			if (contexts[i].gen == 0) {
-				contexts[i].gen = 1; /* 0 保留给零初始化句柄 */
-			}
 			ctx->_handle = (uint8_t)(i + 1);
 			ctx->_gen = contexts[i].gen;
 			ctx->app_id = app_id;
+			k_spin_unlock(&contexts_lock, key);
 			return ENTELEA_OK;
 		}
 	}
-	return ENTELEA_E_NOMEM; /* 槽满（=APP 上限） */
+	k_spin_unlock(&contexts_lock, key);
+	return ENTELEA_E_NOMEM; /* 槽满或代数耗尽 */
 }
 
 static struct bound_ctx *resolve(entelea_principal_t ctx)
 {
 	/* 句柄域外/未绑定/app_id 或代数不符 = 伪造或过期 → 拒（不泄露槽
-	 * 状态）。代数 uint16：同槽 65536 次重绑内的过期副本必被识别。 */
+	 * 状态）。代数耗尽的槽不再重用，避免在本次运行中回绕。 */
 	if (ctx._handle == 0 || ctx._handle > MAX_BOUND_CTX) {
 		return NULL;
 	}
@@ -234,12 +247,14 @@ void entelea_principal_unbind(entelea_principal_t *ctx)
 	if (ctx == NULL) {
 		return;
 	}
+	k_spinlock_key_t key = k_spin_lock(&contexts_lock);
 	struct bound_ctx *b = resolve(*ctx);
 
 	if (b != NULL) {
-		b->used = false; /* 旧句柄此后裁决 E_PERM（伪造/过期不可绕） */
+		b->used = false; /* 旧句柄此后裁决 E_PERM */
 	}
 	ctx->_handle = 0;
+	k_spin_unlock(&contexts_lock, key);
 }
 
 static void deny_trace(entelea_principal_t ctx, uint16_t detail)
@@ -248,13 +263,15 @@ static void deny_trace(entelea_principal_t ctx, uint16_t detail)
 		uint16_t app_id;
 		uint16_t detail;
 	} payload = {.app_id = ctx.app_id, .detail = detail};
+	_Static_assert(sizeof(payload) <= sizeof(uint32_t),
+		       "permission denial payload exceeds event copy capacity");
 	const entelea_event_t evt = {
 		.id = ENTELEA_EVT_PERM_DENIED,
 		.data = &payload,
 		.len = sizeof(payload),
 	};
 
-	entelea_evt_publish(&evt);
+	(void)entelea_evt_publish_copy(&evt); /* 队列满时总线计数 */
 }
 
 entelea_result_t entelea_perm_check(entelea_principal_t ctx,
@@ -265,15 +282,22 @@ entelea_result_t entelea_perm_check(entelea_principal_t ctx,
 	    (int)op < 0 || op >= ENTELEA_PERM_OP_COUNT || inst > 31) {
 		return ENTELEA_E_PARAM;
 	}
+	k_spinlock_key_t key = k_spin_lock(&contexts_lock);
 	struct bound_ctx *b = resolve(ctx);
+	bool allowed = false;
 
-	if (b == NULL) {
-		deny_trace(ctx, (uint16_t)((cls << 8) | op));
-		return ENTELEA_E_PERM; /* 伪造/过期句柄 */
+	if (b != NULL) {
+#ifdef ENTELEA_TEST
+		if (resolve_hook != NULL) {
+			resolve_hook();
+		}
+#endif
+		allowed = (b->table.grant[cls][op] & (1U << inst)) != 0;
 	}
-	if ((b->table.grant[cls][op] & (1U << inst)) == 0) {
+	k_spin_unlock(&contexts_lock, key);
+	if (!allowed) {
 		deny_trace(ctx, (uint16_t)((cls << 8) | op));
-		return ENTELEA_E_PERM; /* 未声明（合同 10） */
+		return ENTELEA_E_PERM; /* 伪造/过期或未声明 */
 	}
 	return ENTELEA_OK;
 }
@@ -283,25 +307,47 @@ entelea_result_t entelea_perm_check_msg(entelea_principal_t ctx, const char *tar
 	if (target == NULL) {
 		return ENTELEA_E_PARAM;
 	}
-	struct bound_ctx *b = resolve(ctx);
+	size_t target_len = 0;
 
-	if (b == NULL) {
-		deny_trace(ctx, 0xFFFF);
-		return ENTELEA_E_PERM;
+	while (target_len < ENTELEA_PERM_MSG_NAME_MAX && target[target_len] != '\0') {
+		target_len++;
 	}
-	for (int i = 0; i < ENTELEA_PERM_MSG_TARGETS_MAX; i++) {
-		if (b->table.msg_targets[i][0] != '\0' &&
-		    strcmp(b->table.msg_targets[i], target) == 0) {
-			return ENTELEA_OK;
+	bool valid_target = valid_msg_name(target, target_len);
+	k_spinlock_key_t key = k_spin_lock(&contexts_lock);
+	struct bound_ctx *b = resolve(ctx);
+	bool allowed = false;
+	uint16_t detail = b == NULL ? 0xFFFF : 0xFFFE;
+
+	if (b != NULL && valid_target) {
+#ifdef ENTELEA_TEST
+		if (resolve_hook != NULL) {
+			resolve_hook();
+		}
+#endif
+		for (int i = 0; i < ENTELEA_PERM_MSG_TARGETS_MAX; i++) {
+			const char *name = b->table.msg_targets[i];
+
+			if (name[target_len] == '\0' &&
+			    memcmp(name, target, target_len) == 0) {
+				allowed = true;
+				break;
+			}
 		}
 	}
-	deny_trace(ctx, 0xFFFE);
-	return ENTELEA_E_PERM;
+	k_spin_unlock(&contexts_lock, key);
+	if (!allowed) {
+		deny_trace(ctx, detail);
+		return ENTELEA_E_PERM;
+	}
+	return ENTELEA_OK;
 }
 
 #ifdef ENTELEA_TEST
 void entelea_perm_test_reset(void)
 {
+	k_spinlock_key_t key = k_spin_lock(&contexts_lock);
+
 	memset(contexts, 0, sizeof(contexts));
+	k_spin_unlock(&contexts_lock, key);
 }
 #endif

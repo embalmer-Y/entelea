@@ -3,8 +3,9 @@
 #define ENTELEA_PRINCIPAL_H
 
 /* R04 可信调用者与能力裁决合同见 framework/execution/capability/contract.md。
- * principal 不透明（R01 合同）：仅可信宿主经 bind 构造；Wasm/Lua 输入
- * 整数不能转为 principal。能力文法 class:op:instances（数值位图）与
+ * 仅可信宿主可绑定和传递 principal；Wasm/Lua 输入整数不能转为 principal。
+ * 公开 C 结构不是不可伪造的令牌，同地址空间依赖宿主信任边界。
+ * 能力文法 class:op:instances（数值位图）与
  * msg:name 名单（P1-1）；越权一律拒绝并留痕（EVT_PERM_DENIED）。 */
 
 #include <stdbool.h>
@@ -48,9 +49,8 @@ typedef struct {
 	char msg_targets[ENTELEA_PERM_MSG_TARGETS_MAX][ENTELEA_PERM_MSG_NAME_MAX];
 } entelea_perm_table_t;
 
-/* principal：不透明形态由 R01 context.h 前向声明（struct entelea_principal）；
- * 此处给出完整定义（同一定义源）。句柄=绑定槽索引+1（0=无效）；
- * 不可由外部整数构造（bind 是唯一入口，宿主可信面）。 */
+/* context.h 前向声明；此处公开完整定义，以值传递句柄。
+ * bind 是可信宿主约定的构造入口，不是 C 语言级的不可伪造保证。 */
 #include <entelea/context.h>
 
 struct entelea_principal {
@@ -69,7 +69,8 @@ entelea_result_t entelea_perm_parse(const char *cap, entelea_perm_table_t *table
 
 /** [host] 绑定 principal（槽上限 4；app_id 撞名拒绝）。解绑后句柄失效
  * ——旧句柄（含宿主别处保存的副本）的后续裁决一律 E_PERM；句柄须与
- * 槽当前绑定的 app_id 与代数同时一致（同槽重绑不复活旧副本）。 */
+ * 槽当前绑定的 app_id 与代数同时一致。槽代数耗尽后本次运行不再复用；
+ * 无可用槽 = E_NOMEM。句柄只在当前运行有效，不得持久化或跨重启复用。 */
 entelea_result_t entelea_principal_bind(entelea_principal_t *ctx,
 					uint16_t app_id,
 					const entelea_perm_table_t *table);
@@ -78,17 +79,20 @@ entelea_result_t entelea_principal_bind(entelea_principal_t *ctx,
  * 副本解绑为空操作（不得撤销同槽新绑定）。 */
 void entelea_principal_unbind(entelea_principal_t *ctx);
 
-/** [any] 裁决：未声明/未绑定/句柄伪造 = E_PERM + 留痕事件。 */
+/** [any] 裁决：未声明/未绑定/句柄字段不匹配 = E_PERM + 尝试留痕事件。
+ * 绑定、解绑和裁决同步；成功裁决不保证后续动作期间权限未被撤销。 */
 entelea_result_t entelea_perm_check(entelea_principal_t ctx,
 				    entelea_perm_class_t cls,
 				    entelea_perm_op_t op, uint8_t inst);
 
-/** [any] msg 名单裁决（send 专用；recv 被动无权限门）。 */
+/** [any] msg 名单裁决（send 专用；recv 被动无权限门）。
+ * 名称须符合声明文法并在 40 字节内终止，否则 E_PERM；NULL 为 E_PARAM。 */
 entelea_result_t entelea_perm_check_msg(entelea_principal_t ctx,
 					const char *target);
 
 #ifdef ENTELEA_TEST
 void entelea_perm_test_reset(void);
+void entelea_perm_test_after_resolve(void (*hook)(void));
 #endif
 
 #ifdef __cplusplus

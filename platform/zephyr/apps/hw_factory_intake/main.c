@@ -48,8 +48,24 @@ int main(void)
 	       (uint32_t)FACTORY_TSAP_LEN);
 	entelea_supervision_boot(entelea_platform_boot_steps,
 				 ENTELEA_PLATFORM_BOOT_STEP_COUNT);
+	if (entelea_platform_d12_safe_halt()) {
+		/* RF1 G5：复位风暴 SAFE-HALT——不启业务，输出保持安全起始
+		 * 态，WDT 巡检照常喂狗（POR 出）。 */
+		printk("[hw-fact] D12 SAFE-HALT: business disabled\n");
+		k_sleep(K_FOREVER);
+		return 0;
+	}
 
 	bool ok = true;
+	entelea_trial_candidate_t prior;
+
+	CHK(entelea_trial_restore() == ENTELEA_OK, "restore trial state");
+	entelea_trial_current(&prior);
+	CHK(entelea_trial_state() == ENTELEA_TRIAL_NONE ||
+		    ((entelea_trial_state() == ENTELEA_TRIAL_TIMEOUT ||
+		      entelea_trial_state() == ENTELEA_TRIAL_REJECTED) &&
+		     prior.slot == 0),
+	    "slot not occupied by a pending or active candidate");
 
 	/* 0) 工厂 provisioning：维护通道注入工厂根 pk0（prov CBOR v1
 	 *    最小 9 对——真实产线=烧录窗注入，闸走同一 API 面：校验
@@ -174,9 +190,15 @@ int main(void)
 			sizeof(fc.description) - 1);
 		CHK(entelea_factory_intake(&fc, 0) == ENTELEA_OK &&
 			    entelea_trial_state() ==
-				    ENTELEA_TRIAL_PENDING_CONFIRM,
-		    "factory intake -> PENDING_CONFIRM (slot 0)");
+				    ENTELEA_TRIAL_PENDING_CONFIRM &&
+			    entelea_trial_flush() == ENTELEA_OK,
+		    "factory intake -> PENDING_CONFIRM persisted (slot 0)");
 	}
+
+#ifdef FACTORY_TEST_STOP_AFTER_PENDING
+	printk("[hw-fact] TEST: stopping after persisted PENDING\n");
+	return 0;
+#endif
 
 	/* 5) 确认前不可执行：试用门拒装载且零副作用。owner=未绑定（无导入
 	 *    模块——natives 不触发）。 */
@@ -197,7 +219,7 @@ int main(void)
 		    entelea_trial_flush() == ENTELEA_OK &&
 		    entelea_wasm_load(0, ctx, &app) == ENTELEA_E_PERM,
 	    "no confirm -> TIMEOUT persisted, slot stays gated");
-	printk("[hw-fact] PASS: candidate pending real user confirm "
+	printk("[hw-fact] PASS: confirmation timed out; candidate remains gated "
 	       "(no auto-confirm in product build)\n");
 	return 0;
 #else

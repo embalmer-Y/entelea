@@ -10,8 +10,6 @@
 #include <entelea/supervision.h>
 #include <entelea/wdt.h>
 #include "boot_steps.h"
-
-extern bool entelea_platform_d12_safe_halt(void); /* d12_bootguard.c */
 #include "clock.h"
 
 static entelea_clock_t platform_clock;
@@ -56,6 +54,11 @@ int main(void)
 	k_sleep(K_FOREVER);
 	return 0;
 #endif
+	if (entelea_platform_d12_safe_halt()) {
+		/* RF1 G5：生产路径同样消费 SAFE-HALT（本镜像无业务——仅
+		 * 显式标记；输出已在安全起始态，心跳与巡检照常）。 */
+		printk("[d12] SAFE-HALT active: business disabled\n");
+	}
 	for (;;) {
 		/* r14 真机观测面：5s 心跳打印安全汇总 + estop 闩（estop
 		 * 闸判据行；事件本体仍经 WDT 巡检补发 EVT_ESTOP）。 */

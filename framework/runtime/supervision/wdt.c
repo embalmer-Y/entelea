@@ -28,7 +28,7 @@ struct wdt_src {
 	atomic_t last_feed32; /* 时钟低 32 位；无符号差值对回绕安全 */
 	atomic_t grace_until32; /* 豁免窗绝对截止（0 = 无；feed 清除） */
 	bool registered;
-	bool active; /* 首次 feed 激活——未激活源不参与逾期判定 */
+	atomic_t active; /* 首次 feed 激活——未激活源不参与逾期判定 */
 };
 
 static struct wdt_src srcs[ENTELEA_WDT_COUNT];
@@ -38,6 +38,15 @@ static atomic_t halted = ATOMIC_INIT(0); /* 全局停机（system_fail 置位）
 static uint64_t clock_last_good;
 static uint32_t clock_fault_count;
 static uint8_t blind_rounds; /* 连续“时间不可知”巡检轮数（A1 策略） */
+
+#ifdef ENTELEA_TEST
+static void (*after_elapsed_sample)(void);
+
+void entelea_wdt_test_after_elapsed_sample(void (*hook)(void))
+{
+	after_elapsed_sample = hook;
+}
+#endif
 
 #ifdef CONFIG_TASK_WDT
 static int twdt_ch = -1;
@@ -106,7 +115,11 @@ static uint32_t now32(void)
 
 uint32_t entelea_wdt_clock_faults(void)
 {
-	return clock_fault_count;
+	unsigned int key = irq_lock();
+	uint32_t count = clock_fault_count;
+
+	irq_unlock(key);
+	return count;
 }
 
 void entelea_wdt_halt(void)
@@ -115,11 +128,6 @@ void entelea_wdt_halt(void)
 	 * 触发 system_fail 的停机语义相同，不依赖调用线程自身挂起；
 	 * 停喂后 task_wdt 通道到期 → sys_reboot 兜底。 */
 	atomic_set(&halted, 1);
-}
-
-static uint32_t elapsed_since(const struct wdt_src *s)
-{
-	return now32() - (uint32_t)atomic_get(&s->last_feed32);
 }
 
 entelea_result_t entelea_wdt_register(entelea_wdt_src_t src, uint32_t period_ms)
@@ -148,10 +156,13 @@ void entelea_wdt_feed(entelea_wdt_src_t src)
 		return;
 	}
 	if ((int)src >= 0 && src < ENTELEA_WDT_COUNT) {
+		unsigned int key = irq_lock();
+
 		atomic_set(&srcs[src].last_feed32, (atomic_val_t)now32());
 		/* 正常喂狗恢复即清豁免窗。 */
 		atomic_set(&srcs[src].grace_until32, 0);
-		srcs[src].active = true; /* 首次喂狗 = 激活 */
+		atomic_set(&srcs[src].active, 1); /* 首次喂狗 = 激活 */
+		irq_unlock(key);
 	}
 }
 
@@ -163,7 +174,7 @@ void entelea_wdt_grace(entelea_wdt_src_t src, uint32_t budget_ms)
 	struct wdt_src *s = &srcs[src];
 
 	/* 豁免不激活源（激活 = feed 专属语义不变）。 */
-	if (!s->registered || !s->active) {
+	if (!s->registered || atomic_get(&s->active) == 0) {
 		return;
 	}
 	if (budget_ms > ENTELEA_WDT_GRACE_CAP_MS) {
@@ -178,7 +189,7 @@ void entelea_wdt_deactivate(entelea_wdt_src_t src)
 	/* 去激活对称面：源随其子系统停止，停后无人喂是预期态，不判逾期；
 	 * 下次 feed 重新激活。 */
 	if ((int)src >= 0 && src < ENTELEA_WDT_COUNT) {
-		srcs[src].active = false;
+		atomic_set(&srcs[src].active, 0);
 	}
 }
 
@@ -189,6 +200,11 @@ void entelea_wdt_deactivate(entelea_wdt_src_t src)
 static entelea_wdt_src_t patrol_once_impl(void)
 {
 	uint32_t now;
+	uint32_t last_feed[ENTELEA_WDT_COUNT];
+
+	for (int s = 0; s < ENTELEA_WDT_COUNT; s++) {
+		last_feed[s] = (uint32_t)atomic_get(&srcs[s].last_feed32);
+	}
 
 	if (!now32_checked(&now)) {
 		if (++blind_rounds >= ENTELEA_WDT_BLIND_ROUNDS) {
@@ -199,11 +215,21 @@ static entelea_wdt_src_t patrol_once_impl(void)
 	}
 	blind_rounds = 0;
 
+#ifdef ENTELEA_TEST
+	if (after_elapsed_sample != NULL) {
+		after_elapsed_sample();
+	}
+#endif
+
 	for (int s = 0; s < ENTELEA_WDT_COUNT; s++) {
-		if (!srcs[s].registered || !srcs[s].active) {
+		if (!srcs[s].registered || atomic_get(&srcs[s].active) == 0) {
 			continue;
 		}
-		if (elapsed_since(&srcs[s]) > srcs[s].period_ms) {
+		if (last_feed[s] != (uint32_t)atomic_get(&srcs[s].last_feed32)) {
+			/* 并发 feed 改变快照：下轮重判，避免新时间戳导致下溢。 */
+			continue;
+		}
+		if (now - last_feed[s] > srcs[s].period_ms) {
 			/* 豁免窗内不判逾（声明式合法阻塞期）；超窗恢复判逾
 			 * （预算过期 = 真卡死，fail-safe 保持）。 */
 			uint32_t gu = (uint32_t)atomic_get(&srcs[s].grace_until32);
@@ -214,7 +240,7 @@ static entelea_wdt_src_t patrol_once_impl(void)
 			/* 先 WDT_WARN（带 src 与最后 feed 时间）再进 system_fail。 */
 			entelea_wdt_warn_evt_t payload = {
 				.src = (int32_t)s,
-				.last_feed = (uint32_t)atomic_get(&srcs[s].last_feed32),
+				.last_feed = last_feed[s],
 			};
 			const entelea_event_t evt = {
 				.id = ENTELEA_EVT_WDT_WARN,
@@ -336,6 +362,7 @@ void entelea_wdt_test_reset(void)
 	clock_last_good = 0;
 	clock_fault_count = 0;
 	blind_rounds = 0;
+	after_elapsed_sample = NULL;
 }
 
 entelea_wdt_src_t entelea_wdt_patrol_once(void)

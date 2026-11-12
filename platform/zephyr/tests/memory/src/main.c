@@ -152,4 +152,65 @@ ZTEST(framework_mem, test_tombstone_capacity_no_revival)
 	zassert_equal(h.tombstoned, 9);
 }
 
+ZTEST(framework_mem, test_delete_only_hides_earlier_writes)
+{
+	entelea_mem_test_reset();
+	entelea_mem_entry_t before = mk(42, 1);
+	entelea_mem_entry_t after = mk(42, 2);
+	entelea_mem_entry_t out[4];
+
+	zassert_equal(entelea_mem_write(true, &before), ENTELEA_OK);
+	zassert_equal(entelea_mem_delete(42, 42), ENTELEA_OK);
+	zassert_equal(entelea_mem_write(true, &after), ENTELEA_OK);
+	zassert_equal(entelea_mem_read(out, 4), 1,
+		      "旧墓碑不能隐藏同时间戳的新写入");
+	zassert_equal(out[0].data[0], 2);
+	zassert_equal(entelea_mem_delete(40, 45), ENTELEA_OK);
+	zassert_equal(entelea_mem_read(out, 4), 0,
+		      "后一次删除仍可隐藏此前的新写入");
+	after.data[0] = 3;
+	zassert_equal(entelea_mem_write(true, &after), ENTELEA_OK);
+	zassert_equal(entelea_mem_read(out, 4), 1);
+	zassert_equal(out[0].data[0], 3);
+}
+
+ZTEST(framework_mem, test_tombstone_reuse_preserves_write_order)
+{
+	entelea_mem_test_reset();
+	entelea_mem_entry_t old = mk(10, 1);
+	entelea_mem_entry_t later = mk(10, 2);
+	entelea_mem_entry_t out[4];
+
+	zassert_equal(entelea_mem_write(true, &old), ENTELEA_OK);
+	zassert_equal(entelea_mem_delete(10, 10), ENTELEA_OK);
+	zassert_equal(entelea_mem_write(true, &later), ENTELEA_OK);
+	for (uint64_t t = 21; t < 28; t++) {
+		zassert_equal(entelea_mem_delete(t, t), ENTELEA_OK);
+	}
+	zassert_equal(entelea_mem_delete(0, 50), ENTELEA_OK);
+	zassert_equal(entelea_mem_read(out, 4), 0,
+		      "满容量覆盖旧墓碑不会复活任何删除前条目");
+	later.data[0] = 3;
+	zassert_equal(entelea_mem_write(true, &later), ENTELEA_OK);
+	zassert_equal(entelea_mem_read(out, 4), 1);
+	zassert_equal(out[0].data[0], 3);
+}
+
+ZTEST(framework_mem, test_write_sequence_exhaustion_is_atomic)
+{
+	entelea_mem_test_reset();
+	entelea_mem_entry_t entry = mk(10, 1);
+	entelea_mem_health_t health;
+
+	zassert_equal(entelea_mem_test_set_write_seq(UINT64_MAX - 1), ENTELEA_OK);
+	zassert_equal(entelea_mem_write(true, &entry), ENTELEA_OK);
+	zassert_equal(entelea_mem_test_set_write_seq(0), ENTELEA_E_STATE);
+	zassert_equal(entelea_mem_write(true, &entry), ENTELEA_E_RANGE);
+	entelea_mem_health(&health);
+	zassert_equal(health.count, 1);
+	zassert_equal(health.evicted, 0);
+	zassert_equal(entelea_mem_delete(10, 10), ENTELEA_OK);
+	zassert_equal(entelea_mem_read(&entry, 1), 0);
+}
+
 ZTEST_SUITE(framework_mem, NULL, mem_setup, NULL, NULL, NULL);

@@ -51,8 +51,8 @@ typedef struct {
 	entelea_media_state_t (*state)(void *user);
 } entelea_media_backend_t;
 
-/** [thread] 绑定后端（各媒体类独立槽：重绑同类=替换，不影响他类；
- * 类外=E_PARAM）。 */
+/** [thread] 绑定后端（各媒体类独立槽：原后端非 IDLE 时重绑=E_BUSY；停止后
+ * 替换，不影响他类；类外=E_PARAM）。调用方须串行化同一类的操作。 */
 entelea_result_t entelea_media_bind(entelea_media_class_t cls,
 				    entelea_media_backend_t backend, void *user);
 

@@ -2,6 +2,7 @@
 /* R06 网络机制/依赖状态机测试（fault-class：断链/恢复滞回/部署守卫/
  * 租约竞态+席位视图/幂等回放+unknown 不缓存/恢复风暴/独立 App 判定）。 */
 #include <string.h>
+#include <zephyr/irq_offload.h>
 #include <zephyr/ztest.h>
 #include <entelea/events.h>
 #include <entelea/netmon.h>
@@ -216,8 +217,17 @@ ZTEST(framework_net, test_idem_replay_and_unknown_nocache)
 }
 
 /* ---- 依赖状态机：恢复防抖/风暴/独立判定 ---- */
+static void dep_state_from_isr(const void *arg)
+{
+	entelea_dep_state_t *state = (entelea_dep_state_t *)arg;
+
+	*state = entelea_dep_state(ENTELEA_DEP_NET);
+}
+
 ZTEST(framework_net, test_dep_state_machine_and_storm)
 {
+	entelea_dep_state_t isr_state = ENTELEA_DEP_DOWN;
+
 	/* 初始 DOWN。 */
 	zassert_equal(entelea_dep_state(ENTELEA_DEP_MODEL), ENTELEA_DEP_DOWN);
 	/* 假传输注入：DNS/TLS/云不可用 = bad 观测。 */
@@ -238,6 +248,8 @@ ZTEST(framework_net, test_dep_state_machine_and_storm)
 	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 600), ENTELEA_OK);
 	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 700), ENTELEA_OK);
 	zassert_equal(entelea_dep_state(ENTELEA_DEP_NET), ENTELEA_DEP_UP);
+	irq_offload(dep_state_from_isr, &isr_state);
+	zassert_equal(isr_state, ENTELEA_DEP_UP, "ISR 查询保留 [any] 合同");
 	/* 独立判定：model down 不影响 net up（独立 App 判各自依赖）。 */
 	zassert_equal(entelea_dep_report(ENTELEA_DEP_MODEL, false, 800),
 		      ENTELEA_OK);
@@ -258,14 +270,46 @@ ZTEST_SUITE(framework_net, NULL, net_setup, NULL, NULL, NULL);
 /* ---- B-1 传输队列：容量/背压/顺序/送达后弹 ---- */
 static uint8_t sink_log[64];
 static uint32_t sink_n;
+static uint32_t sink_last_len;
+static uint8_t sink_last_byte;
+static uint8_t sink_last_frame[ENTELEA_AVQ_FRAME_MAX];
 
 static void test_sink(void *user, const char *topic, const uint8_t *payload,
-		      uint8_t len)
+		      uint32_t len)
 {
 	ARG_UNUSED(user);
 	ARG_UNUSED(topic);
 	sink_log[sink_n % sizeof(sink_log)] = payload[0];
+	sink_last_len = len;
+	if (len > 0) {
+		sink_last_byte = payload[len - 1];
+		memcpy(sink_last_frame, payload, len);
+	}
 	sink_n++;
+}
+
+ZTEST(framework_net, test_avq_sink_receives_full_frame_lengths)
+{
+	entelea_netqueue_test_reset();
+	entelea_netqueue_bind_sink(test_sink, NULL);
+	uint8_t frame[ENTELEA_AVQ_FRAME_MAX];
+	const uint32_t lengths[] = {255, 256, 512};
+
+	for (uint32_t i = 0; i < sizeof(frame); i++) {
+		frame[i] = (uint8_t)(i % 251);
+	}
+	for (size_t i = 0; i < ARRAY_SIZE(lengths); i++) {
+		uint32_t len = lengths[i];
+
+		sink_last_len = 0;
+		sink_last_byte = 0;
+		zassert_equal(entelea_avq_push(frame, len), ENTELEA_OK);
+		zassert_equal(entelea_netqueue_flush(), 1);
+		zassert_equal(sink_last_len, len, "sink 长度不得截断");
+		zassert_equal(sink_last_byte, frame[len - 1], "sink 获得整帧");
+		zassert_ok(memcmp(sink_last_frame, frame, len), "帧内容不得截断");
+	}
+	entelea_netqueue_test_reset();
 }
 
 ZTEST(framework_net, test_avq_pubq_bounded_queues)
@@ -318,7 +362,7 @@ ZTEST(framework_net, test_avq_pubq_bounded_queues)
 	zassert_equal(entelea_netqueue_test_av_delivered(), 3);
 	zassert_equal(entelea_avq_pop(b, sizeof(b), &len), ENTELEA_E_BUSY);
 
-	/* pubq 拒新：满 8 后 E_BUSY；送达后弹（at-least-once）。 */
+	/* pubq 拒新：满 8 后 E_BUSY；回调后弹，不等于网络送达。 */
 	for (uint8_t i = 0; i < ENTELEA_PUBQ_ENTRIES; i++) {
 		uint8_t pl[1] = {i};
 

@@ -1,0 +1,6 @@
+/ {
+	d12retained: d12-retained {
+		compatible = "test,d12-retained";
+		status = "okay";
+	};
+};

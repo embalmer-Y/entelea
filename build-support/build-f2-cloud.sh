@@ -5,25 +5,26 @@
 # （打印 USAGE_TOKENS 行——台账记账用）。
 set -e
 cd "$(dirname "$0")/.."
-OUT=build/f2-cloud
-MB=build/.toolobj/mbedtls-host
-M=../entelea-legacy/.deps/mbedtls
-P=../entelea-legacy/.deps/tf-psa-crypto
-mkdir -p "$OUT" "$MB"
+OUT=${ENTELEA_CLOUD_OUT:-build/f2-cloud}
+MB=${ENTELEA_MBEDTLS_BUILD:-build/.toolobj/mbedtls-host}
+M=${ENTELEA_MBEDTLS_SOURCE:-../entelea-legacy/.deps/mbedtls}
+P=${ENTELEA_PSA_SOURCE:-../entelea-legacy/.deps/tf-psa-crypto}
+mkdir -p "$OUT"
 
 # pin 校验（review P2-4：源树换版必须显式失败，不静默换 TLS 库）。
-python3 tools/check_dependencies.py > /dev/null
+python3 tools/check_dependencies.py --dependency mbedtls --checkout "$M"
+python3 tools/check_dependencies.py --dependency tf_psa_crypto --checkout "$P"
 MB_PIN=$(git -C "$M" rev-parse HEAD)
 PSA_PIN=$(git -C "$P" rev-parse HEAD)
-check_pin() { # id actual
-  want=$(python3 -c "import json;print([d['commit'] for d in json.load(open('build-support/dependencies.json'))['dependencies'] if d['id']=='$1'][0])")
-  [ "$2" = "$want" ] || { echo "FAIL: $1 pin mismatch ($2 != $want)"; exit 1; }
-}
-check_pin mbedtls "$MB_PIN"
-check_pin tf_psa_crypto "$PSA_PIN"
 STAMP="$MB/build-stamp"
-if [ ! -f "$MB/library/libmbedtls.a" ] || [ "$(cat "$STAMP" 2>/dev/null)" != "$MB_PIN/$PSA_PIN" ]; then
-  rm -rf "$MB"
+if [ ! -f "$MB/library/libmbedtls.a" ] || [ ! -f "$MB/library/libmbedx509.a" ] ||
+   [ ! -f "$MB/library/libmbedcrypto.a" ] ||
+   [ "$(cat "$STAMP" 2>/dev/null)" != "$MB_PIN/$PSA_PIN" ]; then
+  if [ -d "$MB" ] && [ -n "$(find "$MB" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+    echo "FAIL: incomplete or mismatched TLS build at $MB; select a new empty ENTELEA_MBEDTLS_BUILD" >&2
+    exit 1
+  fi
+  mkdir -p "$MB"
   cmake -S "$M" -B "$MB" -DENABLE_PROGRAMS=OFF -DENABLE_TESTING=OFF \
     -DGEN_FILES=OFF -DCMAKE_BUILD_TYPE=Release -DMBEDTLS_AS_SUBPROJECT=ON \
     -DTF_PSA_CRYPTO_DIR="$(readlink -f "$P")" -DCMAKE_INSTALL_LIBDIR=lib \
@@ -42,6 +43,7 @@ $CC -std=c11 -Wall -Wextra -Werror \
   platform/linux/https_chat.c platform/linux/cloud_main.c \
   platform/linux/zephyr_shim.c \
   framework/services/assistant/model.c \
+  framework/services/config/d12.c \
   framework/services/net/netmon.c \
   framework/services/config/prov.c \
   framework/services/storage/part.c \

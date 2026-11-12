@@ -30,7 +30,7 @@ typedef struct {
 		.media = true,    .memory = true, \
 		.affect = true,   .delivery = true})
 
-/** 配置自洽检查：assistant 无 storage→不可持久（E_STATE——合同）。 */
+/** 配置自洽检查：memory/delivery 需要 storage，affect 需要 memory。 */
 bool entelea_config_valid(const entelea_config_t *c);
 
 /** 配置名（观测）。 */

@@ -139,6 +139,30 @@ entelea_result_t entelea_storage_meta_read(void *buf, uint16_t cap,
 	return ENTELEA_OK;
 }
 
+entelea_result_t entelea_storage_meta_read_mirrored(void *buf, uint16_t cap,
+						    uint16_t *len)
+{
+	uint8_t data0[ENTELEA_STORAGE_META_MAX];
+	uint8_t data1[ENTELEA_STORAGE_META_MAX];
+	uint32_t s0, s1;
+	uint16_t l0, l1;
+
+	if (buf == NULL || len == NULL) {
+		return ENTELEA_E_PARAM;
+	}
+	if (read_rec(0, &s0, &l0, data0) != ENTELEA_OK ||
+	    read_rec(1, &s1, &l1, data1) != ENTELEA_OK ||
+	    l0 != l1 || memcmp(data0, data1, l0) != 0) {
+		return ENTELEA_E_IO;
+	}
+	if (l0 > cap) {
+		return ENTELEA_E_RANGE;
+	}
+	memcpy(buf, data0, l0);
+	*len = l0;
+	return ENTELEA_OK;
+}
+
 #ifdef ENTELEA_TEST
 entelea_result_t entelea_storage_meta_corrupt_test(uint8_t copy_idx)
 {

@@ -9,6 +9,10 @@ cmake_minimum_required(VERSION 3.20.0)
 set(FACTORY_PKG_HEADER "/home/emb/project/workspace/forge/artifacts/run004/factory_pkg.h"
     CACHE STRING "Forge 工厂产物头（tsap_pack.py 生成）")
 option(FACTORY_DEV_AUTOCONFIRM "dev-only auto-confirm (no user acceptance)" OFF)
+option(FACTORY_TEST_STOP_AFTER_PENDING "native_sim restart test fixture" OFF)
+if(FACTORY_TEST_STOP_AFTER_PENDING AND NOT BOARD MATCHES "^native_sim")
+  message(FATAL_ERROR "FACTORY_TEST_STOP_AFTER_PENDING is only for native_sim")
+endif()
 if(NOT EXISTS ${FACTORY_PKG_HEADER})
   message(FATAL_ERROR "factory package header missing: ${FACTORY_PKG_HEADER}")
 endif()
@@ -17,6 +21,12 @@ if(TEST_FLASH_BACKEND)
   # 须在 find_package 前（DT 处理时序）：native_sim sim-flash 变体
   # storage 扩容（同 tests/store 纪律）。
   set(DTC_OVERLAY_FILE ${CMAKE_CURRENT_SOURCE_DIR}/flash.overlay)
+endif()
+# RF1 G5：板级业务镜像必须接 D12 复位风暴防护（retained RAM 仅板级有）。
+if(BOARD MATCHES "^esp32p4")
+  set(ENTELEA_D12_BOOTGUARD ON)
+  list(APPEND EXTRA_DTC_OVERLAY_FILE ${CMAKE_CURRENT_SOURCE_DIR}/retained.overlay)
+  list(APPEND EXTRA_CONF_FILE ${CMAKE_CURRENT_SOURCE_DIR}/retained.conf)
 endif()
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(entelea_hw_factory_intake)
@@ -71,6 +81,9 @@ target_compile_definitions(app PRIVATE ENTELEA_NO_RAM_BACKEND=1)
 if(FACTORY_DEV_AUTOCONFIRM)
   target_compile_definitions(app PRIVATE FACTORY_DEV_AUTOCONFIRM=1)
 endif()
+if(FACTORY_TEST_STOP_AFTER_PENDING)
+  target_compile_definitions(app PRIVATE FACTORY_TEST_STOP_AFTER_PENDING=1)
+endif()
 target_sources(app PRIVATE
   main.c
   ${WAMR_RUNTIME_LIB_SOURCE}
@@ -100,6 +113,10 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/execution/safety/force.c
   ${ENTELEA_ROOT}/framework/execution/safety/drivers.c
 )
+if(ENTELEA_D12_BOOTGUARD)
+  target_compile_definitions(app PRIVATE ENTELEA_REQUIRE_D12_BOOTGUARD=1)
+  target_sources(app PRIVATE ${ENTELEA_ROOT}/platform/zephyr/d12_bootguard.c)
+endif()
 # WAMR zephyr 平台层引用旧 __stdout_hook_install（minimal-libc 链接垫片）
 if(NOT CONFIG_PICOLIBC)
   target_sources(app PRIVATE src/wamr_compat.c)

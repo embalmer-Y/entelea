@@ -21,143 +21,56 @@
 #include <mbedtls/ssl.h>
 #include <mbedtls/x509_crt.h>
 #include <psa/crypto.h>
+#include "../https_http.h"
+#include "../https_json.h"
+#include "../https_time.h"
+#include "../secure_zero.h"
 #include "https_chat.h"
 
 #define HTTPS_PORT "443"
 #define CA_BUNDLE "/etc/ssl/certs/ca-certificates.crt"
 
-static uint64_t now_ms(void)
+static bool now_ms(uint64_t *out)
 {
 	struct timespec ts;
 
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (uint64_t)ts.tv_sec * 1000U + (uint64_t)ts.tv_nsec / 1000000U;
-}
-
-/* 转义+控制字符面：false=超界（调用方显式拒）。 */
-static bool json_escape(const char *in, char *out, size_t out_max)
-{
-	size_t o = 0;
-
-	for (size_t i = 0; in[i] != '\0'; i++) {
-		char c = in[i];
-		size_t need = (c == '"' || c == '\\' || c < 0x20) ? 2 : 1;
-
-		if (o + need + 1 >= out_max) {
-			return false;
-		}
-		if (c == '"' || c == '\\') {
-			out[o++] = '\\';
-			out[o++] = c;
-		} else if (c == '\n') {
-			out[o++] = '\\';
-			out[o++] = 'n';
-		} else if (c == '\r') {
-			out[o++] = '\\';
-			out[o++] = 'r';
-		} else if (c == '\t') {
-			out[o++] = '\\';
-			out[o++] = 't';
-		} else if (c < 0x20) {
-			out[o++] = ' ';
-		} else {
-			out[o++] = c;
-		}
-	}
-	out[o] = '\0';
-	return true;
-}
-
-/* 值感知键查找：JSON 键=字符串（引号段）+紧跟冒号。识别方式：扫描
- * 时跟踪字符串区（值内的字面 "key": 不会成为键——它不出现在"引号
- * 段后跟冒号"的结构位）；字符串段闭合处若后随 ':' 且段内文本==key
- * 则命中（返回冒号后位置）。 */
-static const char *find_key(const char *body, const char *key)
-{
-	size_t klen = strlen(key);
-
-	for (const char *p = body; *p != '\0'; p++) {
-		if (*p != '"') {
-			continue; /* 非串起点：跳过（结构字符/空白/数字） */
-		}
-		/* p=段起点：截取段内（处理转义）。 */
-		const char *q = p + 1;
-		bool esc = false;
-
-		while (*q != '\0' && (esc || *q != '"')) {
-			if (esc) {
-				esc = false;
-			} else if (*q == '\\') {
-				esc = true;
-			}
-			q++;
-		}
-		if (*q == '\0') {
-			return NULL; /* 未闭合（截断 body） */
-		}
-		/* 段 [p+1, q)：长度==klen 且字面相等且后随 ':' → 键。 */
-		if ((size_t)(q - p - 1) == klen &&
-		    strncmp(p + 1, key, klen) == 0) {
-			const char *c = q + 1;
-
-			while (*c == ' ' || *c == '\t') {
-				c++;
-			}
-			if (*c == ':') {
-				return c + 1;
-			}
-		}
-		p = q; /* 跳过该串（值内字面不参与结构位匹配） */
-	}
-	return NULL;
-}
-
-/* 提取 quoted 值直写 out（out_max 界）。0=OK；-1 未找到/非串；
- * -2 body 截断（无闭引号）；-3 超 out_max。（review P2-2：截断显式，
- * 不静默冒充成功。） */
-static int extract_quoted(const char *body, const char *key, char *out,
-			  size_t out_max)
-{
-	const char *p = find_key(body, key);
-
-	if (p == NULL) {
-		return -1;
-	}
-	while (*p == ' ' || *p == '\t') {
-		p++;
-	}
-	if (*p != '"') {
-		return -1; /* null/数字——非字符串值 */
-	}
-	p++;
-	size_t o = 0;
-
-	while (p[o] != '\0' && p[o] != '"') {
-		if (p[o] == '\\' && p[o + 1] != '\0') {
-			o++; /* 转义对：保留源字符（最小提取面） */
-		}
-		if (p[o] == '\0') {
-			return -2; /* 无闭引号=body 截断 */
-		}
-		if (o + 1 >= out_max) {
-			return -3; /* 超 out_max=显式截断拒 */
-		}
-		out[o] = p[o];
-		o++;
-	}
-	out[o] = '\0';
-	return 0;
-}
-
-static bool extract_uint(const char *body, const char *key, uint32_t *out)
-{
-	const char *p = find_key(body, key);
-
-	if (p == NULL) {
+	if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0 || ts.tv_sec < 0 ||
+	    ts.tv_nsec < 0 || ts.tv_nsec >= 1000000000L ||
+	    (uint64_t)ts.tv_sec > (UINT64_MAX - 999U) / 1000U) {
 		return false;
 	}
-	*out = (uint32_t)strtoul(p, NULL, 10);
+	*out = (uint64_t)ts.tv_sec * 1000U + (uint64_t)ts.tv_nsec / 1000000U;
 	return true;
+}
+
+static int bio_send(void *ctx, const unsigned char *buf, size_t len)
+{
+	mbedtls_net_context *net = ctx;
+	ssize_t ret = send(net->fd, buf, len, MSG_NOSIGNAL);
+
+	if (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK ||
+			errno == EINTR)) {
+		return MBEDTLS_ERR_SSL_WANT_WRITE;
+	}
+	if (ret < 0 && (errno == EPIPE || errno == ECONNRESET)) {
+		return MBEDTLS_ERR_NET_CONN_RESET;
+	}
+	return ret < 0 ? MBEDTLS_ERR_NET_SEND_FAILED : (int)ret;
+}
+
+static int bio_recv(void *ctx, unsigned char *buf, size_t len)
+{
+	mbedtls_net_context *net = ctx;
+	ssize_t ret = recv(net->fd, buf, len, 0);
+
+	if (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK ||
+			errno == EINTR)) {
+		return MBEDTLS_ERR_SSL_WANT_READ;
+	}
+	if (ret < 0 && (errno == EPIPE || errno == ECONNRESET)) {
+		return MBEDTLS_ERR_NET_CONN_RESET;
+	}
+	return ret < 0 ? MBEDTLS_ERR_NET_RECV_FAILED : (int)ret;
 }
 
 entelea_result_t entelea_https_chat(void *user,
@@ -168,14 +81,31 @@ entelea_result_t entelea_https_chat(void *user,
 {
 	const entelea_https_cfg_t *cfg = user;
 
-	if (cfg == NULL || cfg->host[0] == '\0' || cfg->model[0] == '\0') {
+	if (cfg == NULL ||
+	    !https_http_token(cfg->host, sizeof(cfg->host), false) ||
+	    !https_http_token(cfg->path_prefix, sizeof(cfg->path_prefix), true) ||
+	    !https_http_token(cfg->api_key, sizeof(cfg->api_key), true) ||
+	    memchr(cfg->model, '\0', sizeof(cfg->model)) == NULL ||
+	    cfg->model[0] == '\0') {
 		return ENTELEA_E_PARAM;
 	}
-	if (n != 1 || msgs[0].content == NULL) {
+	if (msgs == NULL || n != 1 || msgs[0].content == NULL ||
+	    msgs[0].role == NULL || strcmp(msgs[0].role, "user") != 0 ||
+	    out == NULL || out_max == 0) {
 		return ENTELEA_E_PARAM; /* 多消息面显式拒（不静默丢） */
+	}
+	out[0] = '\0';
+	if (usage != NULL) {
+		*usage = (entelea_model_usage_t){0};
 	}
 	if (cfg->touched != NULL) {
 		(*cfg->touched)++;
+	}
+	https_timer_t timer;
+	entelea_result_t deadline_rc = https_timer_start(&timer, now_ms, timeout_ms);
+
+	if (deadline_rc != ENTELEA_OK) {
+		return deadline_rc;
 	}
 	mbedtls_net_context net;
 	mbedtls_ssl_context ssl;
@@ -185,7 +115,6 @@ entelea_result_t entelea_https_chat(void *user,
 	static char body[ENTELEA_HTTPS_BODY_MAX]; /* 16K 静态（host 单线程闸） */
 	entelea_result_t r = ENTELEA_E_IO;
 	const char *stage = "init";
-	uint64_t deadline_ms;
 
 	mbedtls_net_init(&net);
 	mbedtls_ssl_init(&ssl);
@@ -214,37 +143,60 @@ entelea_result_t entelea_https_chat(void *user,
 		stage = "ssl_setup";
 		goto cleanup;
 	}
-	mbedtls_ssl_set_bio(&ssl, &net, mbedtls_net_send,
-			    mbedtls_net_recv, NULL);
+	mbedtls_ssl_set_bio(&ssl, &net, bio_send, bio_recv, NULL);
 
-	deadline_ms = now_ms() + 30000; /* connect 段独立 30s 界 */
-	if (mbedtls_net_connect(&net, cfg->host, HTTPS_PORT,
-				MBEDTLS_NET_PROTO_TCP) != 0) {
-		stage = now_ms() >= deadline_ms ? "connect_timeout"
-						: "connect";
-		if (now_ms() >= deadline_ms) {
-			r = ENTELEA_E_TIMEOUT;
-		}
+	deadline_rc = https_timer_check(&timer, now_ms);
+	if (deadline_rc != ENTELEA_OK) {
+		stage = "connect_deadline";
+		r = deadline_rc;
+		goto cleanup;
+	}
+	int connect_rc = mbedtls_net_connect(&net, cfg->host, HTTPS_PORT,
+					    MBEDTLS_NET_PROTO_TCP);
+
+	deadline_rc = https_timer_check(&timer, now_ms);
+	if (deadline_rc != ENTELEA_OK) {
+		stage = "connect_deadline";
+		r = deadline_rc;
+		goto cleanup;
+	}
+	if (connect_rc != 0) {
+		stage = "connect";
+		r = ENTELEA_E_NOT_SENT;
 		goto cleanup;
 	}
 	{ /* 1s 量子轮询（整体界=deadline——review P2-1）。 */
 		struct timeval tv = { .tv_sec = 1 };
 
-		setsockopt(net.fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-		setsockopt(net.fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+		if (setsockopt(net.fd, SOL_SOCKET, SO_RCVTIMEO, &tv,
+			       sizeof(tv)) != 0 ||
+		    setsockopt(net.fd, SOL_SOCKET, SO_SNDTIMEO, &tv,
+			       sizeof(tv)) != 0) {
+			stage = "socket_timeout";
+			goto cleanup;
+		}
 	}
-	deadline_ms = now_ms() + timeout_ms; /* connect 后起算读写界 */
-
 	int hs;
 
-	while ((hs = mbedtls_ssl_handshake(&ssl)) != 0) {
+	for (;;) {
+		deadline_rc = https_timer_check(&timer, now_ms);
+		if (deadline_rc != ENTELEA_OK) {
+			stage = "hs_deadline";
+			r = deadline_rc;
+			goto cleanup;
+		}
+		hs = mbedtls_ssl_handshake(&ssl);
+		deadline_rc = https_timer_check(&timer, now_ms);
+		if (deadline_rc != ENTELEA_OK) {
+			stage = "hs_deadline";
+			r = deadline_rc;
+			goto cleanup;
+		}
+		if (hs == 0) {
+			break;
+		}
 		if (hs == MBEDTLS_ERR_SSL_WANT_READ ||
 		    hs == MBEDTLS_ERR_SSL_WANT_WRITE) {
-			if (now_ms() >= deadline_ms) {
-				stage = "hs_deadline";
-				r = ENTELEA_E_TIMEOUT;
-				goto cleanup;
-			}
 			continue;
 		}
 		{
@@ -259,8 +211,10 @@ entelea_result_t entelea_https_chat(void *user,
 
 	/* HTTP POST 组包。 */
 	char esc[512];
+	char model_esc[sizeof(cfg->model) * 6];
 
-	if (!json_escape(msgs[0].content, esc, sizeof(esc))) {
+	if (!https_json_escape(msgs[0].content, esc, sizeof(esc)) ||
+	    !https_json_escape(cfg->model, model_esc, sizeof(model_esc))) {
 		stage = "prompt_overflow";
 		r = ENTELEA_E_RANGE;
 		goto cleanup;
@@ -269,7 +223,12 @@ entelea_result_t entelea_https_chat(void *user,
 				"{\"model\":\"%s\",\"messages\":"
 				"[{\"role\":\"user\",\"content\":\"%s\"}],"
 				"\"max_tokens\":256}",
-				cfg->model, esc);
+				model_esc, esc);
+	if (body_len <= 0 || (size_t)body_len >= sizeof(body)) {
+		stage = "body_overflow";
+		r = ENTELEA_E_RANGE;
+		goto cleanup;
+	}
 	int req_len = snprintf(req, sizeof(req),
 			       "POST %s/chat/completions HTTP/1.1\r\n"
 			       "Host: %s\r\n"
@@ -287,10 +246,26 @@ entelea_result_t entelea_https_chat(void *user,
 	size_t sent = 0;
 
 	while (sent < (size_t)req_len) {
+		deadline_rc = https_timer_check(&timer, now_ms);
+		if (deadline_rc != ENTELEA_OK) {
+			stage = "write_deadline";
+			r = deadline_rc;
+			goto cleanup;
+		}
 		int w = mbedtls_ssl_write(&ssl,
 					  (const unsigned char *)req + sent,
 					  req_len - sent);
 
+		deadline_rc = https_timer_check(&timer, now_ms);
+		if (deadline_rc != ENTELEA_OK) {
+			stage = "write_deadline";
+			r = deadline_rc;
+			goto cleanup;
+		}
+		if (w == MBEDTLS_ERR_SSL_WANT_READ ||
+		    w == MBEDTLS_ERR_SSL_WANT_WRITE) {
+			continue;
+		}
 		if (w <= 0) {
 			stage = "ssl_write";
 			goto cleanup;
@@ -298,18 +273,30 @@ entelea_result_t entelea_https_chat(void *user,
 		sent += (size_t)w;
 	}
 	size_t got = 0;
+	bool peer_closed_cleanly = false;
 
 	while (got + 1 < ENTELEA_HTTPS_BODY_MAX) {
-		if (now_ms() >= deadline_ms) {
+		deadline_rc = https_timer_check(&timer, now_ms);
+		if (deadline_rc != ENTELEA_OK) {
 			stage = "read_deadline";
-			r = ENTELEA_E_TIMEOUT;
+			r = deadline_rc;
 			goto cleanup;
 		}
 		int rd = mbedtls_ssl_read(&ssl,
 					  (unsigned char *)body + got,
 					  ENTELEA_HTTPS_BODY_MAX - 1 - got);
 
-		if (rd == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY || rd == 0) {
+		deadline_rc = https_timer_check(&timer, now_ms);
+		if (deadline_rc != ENTELEA_OK) {
+			stage = "read_deadline";
+			r = deadline_rc;
+			goto cleanup;
+		}
+		if (rd == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
+			peer_closed_cleanly = true;
+			break;
+		}
+		if (rd == 0) {
 			break;
 		}
 		if (rd == MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET ||
@@ -318,13 +305,6 @@ entelea_result_t entelea_https_chat(void *user,
 			continue; /* ticket/WANT_*：量子轮询（计入 deadline） */
 		}
 		if (rd < 0) {
-			/* 阻塞 socket 的 SO_RCVTIMEO 到期被 mbedtls 归
-			 * NET_RECV_FAILED——经 errno==EAGAIN 区分量子
-			 * 超时与真 IO 错。 */
-			if (rd == MBEDTLS_ERR_NET_RECV_FAILED &&
-			    errno == EAGAIN) {
-				continue;
-			}
 			if (rd == MBEDTLS_ERR_SSL_TIMEOUT) {
 				stage = "ssl_timeout";
 				r = ENTELEA_E_TIMEOUT;
@@ -343,37 +323,35 @@ entelea_result_t entelea_https_chat(void *user,
 		}
 		got += (size_t)rd;
 	}
-	body[got] = '\0';
-	{ /* 状态=首行解析（防错误页文本误判 200——review P2-3）。 */
-		int code = 0;
-
-		if (sscanf(body, "HTTP/1.%*d %d", &code) != 1) {
-			stage = "status_parse";
-			goto cleanup;
-		}
-		if (code == 401 || code == 403) {
-			stage = "auth_rejected";
-			r = ENTELEA_E_PERM; /* 鉴权类：不自动重试（额度纪律） */
-			goto cleanup;
-		}
-		if (code == 429) {
-			stage = "rate_limited";
-			r = ENTELEA_E_BUSY;
-			goto cleanup;
-		}
-		if (code != 200) {
-			stage = "http_status";
-			fprintf(stderr, "[https] status: %.40s\n", body);
-			goto cleanup;
-		}
-	}
-	const char *json = strstr(body, "{");
-
-	if (json == NULL) {
-		stage = "no_json";
+	if (got + 1 == ENTELEA_HTTPS_BODY_MAX) {
+		stage = "response_overflow";
+		r = ENTELEA_E_RANGE;
 		goto cleanup;
 	}
-	int ec = extract_quoted(json, "content", out, out_max);
+	int code = 0;
+	char *json = NULL;
+
+	if (!https_http_payload(body, got, peer_closed_cleanly, &code, &json)) {
+		stage = "http_framing";
+		r = ENTELEA_E_RANGE;
+		goto cleanup;
+	}
+	if (code == 401 || code == 403) {
+		stage = "auth_rejected";
+		r = ENTELEA_E_PERM;
+		goto cleanup;
+	}
+	if (code == 429) {
+		stage = "rate_limited";
+		r = ENTELEA_E_BUSY;
+		goto cleanup;
+	}
+	if (code != 200) {
+		stage = "http_status";
+		fprintf(stderr, "[https] status=%d\n", code);
+		goto cleanup;
+	}
+	int ec = https_json_chat_content(json, out, out_max);
 
 	if (ec == -1) {
 		stage = "no_content";
@@ -388,19 +366,32 @@ entelea_result_t entelea_https_chat(void *user,
 	if (usage != NULL) {
 		uint32_t pt = 0, ct = 0;
 
-		(void)extract_uint(json, "prompt_tokens", &pt);
-		(void)extract_uint(json, "completion_tokens", &ct);
+		(void)https_json_extract_uint(json, "prompt_tokens", &pt);
+		(void)https_json_extract_uint(json, "completion_tokens", &ct);
 		usage->prompt_tokens = pt;
 		usage->completion_tokens = ct;
+	}
+	deadline_rc = https_timer_check(&timer, now_ms);
+	if (deadline_rc != ENTELEA_OK) {
+		stage = "response_deadline";
+		r = deadline_rc;
+		goto cleanup;
+	}
+	if (out[0] == '\0') {
+		stage = "empty_content";
+		r = ENTELEA_E_RANGE;
+		goto cleanup;
 	}
 	r = ENTELEA_OK;
 
 cleanup:
 	if (r != ENTELEA_OK) {
+		out[0] = '\0';
 		fprintf(stderr, "[https] fail stage=%s\n", stage);
 	}
-	mbedtls_ssl_close_notify(&ssl);
 	mbedtls_net_free(&net);
+	entelea_secure_zero(req, sizeof(req));
+	entelea_secure_zero(body, sizeof(body));
 	mbedtls_ssl_free(&ssl);
 	mbedtls_ssl_config_free(&conf);
 	mbedtls_x509_crt_free(&ca);

@@ -53,7 +53,14 @@ class ArchitectureTests(unittest.TestCase):
             ARCH.validate(self.root, self.policy)
 
     def test_current_sources(self):
-        self.assertEqual(ARCH.validate(ROOT, POLICY), 77)
+        expected = sum(
+            len(POLICY[group])
+            for group in (
+                "common", "compat", "contract_tests", "zephyr_framework",
+                "platform_zephyr",
+            )
+        ) + sum(len(paths) for paths in POLICY["diagnostics"].values())
+        self.assertEqual(ARCH.validate(ROOT, POLICY), expected)
 
     def test_unclassified_source(self):
         self.write("framework/common/extra.c", "")

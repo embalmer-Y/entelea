@@ -87,11 +87,15 @@ typedef enum {
 
 /** [thread] 上报原始观测（transport 探测/云调用结果/存储 IO/App 声明）。
  * 恢复防抖：DOWN→UP 需连续 good_streak 次 good 观测（默认 2——风暴
- * 抑制）；UP→DOWN 立即（失败侧保守）。 */
+ * 抑制）；UP→DOWN 立即（失败侧保守）。依赖状态与只读查询并发同步；
+ * 非依赖状态机的其他网络操作仍需调用方串行化。 */
 entelea_result_t entelea_dep_report(entelea_dep_kind_t kind, bool good,
 				    uint64_t now_ms);
 
-/** [any] 依赖当前态（可观测：观测者/命令准入/独立 App 判各自依赖）。 */
+/** [thread] 标记依赖不可用，但不伪造不可知的观测时间。 */
+entelea_result_t entelea_dep_mark_down(entelea_dep_kind_t kind);
+
+/** [any] 依赖当前态（线程/ISR 安全的瞬时快照，不锁住后续操作）。 */
 entelea_dep_state_t entelea_dep_state(entelea_dep_kind_t kind);
 
 /** 依赖名（观测/审计归因用）。 */

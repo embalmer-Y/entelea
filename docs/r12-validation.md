@@ -1,5 +1,10 @@
 # R12 工厂/试用/晋升验证
 
+> 历史分批记录，不是当前验收结论。后续 SDK 接入、RF1 变更及试用权限/
+> 预算绑定缺口以 [RF1 复核](rf1-validation.md) 和
+> [交付合同](../framework/services/delivery/contract.md)为准；本页早期
+> “SDK 未安装”和旧版恢复行为只描述当时状态。
+
 授权边界：固件面（试用状态机+工厂 intake 契约）；**SDK 未安装/未接入**
 （7.1 推进顺序——实际工厂接线待 owner 获批任务）；持久试用状态（跨
 重启）随板级批（R03 存储端口消费）。
@@ -39,10 +44,9 @@ python3 tools/build_zephyr.py --app platform/zephyr/tests/delivery \
 
 ## 板级批 A-4（2026-11-09）：试用状态跨重启持久
 
-- `entelea_trial_flush/restore`（meta 单槽；记录 38B：ver/state/
-  version/permissions/digest）。恢复 **fail-closed**：无记录/坏记录
-  （CRC/版本/域外 state）→ NONE 不复活垃圾；TIMEOUT/REJECTED 约束态
-  跨重启保持（confirm 仍拒）；清槽持久。
+- 当时的 `entelea_trial_flush/restore`（meta 单槽；记录 38B：ver/state/
+  version/permissions/digest）将坏记录退回 NONE；该行为存在安全缺陷，
+  已由 RF1 的 UNKNOWN 限制态和双副本一致性要求取代。
 - delivery 套件新增 test_persistence_roundtrip_and_fail_closed
   （往返/约束语义不放宽/坏记录/清槽）。
 - **真机证据（hw_flash_persist A-4 相位）**：P1 submit+flush →

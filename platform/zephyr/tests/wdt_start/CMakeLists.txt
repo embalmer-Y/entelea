@@ -26,7 +26,7 @@ target_sources(app PRIVATE
 )
 target_compile_definitions(app PRIVATE ENTELEA_TEST=1)
 target_link_options(app PUBLIC -Wl,--wrap=task_wdt_init -Wl,--wrap=task_wdt_add
-  -Wl,--wrap=task_wdt_feed)
+  -Wl,--wrap=task_wdt_feed -Wl,--wrap=entelea_platform_clock_init)
 if(TEST_WDT_REQUIRED_MISSING)
   target_compile_definitions(app PRIVATE TEST_WDT_REQUIRED_MISSING=1 ENTELEA_WDT_REQUIRE_HW=1)
 endif()

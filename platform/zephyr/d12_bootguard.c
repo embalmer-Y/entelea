@@ -1,12 +1,15 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* D12 平台启动防护（owner v1 保守方案 §9）。跨复位计数走 storage
- * noinit（板级 flash 后端真持久——r16 真机实证：__noinit 段变量在
- * 本板复位路径不可靠，风暴计数每次归零）。hwinfo 复位原因分类：
- * 非纯 POR（WDT/软件 fail-safe）=异常；异常时①计风暴②通知 d12
- * 60s 业务冷却窗。连续异常 ≥3（无 RTC 板：1 小时语义如实降级为
- * 连续计数，正常复位清零）→ 第 4 次启动 SAFE-HALT（输出安全
- * 起始态、不启业务、常驻喂狗、打印 [d12] RESET-STORM——POR 出）。
- * 返回 true=SAFE-HALT（装配层不跑业务；getter 供消费）。 */
+/* D12 平台启动防护（owner v1 保守方案 §9）。跨复位计数走 LP 域
+ * retained RAM（r16 真机实证：__noinit 段变量在本板复位路径不可靠，
+ * 风暴计数每次归零——见下 retained 注）。hwinfo 复位原因分类：
+ * 非纯 POR（WDT/软件 fail-safe/panic/掉电/引脚）=异常；异常时①计
+ * 风暴②通知 d12 60s 业务冷却窗。连续异常 ≥3（无 RTC 板：1 小时语义
+ * 如实降级为连续计数，仅纯 POR 清零）→ 当次（POR 起第 4 次）启动
+ * SAFE-HALT（输出安全起始态、不启业务、常驻喂狗、打印 [d12]
+ * RESET-STORM——POR 出）。判定=entelea_d12_reset_guard（纯策略）。
+ * 复位原因不可读或无法清除、留存设备不可用或读写失败均 fail-closed；
+ * 仅纯 POR 可接受可读的未初始化留存记录。返回 true=SAFE-HALT。 */
+#include <errno.h>
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
@@ -14,9 +17,9 @@
 #include <zephyr/drivers/hwinfo.h>
 #include <zephyr/drivers/retained_mem.h>
 #include <entelea/d12.h>
+#include "boot_steps.h"
 
 #define D12_MAGIC 0x4431424DU /* "D12M" */
-#define D12_STORM_MAX 3U
 
 struct d12_rec {
 	uint32_t magic;
@@ -32,50 +35,83 @@ static const struct device *const retained =
 
 static bool safe_halt;
 
+#ifdef ENTELEA_TEST
+void entelea_platform_d12_test_reset(void)
+{
+	safe_halt = false;
+}
+#endif
+
 bool entelea_platform_d12_safe_halt(void)
 {
 	return safe_halt;
 }
 
-static bool reset_is_abnormal(uint32_t *cause)
+static bool reset_is_abnormal(uint32_t *cause, bool *known)
 {
-	if (hwinfo_get_reset_cause(cause) != 0) {
+	int rc = hwinfo_get_reset_cause(cause);
+
+	if (rc != 0) {
+		printk("[d12] reset cause read failed: %d\n", rc);
+		*known = false;
 		return true; /* 读不出=保守按异常 */
 	}
-	hwinfo_clear_reset_cause();
-	return (*cause & (RESET_WATCHDOG | RESET_SOFTWARE | RESET_POR)) !=
-	       RESET_POR;
+	rc = hwinfo_clear_reset_cause();
+	if (rc != 0) {
+		printk("[d12] reset cause clear failed: %d\n", rc);
+		*known = false;
+		return true;
+	}
+	*known = true;
+	return *cause != RESET_POR;
 }
 
 bool entelea_platform_d12_bootguard(void)
 {
+	struct d12_rec guard = {0};
 	uint32_t cause = 0;
-	bool abnormal;
+	bool cause_known;
+	bool abnormal = reset_is_abnormal(&cause, &cause_known);
+	bool ready = device_is_ready(retained);
+	int read_rc = ready
+			      ? retained_mem_read(retained, 0, (uint8_t *)&guard,
+						  sizeof(guard))
+			      : -ENODEV;
+	bool history_ok = read_rc == 0 && guard.magic == D12_MAGIC;
+	bool halt;
 
-	static struct d12_rec guard;
-
-	if (!device_is_ready(retained) ||
-	    retained_mem_read(retained, 0, (uint8_t *)&guard, sizeof(guard)) != 0 ||
-	    guard.magic != D12_MAGIC) {
-		guard.magic = D12_MAGIC;
+	if (!history_ok) {
 		guard.count = 0;
 	}
-	abnormal = reset_is_abnormal(&cause);
-	if (!abnormal) {
-		guard.count = 0; /* 正常复位出风暴窗 */
+	halt = entelea_d12_reset_guard(abnormal, history_ok, &guard.count);
+	if (!cause_known || read_rc != 0) {
+		if (read_rc != 0) {
+			printk("[d12] retained read failed: %d\n", read_rc);
+		}
+		guard.count = ENTELEA_D12_RESET_STORM_MAX;
+		halt = true;
 	}
+	guard.magic = D12_MAGIC;
 	entelea_d12_boot_note(abnormal);
 	if (abnormal) {
-		guard.count++;
-		printk("[d12] abnormal reset #%u cause=0x%x\n",
-		       guard.count, cause);
+		printk("[d12] abnormal reset #%u cause=0x%x history=%s\n",
+		       guard.count, cause, history_ok ? "ok" : "lost");
 	}
-	(void)retained_mem_write(retained, 0, (const uint8_t *)&guard, sizeof(guard));
-	if (guard.count > D12_STORM_MAX) {
+	int write_rc = ready
+			       ? retained_mem_write(retained, 0, (const uint8_t *)&guard,
+						    sizeof(guard))
+			       : -ENODEV;
+
+	if (write_rc != 0) {
+		printk("[d12] retained write failed: %d\n", write_rc);
+		halt = true;
+	}
+	if (halt) {
 		safe_halt = true;
-		printk("[d12] RESET-STORM SAFE-HALT: >=%u consecutive "
-		       "abnormal resets; outputs at safe poweron, business "
-		       "halted (power-cycle to exit)\n", D12_STORM_MAX);
+		printk("[d12] RESET-STORM SAFE-HALT: >=%u consecutive abnormal "
+		       "resets or reset/retained state unknown; outputs at safe "
+		       "poweron, business halted (power-cycle to exit)\n",
+		       ENTELEA_D12_RESET_STORM_MAX);
 	}
 	return safe_halt;
 }

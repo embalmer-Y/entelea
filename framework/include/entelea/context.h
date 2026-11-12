@@ -4,7 +4,8 @@
 
 #include <stdint.h>
 
-/* Only the trusted host may construct a principal; a source ID is not authority. */
+/* The trusted host must control principal creation; a source ID is not authority.
+ * The complete C representation is public and is not an unforgeable token. */
 struct entelea_principal;
 typedef struct entelea_principal entelea_principal_t;
 

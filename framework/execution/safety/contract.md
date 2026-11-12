@@ -93,7 +93,7 @@
 - 真机后端为板级替换面：GPIO（zephyr,user 节点 uid+io-gpios）、PWM
   （pwm-uid+pwms；u 低16=permille、高16=hz/100），`ENTELEA_DRV_GPIO`/
   `ENTELEA_DRV_PWM` 编译定义启用；缺 DT 绑定 init = -ENODEV。PWM 后端
-  失败进 `pwm_err` 计数（void 写函数不报告成功）。native_sim/CI 为桩。
+  失败进 `pwm_err` 计数并向写入调用者传播错误。native_sim/CI 为桩。
 - estop DT 绑定走 `/zephyr,user` 具名属性 `estop-gpios`（phandle-array
   类型推断；r14 真机落地时由 aliases `ts-estop-gpio` 改绑——无 compatible
   裸节点在 v4.5 不发射 gpios 宏）；无属性板（native_sim/测试）init 空操作

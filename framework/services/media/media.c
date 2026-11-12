@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R09 可选媒体接口（新-only；合同见本目录 contract.md）。
- * 独立可选：每类媒体（图像/PCM/显示）独立绑定后端槽——重绑同类=替换、
- * 不影响他类（计划 L165：不得经单全局绑定串权；计划符合性审查 P2 修复：
+ * 独立可选：每类媒体（图像/PCM/显示）独立绑定后端槽——停止后可
+ * 重绑同类、不影响他类（计划 L165：不得经单全局绑定串权；计划符合性审查 P2 修复：
  * 原实现是单 static 后端，二次 bind 覆盖他类）。
  * 采集≠保存/外发/记忆（权限分离）。假后端（ENTELEA_TEST，按类独立
  * 状态）验证接口/生命周期/取消/失败语义；真后端（S3 es8311/PDM/
@@ -30,6 +30,10 @@ entelea_result_t entelea_media_bind(entelea_media_class_t cls,
 	if (b.start == NULL || b.poll == NULL || b.stop == NULL ||
 	    b.state == NULL) {
 		return ENTELEA_E_PARAM;
+	}
+	if (bounds[cls] &&
+	    backends[cls].state(backend_users[cls]) != ENTELEA_MEDIA_IDLE) {
+		return ENTELEA_E_BUSY;
 	}
 	backends[cls] = b;
 	backend_users[cls] = user;

@@ -1,0 +1,14 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* RF1 G5：D12 复位风暴防护的 LP retained RAM（仅板级叠加——native_sim
+ * 无该节点；布局与 minimal/app.overlay 同源）。 */
+&retainedmem {
+	status = "okay";
+	ranges;
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	d12retained: d12-retained {
+		compatible = "zephyr,retained-ram";
+		status = "okay";
+	};
+};

@@ -10,6 +10,8 @@
 #include <entelea/safety.h>
 #include <entelea/supervision.h>
 #include <entelea/wdt.h>
+#include "boot_steps.h"
+#include "clock.h"
 
 static uint64_t virt_now;
 
@@ -32,6 +34,21 @@ static int init_result;
 static int init_calls;
 static int add_result;
 static int add_calls;
+static int platform_clock_mode;
+
+entelea_result_t __real_entelea_platform_clock_init(entelea_clock_t *clock);
+
+entelea_result_t __wrap_entelea_platform_clock_init(entelea_clock_t *clock)
+{
+	if (platform_clock_mode == 1) {
+		return ENTELEA_E_IO;
+	}
+	if (platform_clock_mode == 2) {
+		clock->read_ms = NULL;
+		return ENTELEA_OK;
+	}
+	return __real_entelea_platform_clock_init(clock);
+}
 
 int __wrap_task_wdt_init(const struct device *hw)
 {
@@ -56,6 +73,24 @@ void __wrap_task_wdt_feed(int channel_id)
 {
 	ARG_UNUSED(channel_id);
 	feed_calls++;
+}
+
+ZTEST(wdt_start_failures, test_d12_boot_step_propagates_clock_init_failure)
+{
+	platform_clock_mode = 1;
+	entelea_result_t r = entelea_platform_boot_steps[5].fn();
+
+	platform_clock_mode = 0;
+	zassert_equal(r, ENTELEA_E_IO);
+}
+
+ZTEST(wdt_start_failures, test_d12_boot_step_propagates_clock_bind_failure)
+{
+	platform_clock_mode = 2;
+	entelea_result_t r = entelea_platform_boot_steps[5].fn();
+
+	platform_clock_mode = 0;
+	zassert_equal(r, ENTELEA_E_PARAM);
 }
 
 ZTEST(wdt_start_failures, test_failed_start_never_reports_ready)

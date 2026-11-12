@@ -6,8 +6,11 @@ project(entelea_tests_affect)
 set(ENTELEA_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
 zephyr_include_directories(${ENTELEA_ROOT}/framework/include
                            ${ENTELEA_ROOT}/platform/zephyr)
-target_sources(app PRIVATE
-  src/main.c
-  ${ENTELEA_ROOT}/framework/services/affect/affect.c
-)
-target_compile_definitions(app PRIVATE ENTELEA_TEST=1)
+option(TEST_AFFECT_COLD "Test production affect initialization" OFF)
+if(TEST_AFFECT_COLD)
+  target_sources(app PRIVATE src/cold_start.c)
+else()
+  target_sources(app PRIVATE src/main.c)
+  target_compile_definitions(app PRIVATE ENTELEA_TEST=1)
+endif()
+target_sources(app PRIVATE ${ENTELEA_ROOT}/framework/services/affect/affect.c)

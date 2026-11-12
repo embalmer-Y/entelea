@@ -17,40 +17,66 @@ static struct {
 } tb;
 static struct k_mutex task_lock = Z_MUTEX_INITIALIZER(task_lock);
 static const entelea_clock_t *task_clock;
+static uint64_t task_last_ms;
+static bool task_has_last;
 
 entelea_result_t entelea_task_bind_clock(const entelea_clock_t *clock)
 {
 	if (clock == NULL || clock->read_ms == NULL || clock->clock_id == 0) {
 		return ENTELEA_E_PARAM;
 	}
+	k_mutex_lock(&task_lock, K_FOREVER);
+	if (task_clock != NULL && task_clock->clock_id != clock->clock_id) {
+		for (int i = 0; i < ENTELEA_TASK_MAX; i++) {
+			if (tb.used[i] && tb.tasks[i].deadline_ms != 0 &&
+			    (tb.tasks[i].state == ENTELEA_TASK_ACCEPTED ||
+			     tb.tasks[i].state == ENTELEA_TASK_RUNNING)) {
+				k_mutex_unlock(&task_lock);
+				return ENTELEA_E_BUSY;
+			}
+		}
+		task_has_last = false;
+	}
 	task_clock = clock;
+	k_mutex_unlock(&task_lock);
 	return ENTELEA_OK;
 }
 
-/* deadline 判定的"now"：读失败=时间不可知（返回 false——不受理/
- * 不动作，非伪造时间）。deadline 是单点比较（无差值运算）——不
- * 需要三模块式单调护栏簿记；回退至多延迟过期观测（保守方向）。 */
+/* 调用方持 task_lock；回退不是可信的截止时间依据。 */
 static bool task_now_ms(uint64_t *out)
 {
-	return task_clock != NULL &&
-	       task_clock->read_ms(task_clock->user, out) == ENTELEA_OK;
+	uint64_t now;
+
+	if (task_clock == NULL ||
+	    task_clock->read_ms(task_clock->user, &now) != ENTELEA_OK ||
+	    (task_has_last && now < task_last_ms)) {
+		return false;
+	}
+	task_last_ms = now;
+	task_has_last = true;
+	*out = now;
+	return true;
 }
 
 /* 惰性过期（须持 task_lock）：ACCEPTED 且 deadline 已过 → CANCELLED
  * +效果 NONE（未开始无副作用）。RUNNING 不迁移（效果未知不代决）。 */
-static void expire_locked(entelea_task_t *t)
+static bool expire_locked(entelea_task_t *t)
 {
 	if (t->deadline_ms == 0 ||
 	    t->state != ENTELEA_TASK_ACCEPTED) {
-		return;
+		return true;
 	}
 	uint64_t now;
 
-	if (!task_now_ms(&now) || now < t->deadline_ms) {
-		return; /* 时间不可知/未到期：不动作（保守） */
+	if (!task_now_ms(&now)) {
+		return false;
+	}
+	if (now < t->deadline_ms) {
+		return true;
 	}
 	t->state = ENTELEA_TASK_CANCELLED;
 	t->effect = ENTELEA_EFFECT_NONE;
+	return true;
 }
 
 static int find_id(entelea_task_id_t id)
@@ -76,19 +102,20 @@ entelea_result_t entelea_task_submit(entelea_principal_t ctx, const char *name,
 	}
 	/* out 仅在成功时写入（失败不清零——调用方已持有的任务 id 不受
 	 * 重复受理拒绝影响）。 */
-	/* deadline 受理门（计划步骤"截止时间"）：带截止必须可判时——
-	 * 未绑时钟/读失败=E_STATE（fail-closed 不受理）；已过期=E_RANGE。 */
+	k_mutex_lock(&task_lock, K_FOREVER);
+	/* deadline 受理门与时钟簿记共用 task_lock。 */
 	if (deadline_ms != 0) {
 		uint64_t now;
 
 		if (!task_now_ms(&now)) {
+			k_mutex_unlock(&task_lock);
 			return ENTELEA_E_STATE;
 		}
 		if (now >= deadline_ms) {
+			k_mutex_unlock(&task_lock);
 			return ENTELEA_E_RANGE; /* 受理即过期：拒（不养僵尸任务） */
 		}
 	}
-	k_mutex_lock(&task_lock, K_FOREVER);
 	/* 受理去重：同 principal 同 seq 的非终态任务 = E_BUSY（重复请求
 	 * 可检测，不静默合并——重启重试语义由上层用新 seq）。 */
 	for (int i = 0; i < ENTELEA_TASK_MAX; i++) {
@@ -177,12 +204,12 @@ static entelea_result_t transition(entelea_principal_t ctx, entelea_task_id_t id
 	}
 	entelea_task_t *t = &tb.tasks[i];
 
-	expire_locked(t); /* 惰性过期先于状态断言 */
 	if (!same_principal(t->owner, ctx)) {
 		k_mutex_unlock(&task_lock);
 		return ENTELEA_E_PERM;
 	}
-	if (t->state != expect_from) {
+	if (t->state != expect_from || !expire_locked(t) ||
+	    t->state != expect_from) {
 		k_mutex_unlock(&task_lock);
 		return ENTELEA_E_STATE;
 	}
@@ -292,5 +319,7 @@ void entelea_task_test_reset(void)
 {
 	memset(&tb, 0, sizeof(tb));
 	task_clock = NULL; /* 连时钟绑定一并隔离（用例自含重绑） */
+	task_last_ms = 0;
+	task_has_last = false;
 }
 #endif

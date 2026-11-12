@@ -2,7 +2,7 @@
 #ifndef ENTELEA_TASK_H
 #define ENTELEA_TASK_H
 
-/* R04 任务状态机合同见 framework/execution/task/contract.md。
+/* R04 任务状态机合同见 framework/execution/capability/contract.md。
  * accepted≠completed；取消不撤回已发生效果；unknown 非幂等动作禁止
  * 自动重试；无模型也可由受限测试调用完整闭环。有界任务表。 */
 
@@ -46,8 +46,9 @@ typedef struct {
 
 /** [boot] 绑定实例时钟（deadline 判定与受理门时基；deadline=0 路径
  * 不依赖）。deadline 语义（计划步骤"截止时间"条目，owner A1 决议补
- * 交付）：受理时已过期=E_RANGE；时钟未绑/读失败且带 deadline=
- * E_STATE（时间不可知不受理——fail-closed）；ACCEPTED 期过期=惰性
+ * 交付）：受理时已过期=E_RANGE；时钟未绑/读失败/回退且带 deadline=
+ * E_STATE（时间不可知不受理、不开始）；带截止的非终态任务存在时
+ * 拒绝绑定不同 clock_id（E_BUSY）。ACCEPTED 期过期=惰性
  * 自动 CANCELLED（效果 NONE——未开始无副作用；无定时器，线程入口
  * 检查——确定性纪律同 R06）；RUNNING 期过期**不**自动迁移（效果
  * 未知不代决——调用方经 task_get 观察 deadline 后显式 cancel）。 */

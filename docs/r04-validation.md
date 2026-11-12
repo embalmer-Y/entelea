@@ -1,5 +1,8 @@
 # R04 能力/权限/任务/资源验证
 
+> 历史用例只证明域外、零值及过期句柄被拒，不证明所有字段完全
+> 匹配的 C 句柄不可伪造；可信宿主边界见 [RF1 复核](rf1-validation.md)。
+
 授权边界：R04 按 owner 目标指令自主推进（软件机制依赖=保护端口已就绪；
 台账批次状态机因 R02 硬件闸 owner-blocked 而如实保持 pending——软件面
 交付经本记录与 N-* 资产承载，见批次 note）。未决阈值按建议值实时实施
@@ -28,7 +31,7 @@
 
 | 承诺 | 负测（失败面） | 证据 |
 | --- | --- | --- |
-| 伪造/过期句柄不可绕 | 域外(9)/零/解绑后句柄全 E_PERM | test_principal_grammar_and_forgery |
+| 无效/过期句柄拒绝 | 域外(9)/零/解绑后句柄全 E_PERM | test_principal_grammar_and_forgery |
 | 文法 fail-closed | 域外类/操作、实例>32、逆区间 3-1、msg 非 send、名单外字符全 E_PARAM；重复声明幂等 | 同上 |
 | 半注册回滚 | 批内撞名/输出无 safety uid → 零注册（find=NULL 证实） | test_capability_registry_and_gates |
 | acquire 门 | SAFE_POWERON 期 E_STATE；detach 后 E_STATE；未声明 principal E_PERM | 同上 |

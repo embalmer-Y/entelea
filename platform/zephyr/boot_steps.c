@@ -13,18 +13,30 @@
 /* D12 启动防护（板级强实现=d12_bootguard.c；无实现板=native_sim/
  * 测试=空过）。SAFE-HALT 判定经 entelea_platform_d12_safe_halt 由
  * 装配层消费（防护不进 system_fail——那会 MWDT 复位+1 反成风暴源）。 */
+#ifndef ENTELEA_REQUIRE_D12_BOOTGUARD
 __weak bool entelea_platform_d12_bootguard(void)
 {
 	return false;
 }
 
+__weak bool entelea_platform_d12_safe_halt(void)
+{
+	return false;
+}
+#endif
+
 static entelea_result_t step_d12_bootguard(void)
 {
 	static entelea_clock_t d12_clock; /* 独立实例（uptime 单调，幂等） */
+	entelea_result_t r = entelea_platform_clock_init(&d12_clock);
 
-	(void)entelea_d12_bind_clock(
-		entelea_platform_clock_init(&d12_clock) == ENTELEA_OK
-			? &d12_clock : NULL);
+	if (r != ENTELEA_OK) {
+		return r;
+	}
+	r = entelea_d12_bind_clock(&d12_clock);
+	if (r != ENTELEA_OK) {
+		return r;
+	}
 	(void)entelea_platform_d12_bootguard();
 	return ENTELEA_OK; /* SAFE-HALT 判定归装配层（见上注） */
 }

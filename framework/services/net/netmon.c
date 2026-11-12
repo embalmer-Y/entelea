@@ -7,6 +7,7 @@
  * （DEC-41）、幂等缓存 4 槽 LRU（DEC-40）、恢复防抖 2 连（D08 建议）。
  */
 #include <string.h>
+#include <zephyr/kernel.h>
 #include <entelea/netmon.h>
 #include <entelea/prov.h>
 #include <entelea/safety.h>
@@ -237,7 +238,9 @@ static struct {
 	entelea_dep_state_t state;
 	uint32_t good_streak;
 	uint64_t last_change_ms;
+	bool last_change_known;
 } deps[ENTELEA_DEP_COUNT];
+static struct k_spinlock deps_lock;
 
 static const char *const dep_names[ENTELEA_DEP_COUNT] = {
 	"network", "model", "storage", "app",
@@ -250,18 +253,27 @@ const char *entelea_dep_name(entelea_dep_kind_t kind)
 
 entelea_dep_state_t entelea_dep_state(entelea_dep_kind_t kind)
 {
+	entelea_dep_state_t state;
+	k_spinlock_key_t key;
+
 	if ((int)kind < 0 || kind >= ENTELEA_DEP_COUNT) {
 		return ENTELEA_DEP_DOWN;
 	}
-	return deps[kind].state;
+	key = k_spin_lock(&deps_lock);
+	state = deps[kind].state;
+	k_spin_unlock(&deps_lock, key);
+	return state;
 }
 
 entelea_result_t entelea_dep_report(entelea_dep_kind_t kind, bool good,
 				    uint64_t now_ms)
 {
+	k_spinlock_key_t key;
+
 	if ((int)kind < 0 || kind >= ENTELEA_DEP_COUNT) {
 		return ENTELEA_E_PARAM;
 	}
+	key = k_spin_lock(&deps_lock);
 	if (good) {
 		switch (deps[kind].state) {
 		case ENTELEA_DEP_DOWN:
@@ -270,6 +282,7 @@ entelea_result_t entelea_dep_report(entelea_dep_kind_t kind, bool good,
 				deps[kind].state = ENTELEA_DEP_UP;
 				deps[kind].good_streak = 0;
 				deps[kind].last_change_ms = now_ms;
+				deps[kind].last_change_known = true;
 			} else {
 				deps[kind].state = ENTELEA_DEP_DEGRADED;
 			}
@@ -280,6 +293,7 @@ entelea_result_t entelea_dep_report(entelea_dep_kind_t kind, bool good,
 				deps[kind].state = ENTELEA_DEP_UP;
 				deps[kind].good_streak = 0;
 				deps[kind].last_change_ms = now_ms;
+				deps[kind].last_change_known = true;
 			}
 			break;
 		case ENTELEA_DEP_UP:
@@ -289,16 +303,37 @@ entelea_result_t entelea_dep_report(entelea_dep_kind_t kind, bool good,
 		/* 失败侧保守：立即 DOWN（防抖只在恢复侧——风暴抑制）。 */
 		if (deps[kind].state != ENTELEA_DEP_DOWN) {
 			deps[kind].last_change_ms = now_ms;
+			deps[kind].last_change_known = true;
 		}
 		deps[kind].state = ENTELEA_DEP_DOWN;
 		deps[kind].good_streak = 0;
 	}
+	k_spin_unlock(&deps_lock, key);
+	return ENTELEA_OK;
+}
+
+entelea_result_t entelea_dep_mark_down(entelea_dep_kind_t kind)
+{
+	k_spinlock_key_t key;
+
+	if ((int)kind < 0 || kind >= ENTELEA_DEP_COUNT) {
+		return ENTELEA_E_PARAM;
+	}
+	key = k_spin_lock(&deps_lock);
+	if (deps[kind].state != ENTELEA_DEP_DOWN) {
+		deps[kind].last_change_known = false;
+	}
+	deps[kind].state = ENTELEA_DEP_DOWN;
+	deps[kind].good_streak = 0;
+	k_spin_unlock(&deps_lock, key);
 	return ENTELEA_OK;
 }
 
 #ifdef ENTELEA_TEST
 void entelea_net_test_reset(void)
 {
+	k_spinlock_key_t key;
+
 	up = false;
 	have_host_hb = false;
 	last_host_ms = 0;
@@ -307,6 +342,8 @@ void entelea_net_test_reset(void)
 	last_granted = 0;
 	memset(idem_cache, 0, sizeof(idem_cache));
 	idem_clock = 0;
+	key = k_spin_lock(&deps_lock);
 	memset(deps, 0, sizeof(deps));
+	k_spin_unlock(&deps_lock, key);
 }
 #endif

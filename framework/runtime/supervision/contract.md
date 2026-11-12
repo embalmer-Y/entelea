@@ -11,6 +11,9 @@
   的队列由 sysworkq 分发，满 = 丢弃并计数（观测损失，非安全损失）。
 - **ISR 投递的 `data` 必须指向静态存储（借用寿命）**：分发延迟到 drain，
   栈载荷未定义。此约束无机械检查，靠评审与用例示范承担。
+- 对至多 4 字节的临时载荷，`entelea_evt_publish_copy` 在发布时复制，
+  回调期间有效；超限或参数非法显式返回错误，ISR 队列满返回 `E_BUSY`
+  并计入丢弃数。权限拒绝事件使用此路径，不借用 ISR 栈。
 - 时间戳由总线用绑定实例时钟的原始 read 加盖（发布瞬间）；未绑定或
   从未成功读到时 `t_ms=0`（可观测的未配置，不伪造时基）；读失败/回退
   沿用最后有效值（单调护栏）。原始 read 绕过 `clock_now` 的非原子回退
@@ -31,6 +34,10 @@
 - 时钟实例绑定；未绑定 register/start = `ENTELEA_E_UNINIT`。
   feed [any]：绑定时钟 read 须 ISR 安全（平台 uptime 满足）；时钟簿记
   （护栏/失败计数）在 irq_lock 内维护（ISR/线程并发）。
+- 巡检先读取各源最后 feed，再采样一次时钟；若该源在快照期间被 feed，
+  本轮跳过该源并在下轮重判，避免新时间戳令无符号差值下溢而误停机。
+  feed 的取时和状态更新在单核 ISR 临界区内完成；活性使用原子值。此处
+  的单核交错有确定性测试，多核竞争尚未验证。
 - **时钟失明策略（A1，owner 2026-11-08 定案）**：单轮巡检时间不可知
   （读失败/回退由护栏接管）→ 本轮不判逾期、不假活；连续
   `ENTELEA_WDT_BLIND_ROUNDS`(3) 轮不可知 → 监督无法计时 →
@@ -51,14 +58,15 @@
 
 ## 监督启动（boot）
 
-- 执行器消费平台装配表（platform/zephyr/boot_steps.c）；顺序是规格：
+- 执行器消费平台装配表（platform/zephyr/boot_steps.c）；当前顺序：
   estop_gpio → safety_poweron → wdt_start → supervision_ready（旧
-  core_init 占位更名），只允许尾部追加。每步完成发布 `BOOT_STEP`
+  core_init 占位更名）→ storage_init → d12_bootguard。每步完成发布 `BOOT_STEP`
   （含失败步 result）；任一步失败 → `system_fail(FAIL_BOOT(i))` 后受控
   停机（停喂 WDT → 兜底复位），不得半启动。全部成功发布 `BOOT_DONE`
   后返回，main 转常驻监督空闲。
-- 装配（main）在执行器前完成三处时钟绑定；绑定失败按 `FAIL_BOOT(0)`
-  fail-safe。业务步骤（net/app/audit）由后续批次尾部追加，不进本表。
+- 装配（main）在执行器前完成安全/事件/监督时钟绑定；绑定失败按
+  `FAIL_BOOT(0)` fail-safe。部分镜像强制链接板级启动保护，受限停机
+  判定由各自装配层消费；诊断镜像并非全部具备相同装配。
 
 ## 测试钩子
 

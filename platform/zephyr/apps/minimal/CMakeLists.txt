@@ -6,7 +6,8 @@ project(entelea_minimal)
 set(ENTELEA_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
 zephyr_include_directories(${ENTELEA_ROOT}/framework/include
                            ${ENTELEA_ROOT}/platform/zephyr)
-target_compile_definitions(app PRIVATE ENTELEA_NO_RAM_BACKEND=1)
+target_compile_definitions(app PRIVATE ENTELEA_NO_RAM_BACKEND=1
+                                      ENTELEA_REQUIRE_D12_BOOTGUARD=1)
 target_sources(app PRIVATE
   main.c
   ${ENTELEA_ROOT}/platform/zephyr/boot_steps.c
