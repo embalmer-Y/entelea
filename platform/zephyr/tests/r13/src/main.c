@@ -18,7 +18,8 @@
 #include <entelea/supervision.h>
 #include <entelea/task.h>
 
-static void *r13_setup(void)
+static void *
+r13_setup(void)
 {
 	entelea_safety_test_reset();
 	entelea_perm_test_reset();
@@ -56,18 +57,21 @@ ZTEST(framework_r13, test_cross_mechanism_contract_representative)
 {
 	/* R02 保护：安全态拒。 */
 	static const entelea_out_channel_t ch = {
-		.uid = "k", .kind = ENTELEA_CH_GPIO,
-		.poweron = {.b = false}, .linkloss = {.b = false},
-		.fault = {.b = false},
+		.uid = "k",
+		.kind = ENTELEA_CH_GPIO,
+		.poweron = { .b = false },
+		.linkloss = { .b = false },
+		.fault = { .b = false },
 	};
 	zassert_equal(entelea_safety_register_channel(&ch), ENTELEA_OK);
-	zassert_equal(entelea_safety_commit("k", (entelea_out_value_t){.b = 1}),
-		      ENTELEA_E_STATE, "R02 安全态拒");
+	zassert_equal(
+		entelea_safety_commit("k", (entelea_out_value_t) { .b = 1 }),
+		ENTELEA_E_STATE, "R02 安全态拒");
 
 	/* R04 权限：域外句柄拒。 */
-	zassert_equal(entelea_perm_check((entelea_principal_t){9, 9},
-					   ENTELEA_PERM_GPIO,
-					   ENTELEA_PERM_WRITE, 0),
+	zassert_equal(entelea_perm_check((entelea_principal_t) { 9, 9 },
+					 ENTELEA_PERM_GPIO, ENTELEA_PERM_WRITE,
+					 0),
 		      ENTELEA_E_PERM, "R04 域外句柄");
 
 	/* R04 任务：取消效果域。 */
@@ -85,17 +89,21 @@ ZTEST(framework_r13, test_cross_mechanism_contract_representative)
 	entelea_task_t out;
 
 	zassert_equal(entelea_task_get(id, &out), ENTELEA_OK);
-	zassert_equal(out.effect, ENTELEA_EFFECT_UNKNOWN, "R04 RUNNING 取消=UNKNOWN");
+	zassert_equal(out.effect, ENTELEA_EFFECT_UNKNOWN,
+		      "R04 RUNNING 取消=UNKNOWN");
 
 	/* R06 网络：恢复防抖。 */
-	zassert_equal(entelea_dep_report(ENTELEA_DEP_MODEL, true, 1), ENTELEA_OK);
-	zassert_equal(entelea_dep_state(ENTELEA_DEP_MODEL), ENTELEA_DEP_DEGRADED,
-		      "R06 单次不恢复");
-	zassert_equal(entelea_dep_report(ENTELEA_DEP_MODEL, true, 2), ENTELEA_OK);
+	zassert_equal(entelea_dep_report(ENTELEA_DEP_MODEL, true, 1),
+		      ENTELEA_OK);
+	zassert_equal(entelea_dep_state(ENTELEA_DEP_MODEL),
+		      ENTELEA_DEP_DEGRADED, "R06 单次不恢复");
+	zassert_equal(entelea_dep_report(ENTELEA_DEP_MODEL, true, 2),
+		      ENTELEA_OK);
 	zassert_equal(entelea_dep_state(ENTELEA_DEP_MODEL), ENTELEA_DEP_UP);
 
 	/* R08 辅助：模型不可用停智能。 */
-	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, false, 3), ENTELEA_OK);
+	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, false, 3),
+		      ENTELEA_OK);
 	zassert_false(entelea_assistant_available(), "R08 云停用");
 
 	/* R10 经历：无同意不保存。 */
@@ -103,7 +111,8 @@ ZTEST(framework_r13, test_cross_mechanism_contract_representative)
 
 	memset(&e, 0, sizeof(e));
 	e.len = 4;
-	zassert_equal(entelea_mem_write(false, &e), ENTELEA_E_PERM, "R10 同意门");
+	zassert_equal(entelea_mem_write(false, &e), ENTELEA_E_PERM,
+		      "R10 同意门");
 
 	/* R11 情感：确定性中位。 */
 	entelea_affect_state_t af;
@@ -119,12 +128,14 @@ ZTEST(framework_r13, test_cross_mechanism_contract_representative)
 	tc.digest[0] = 0x5A;
 	tc.slot = 0;
 	tc.budget_steps = 1000;
-	zassert_equal(entelea_trial_submit_with_digest_for_test(&tc), ENTELEA_OK);
+	zassert_equal(entelea_trial_submit_with_digest_for_test(&tc),
+		      ENTELEA_OK);
 	zassert_equal(entelea_trial_gate(0, tc.digest), ENTELEA_E_PERM,
 		      "R12 确认前门拒");
 	entelea_trial_current(&shown);
 	zassert_equal(entelea_trial_confirm(&shown), ENTELEA_OK);
-	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_ACTIVE, "R12 确认后 ACTIVE");
+	zassert_equal(entelea_trial_state(), ENTELEA_TRIAL_ACTIVE,
+		      "R12 确认后 ACTIVE");
 	zassert_equal(entelea_trial_gate(0, tc.digest), ENTELEA_OK,
 		      "R12 确认后门放行同字节");
 	zassert_equal(entelea_trial_submit_with_digest_for_test(&tc),

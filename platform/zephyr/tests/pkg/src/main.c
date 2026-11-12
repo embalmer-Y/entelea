@@ -28,44 +28,55 @@ struct pkgb {
 	uint32_t n;
 };
 
-static void pb8(struct pkgb *p, uint8_t v) { p->b[p->n++] = v; }
-
-static void pb_be16(struct pkgb *p, uint16_t v)
+static void
+pb8(struct pkgb *p, uint8_t v)
 {
-	pb8(p, (uint8_t)(v >> 8));
-	pb8(p, (uint8_t)v);
+	p->b[p->n++] = v;
 }
 
-static void pb_be32(struct pkgb *p, uint32_t v)
+static void
+pb_be16(struct pkgb *p, uint16_t v)
 {
-	pb8(p, (uint8_t)(v >> 24));
-	pb8(p, (uint8_t)(v >> 16));
-	pb8(p, (uint8_t)(v >> 8));
-	pb8(p, (uint8_t)v);
+	pb8(p, (uint8_t) (v >> 8));
+	pb8(p, (uint8_t) v);
 }
 
-static void pb_bstr_hdr(struct pkgb *p, uint32_t len)
+static void
+pb_be32(struct pkgb *p, uint32_t v)
+{
+	pb8(p, (uint8_t) (v >> 24));
+	pb8(p, (uint8_t) (v >> 16));
+	pb8(p, (uint8_t) (v >> 8));
+	pb8(p, (uint8_t) v);
+}
+
+static void
+pb_bstr_hdr(struct pkgb *p, uint32_t len)
 {
 	if (len < 24) {
-		pb8(p, (uint8_t)(0x40 | len));
+		pb8(p, (uint8_t) (0x40 | len));
 	} else if (len < 256) {
 		pb8(p, 0x58);
-		pb8(p, (uint8_t)len);
+		pb8(p, (uint8_t) len);
 	} else if (len < 65536) {
 		pb8(p, 0x59);
-		pb8(p, (uint8_t)(len >> 8));
-		pb8(p, (uint8_t)len);
+		pb8(p, (uint8_t) (len >> 8));
+		pb8(p, (uint8_t) len);
 	} else {
 		pb8(p, 0x5A);
 		pb_be32(p, len);
 	}
 }
 
-static void build_pkg(struct pkgb *p, const uint8_t *manifest, uint32_t mlen,
-		      const uint8_t *wasm, uint32_t wlen, int corrupt)
+static void
+build_pkg(struct pkgb *p, const uint8_t *manifest, uint32_t mlen,
+	  const uint8_t *wasm, uint32_t wlen, int corrupt)
 {
 	memset(p, 0, sizeof(*p));
-	p->b[0] = 'T'; p->b[1] = 'S'; p->b[2] = 'A'; p->b[3] = 'P';
+	p->b[0] = 'T';
+	p->b[1] = 'S';
+	p->b[2] = 'A';
+	p->b[3] = 'P';
 	p->n = 4;
 	pb_be16(p, 2); /* fmt_ver */
 	pb_be32(p, mlen);
@@ -98,7 +109,8 @@ static void build_pkg(struct pkgb *p, const uint8_t *manifest, uint32_t mlen,
 	uint8_t sm[64 + 22 + sizeof(payload)];
 	size_t tail = 0;
 
-	memcpy(sm + tail, sign_sk + 32, 64); /* sig 占位（sign 前缀=sk[32:96]） */
+	memcpy(sm + tail, sign_sk + 32,
+	       64); /* sig 占位（sign 前缀=sk[32:96]） */
 	tail = 64;
 	sm[tail++] = 0x84;
 	sm[tail++] = 0x6a;
@@ -110,20 +122,20 @@ static void build_pkg(struct pkgb *p, const uint8_t *manifest, uint32_t mlen,
 	sm[tail++] = 0x27;
 	sm[tail++] = 0x40;
 	if (plen < 24) {
-		sm[tail++] = (uint8_t)(0x40 | plen);
+		sm[tail++] = (uint8_t) (0x40 | plen);
 	} else if (plen < 256) {
 		sm[tail++] = 0x58;
-		sm[tail++] = (uint8_t)plen;
+		sm[tail++] = (uint8_t) plen;
 	} else if (plen < 65536) {
 		sm[tail++] = 0x59;
-		sm[tail++] = (uint8_t)(plen >> 8);
-		sm[tail++] = (uint8_t)plen;
+		sm[tail++] = (uint8_t) (plen >> 8);
+		sm[tail++] = (uint8_t) plen;
 	} else {
 		sm[tail++] = 0x5A;
-		sm[tail++] = (uint8_t)(plen >> 24);
-		sm[tail++] = (uint8_t)(plen >> 16);
-		sm[tail++] = (uint8_t)(plen >> 8);
-		sm[tail++] = (uint8_t)plen;
+		sm[tail++] = (uint8_t) (plen >> 24);
+		sm[tail++] = (uint8_t) (plen >> 16);
+		sm[tail++] = (uint8_t) (plen >> 8);
+		sm[tail++] = (uint8_t) plen;
 	}
 	memcpy(sm + tail, payload, plen);
 	tail += plen;
@@ -139,7 +151,9 @@ static void build_pkg(struct pkgb *p, const uint8_t *manifest, uint32_t mlen,
 	pb8(p, 0xd2); /* tag 18 */
 	pb8(p, 0x84); /* array(4) */
 	pb8(p, 0x43); /* bstr(3) phdr */
-	pb8(p, 0xa1); pb8(p, 0x01); pb8(p, 0x27);
+	pb8(p, 0xa1);
+	pb8(p, 0x01);
+	pb8(p, 0x27);
 	pb8(p, 0xa0); /* map(0) uhdr */
 	pb_bstr_hdr(p, plen);
 	memcpy(p->b + p->n, payload, plen);
@@ -148,22 +162,28 @@ static void build_pkg(struct pkgb *p, const uint8_t *manifest, uint32_t mlen,
 	pb8(p, 64);
 	memcpy(p->b + p->n, signed_buf, 64); /* sig */
 	p->n += 64;
-	(void)smlen;
+	(void) smlen;
 	if (corrupt == 1 && p->n > ENTELEA_TSAP_CONTENT_OFF) {
 		p->b[ENTELEA_TSAP_CONTENT_OFF] ^= 0xFF; /* 位腐（摘要面） */
 	}
 }
 
-static const uint8_t MAN[] = {0xa1, 0x63, 'a', 'p', 'p', 0x01}; /* {"app":1} */
-static const uint8_t WASM[] = {0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00};
+static const uint8_t MAN[] = {
+	0xa1, 0x63, 'a', 'p', 'p', 0x01
+}; /* {"app":1} */
+static const uint8_t WASM[] = {
+	0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00
+};
 
-static void stage_pkg(uint8_t slot, const struct pkgb *p)
+static void
+stage_pkg(uint8_t slot, const struct pkgb *p)
 {
 	zassert_equal(entelea_pkg_stage_begin(slot), ENTELEA_OK);
 	zassert_equal(entelea_pkg_stage_chunk(slot, 0, p->b, p->n), ENTELEA_OK);
 }
 
-static void *pkg_setup(void)
+static void *
+pkg_setup(void)
 {
 	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
 	return NULL;
@@ -216,8 +236,9 @@ ZTEST(framework_pkg, test_verify_good_and_bad)
 	zassert_equal(entelea_pkg_verify(0, NULL, &v, digest), ENTELEA_OK,
 		      "好签名（有效信任集=测试根）");
 	/* 同键显式路径。 */
-	zassert_equal(entelea_pkg_verify(0, entelea_pkg_test_root_pub, &v, NULL),
-		      ENTELEA_OK);
+	zassert_equal(
+		entelea_pkg_verify(0, entelea_pkg_test_root_pub, &v, NULL),
+		ENTELEA_OK);
 
 	/* 位腐（manifest 首字节翻转 → 摘要不符）。 */
 	build_pkg(&p, MAN, sizeof(MAN), WASM, sizeof(WASM), 1);
@@ -230,17 +251,17 @@ ZTEST(framework_pkg, test_verify_good_and_bad)
 	stage_pkg(0, &p);
 	uint8_t rogue = 0xFF;
 
-	zassert_equal(entelea_pkg_slot_write(0, ENTELEA_TSAP_CONTENT_OFF +
-						     sizeof(MAN),
-					     &rogue, 1),
-		      ENTELEA_OK);
+	zassert_equal(
+		entelea_pkg_slot_write(
+			0, ENTELEA_TSAP_CONTENT_OFF + sizeof(MAN), &rogue, 1),
+		ENTELEA_OK);
 	zassert_equal(entelea_pkg_verify(0, NULL, &v, NULL),
 		      ENTELEA_E_INVALID_SIG, "签A装B拒");
 
 	/* 坏根（随机 32B）→ 验签失败。 */
 	build_pkg(&p, MAN, sizeof(MAN), WASM, sizeof(WASM), 0);
 	stage_pkg(1, &p);
-	uint8_t wrong_root[32] = {1};
+	uint8_t wrong_root[32] = { 1 };
 
 	zassert_equal(entelea_pkg_verify(1, wrong_root, &v, NULL),
 		      ENTELEA_E_INVALID_SIG, "坏根拒");
@@ -269,12 +290,13 @@ ZTEST(framework_pkg, test_verify_good_and_bad)
 /* tweetnacl keypair 需 randombytes；生产树刻意无 RNG（确定性纪律）——
  * 测试内确定性实现（固定种子序列）：只为生成一把与工厂根**无关**的
  * 密钥，无需密码学随机。 */
-void randombytes(unsigned char *buf, unsigned long long len)
+void
+randombytes(unsigned char *buf, unsigned long long len)
 {
 	unsigned char st = 0xA7;
 
 	for (unsigned long long i = 0; i < len; i++) {
-		st = (unsigned char)(st * 31 + i + 0x5A);
+		st = (unsigned char) (st * 31 + i + 0x5A);
 		buf[i] = st;
 	}
 }
@@ -335,8 +357,9 @@ ZTEST(framework_pkg, test_stage_chain_and_activate)
 	build_pkg(&p, MAN, sizeof(MAN), WASM, sizeof(WASM), 0);
 	/* 越界 + 乱序 chunk 拒（顺序游标）。 */
 	zassert_equal(entelea_pkg_stage_begin(0), ENTELEA_OK);
-	zassert_equal(entelea_pkg_stage_chunk(0, ENTELEA_APP_SLOT_SIZE - 2, p.b, 4),
-		      ENTELEA_E_RANGE);
+	zassert_equal(
+		entelea_pkg_stage_chunk(0, ENTELEA_APP_SLOT_SIZE - 2, p.b, 4),
+		ENTELEA_E_RANGE);
 	zassert_equal(entelea_pkg_stage_chunk(0, 4, p.b, 4), ENTELEA_E_RANGE,
 		      "乱序拒（游标=0）");
 	zassert_equal(entelea_pkg_stage_chunk(0, 0, p.b, p.n), ENTELEA_OK);
@@ -364,9 +387,9 @@ ZTEST_SUITE(framework_pkg, NULL, pkg_setup, NULL, NULL, NULL);
 
 ZTEST(framework_pkg, test_lua_payload_ident)
 {
-	static const uint8_t lua53[] = {0x1b, 'L', 'u', 'a', 0x53};
-	static const uint8_t lua54[] = {0x1b, 'L', 'u', 'a', 0x54};
-	static const uint8_t wasm[] = {0x00, 0x61, 0x73, 0x6d, 0x01, 0x00};
+	static const uint8_t lua53[] = { 0x1b, 'L', 'u', 'a', 0x53 };
+	static const uint8_t lua54[] = { 0x1b, 'L', 'u', 'a', 0x54 };
+	static const uint8_t wasm[] = { 0x00, 0x61, 0x73, 0x6d, 0x01, 0x00 };
 	entelea_lua_payload_info_t info;
 
 	zassert_equal(entelea_lua_payload_ident(lua53, sizeof(lua53), &info),
@@ -381,7 +404,8 @@ ZTEST(framework_pkg, test_lua_payload_ident)
 		      ENTELEA_E_INVALID_SIG);
 	zassert_equal(entelea_lua_payload_ident(lua53, 3, &info),
 		      ENTELEA_E_PARAM, "截断拒");
-	zassert_equal(entelea_lua_payload_ident(NULL, 8, &info), ENTELEA_E_PARAM);
+	zassert_equal(entelea_lua_payload_ident(NULL, 8, &info),
+		      ENTELEA_E_PARAM);
 }
 
 ZTEST(framework_pkg, test_lua_mem_budget_gate)
@@ -422,7 +446,9 @@ ZTEST(framework_pkg, test_lua_exec_budget_bounded_stop)
 ZTEST(framework_pkg, test_lua_contract_encode)
 {
 	const entelea_lua_contract_t good = {
-		.version = 1, .mem_quota_kb = 64, .exec_budget_steps = 100000,
+		.version = 1,
+		.mem_quota_kb = 64,
+		.exec_budget_steps = 100000,
 		.format = ENTELEA_LUA_FMT_BINARY,
 	};
 	uint8_t buf[ENTELEA_LUA_CONTRACT_CBOR_MAX];
@@ -435,16 +461,20 @@ ZTEST(framework_pkg, test_lua_contract_encode)
 	entelea_lua_contract_t bad = good;
 
 	bad.version = 2;
-	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n), ENTELEA_E_PARAM);
+	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n),
+		      ENTELEA_E_PARAM);
 	bad = good;
 	bad.mem_quota_kb = 513;
-	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n), ENTELEA_E_PARAM);
+	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n),
+		      ENTELEA_E_PARAM);
 	bad = good;
 	bad.mem_quota_kb = 0;
-	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n), ENTELEA_E_PARAM);
+	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n),
+		      ENTELEA_E_PARAM);
 	bad = good;
 	bad.exec_budget_steps = 0;
-	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n), ENTELEA_E_PARAM);
+	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n),
+		      ENTELEA_E_PARAM);
 }
 
 /* RF1：与 Forge build_manifest 逐字节一致（int 键 0..3、RFC 8949 首选
@@ -458,49 +488,81 @@ ZTEST(framework_pkg, test_rf1_lua_contract_bytes)
 		uint32_t n;
 		uint8_t b[14];
 	} v[] = {
-		{1, 1, 9, {0xa4, 0x00, 0x01, 0x01, 0x01, 0x02, 0x01, 0x03, 0x01}},
-		{23, 23, 9, {0xa4, 0x00, 0x01, 0x01, 0x17, 0x02, 0x17, 0x03, 0x01}},
-		{24, 24, 11, {0xa4, 0x00, 0x01, 0x01, 0x18, 0x18, 0x02, 0x18, 0x18,
-			      0x03, 0x01}},
-		{255, 255, 11, {0xa4, 0x00, 0x01, 0x01, 0x18, 0xff, 0x02, 0x18, 0xff,
-				0x03, 0x01}},
-		{256, 256, 13, {0xa4, 0x00, 0x01, 0x01, 0x19, 0x01, 0x00, 0x02, 0x19,
-				0x01, 0x00, 0x03, 0x01}},
-		{512, 65535, 13, {0xa4, 0x00, 0x01, 0x01, 0x19, 0x02, 0x00, 0x02,
-				  0x19, 0xff, 0xff, 0x03, 0x01}},
-		{64, 65536, 14, {0xa4, 0x00, 0x01, 0x01, 0x18, 0x40, 0x02, 0x1a, 0x00,
-				 0x01, 0x00, 0x00, 0x03, 0x01}},
-		{64, 10000000, 14, {0xa4, 0x00, 0x01, 0x01, 0x18, 0x40, 0x02, 0x1a,
-				    0x00, 0x98, 0x96, 0x80, 0x03, 0x01}},
-		{64, 100000, 14, {0xa4, 0x00, 0x01, 0x01, 0x18, 0x40, 0x02, 0x1a, 0x00,
-				  0x01, 0x86, 0xa0, 0x03, 0x01}},
+		{ 1,
+		  1,
+		  9,
+		  { 0xa4, 0x00, 0x01, 0x01, 0x01, 0x02, 0x01, 0x03, 0x01 } },
+		{ 23,
+		  23,
+		  9,
+		  { 0xa4, 0x00, 0x01, 0x01, 0x17, 0x02, 0x17, 0x03, 0x01 } },
+		{ 24,
+		  24,
+		  11,
+		  { 0xa4, 0x00, 0x01, 0x01, 0x18, 0x18, 0x02, 0x18, 0x18, 0x03,
+		    0x01 } },
+		{ 255,
+		  255,
+		  11,
+		  { 0xa4, 0x00, 0x01, 0x01, 0x18, 0xff, 0x02, 0x18, 0xff, 0x03,
+		    0x01 } },
+		{ 256,
+		  256,
+		  13,
+		  { 0xa4, 0x00, 0x01, 0x01, 0x19, 0x01, 0x00, 0x02, 0x19, 0x01,
+		    0x00, 0x03, 0x01 } },
+		{ 512,
+		  65535,
+		  13,
+		  { 0xa4, 0x00, 0x01, 0x01, 0x19, 0x02, 0x00, 0x02, 0x19, 0xff,
+		    0xff, 0x03, 0x01 } },
+		{ 64,
+		  65536,
+		  14,
+		  { 0xa4, 0x00, 0x01, 0x01, 0x18, 0x40, 0x02, 0x1a, 0x00, 0x01,
+		    0x00, 0x00, 0x03, 0x01 } },
+		{ 64,
+		  10000000,
+		  14,
+		  { 0xa4, 0x00, 0x01, 0x01, 0x18, 0x40, 0x02, 0x1a, 0x00, 0x98,
+		    0x96, 0x80, 0x03, 0x01 } },
+		{ 64,
+		  100000,
+		  14,
+		  { 0xa4, 0x00, 0x01, 0x01, 0x18, 0x40, 0x02, 0x1a, 0x00, 0x01,
+		    0x86, 0xa0, 0x03, 0x01 } },
 	};
 	uint8_t buf[ENTELEA_LUA_CONTRACT_CBOR_MAX];
 
 	for (size_t i = 0; i < ARRAY_SIZE(v); i++) {
 		const entelea_lua_contract_t c = {
-			.version = 1, .mem_quota_kb = v[i].kb,
+			.version = 1,
+			.mem_quota_kb = v[i].kb,
 			.exec_budget_steps = v[i].steps,
 			.format = ENTELEA_LUA_FMT_BINARY,
 		};
 		uint32_t n = 0;
 
-		zassert_equal(entelea_lua_contract_encode(&c, buf, &n), ENTELEA_OK,
-			      "case %u", (unsigned)i);
-		zassert_equal(n, v[i].n, "case %u len %u", (unsigned)i,
-			      (unsigned)n);
+		zassert_equal(entelea_lua_contract_encode(&c, buf, &n),
+			      ENTELEA_OK, "case %u", (unsigned) i);
+		zassert_equal(n, v[i].n, "case %u len %u", (unsigned) i,
+			      (unsigned) n);
 		zassert_mem_equal(buf, v[i].b, v[i].n, "case %u bytes",
-				  (unsigned)i);
+				  (unsigned) i);
 	}
 	/* 未知载荷格式不得被编码成 Lua（此前 fmt 字节硬编码）。 */
 	entelea_lua_contract_t bad = {
-		.version = 1, .mem_quota_kb = 64, .exec_budget_steps = 100000,
-		.format = (entelea_lua_fmt_t)0,
+		.version = 1,
+		.mem_quota_kb = 64,
+		.exec_budget_steps = 100000,
+		.format = (entelea_lua_fmt_t) 0,
 	};
 	uint32_t n = 0xAAAAAAAAU;
 
-	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n), ENTELEA_E_PARAM);
-	bad.format = (entelea_lua_fmt_t)2;
-	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n), ENTELEA_E_PARAM);
+	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n),
+		      ENTELEA_E_PARAM);
+	bad.format = (entelea_lua_fmt_t) 2;
+	zassert_equal(entelea_lua_contract_encode(&bad, buf, &n),
+		      ENTELEA_E_PARAM);
 	zassert_equal(n, 0xAAAAAAAAU, "拒绝时不写出长度");
 }

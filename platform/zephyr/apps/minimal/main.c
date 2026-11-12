@@ -14,7 +14,8 @@
 
 static entelea_clock_t platform_clock;
 
-int main(void)
+int
+main(void)
 {
 	if (entelea_platform_clock_init(&platform_clock) != ENTELEA_OK ||
 	    entelea_evt_bind_clock(&platform_clock) != ENTELEA_OK ||
@@ -26,7 +27,8 @@ int main(void)
 		return 0; /* 仅 ENTELEA_TEST 构建会走到这里 */
 	}
 
-	printk("[entelea] minimal supervision image: outputs held at safe poweron\n");
+	printk("[entelea] minimal supervision image: outputs held at safe "
+	       "poweron\n");
 	entelea_supervision_boot(entelea_platform_boot_steps,
 				 ENTELEA_PLATFORM_BOOT_STEP_COUNT);
 	{
@@ -35,7 +37,8 @@ int main(void)
 
 		entelea_storage_last_reset(&reason, &present);
 		if (present) {
-			printk("[entelea] last abnormal reset reason=0x%08x (noinit)\n",
+			printk("[entelea] last abnormal reset reason=0x%08x "
+			       "(noinit)\n",
 			       reason);
 		}
 	}
@@ -69,7 +72,8 @@ int main(void)
 		if (entelea_safety_summary(&sum) == ENTELEA_OK) {
 			printk("[entelea] safety: ch=%u safe_fault=%u estop=%s"
 			       " at=%ums lvl=%d\n",
-			       sum.channels, sum.by_state[ENTELEA_ST_SAFE_FAULT],
+			       sum.channels,
+			       sum.by_state[ENTELEA_ST_SAFE_FAULT],
 			       latched ? "LATCHED" : "clear", latched ? at : 0U,
 			       entelea_safety_estop_level_raw());
 		}

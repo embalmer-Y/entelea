@@ -27,13 +27,16 @@ typedef struct {
 } entelea_power_snapshot_t;
 
 /** [any] 预算总额（prov 只读；未配置=0=一切供电请求拒绝——缺省安全侧）。 */
-uint32_t entelea_power_budget_ma(void);
+uint32_t
+entelea_power_budget_ma(void);
 
 /** [any] 当前用电（Σ 已启用通道 readback；顺带更新峰值）。 */
-uint32_t entelea_power_used_ma(void);
+uint32_t
+entelea_power_used_ma(void);
 
 /** [any] 快照（观测面）。 */
-void entelea_power_snapshot(entelea_power_snapshot_t *out);
+void
+entelea_power_snapshot(entelea_power_snapshot_t *out);
 
 /** [thread] 受控供电提交（原子预算检查+提交）：
  * ① SET 门（principal 对 power:write 声明）；
@@ -41,13 +44,15 @@ void entelea_power_snapshot(entelea_power_snapshot_t *out);
  *    entelea_safety_commit_locked（保护末段仍在其内）→ 解锁。
  * 超预算 = E_RANGE（整笔拒绝，既有通道不受影响）；通道须 ACTIVE。
  * v.en=false（关闭）不受预算限。 */
-entelea_result_t entelea_power_request(entelea_principal_t ctx,
-				       const char *safety_uid,
-				       entelea_out_value_t v);
+entelea_result_t
+entelea_power_request(entelea_principal_t ctx, const char *safety_uid,
+		      entelea_out_value_t v);
 
 #ifdef ENTELEA_TEST
-void entelea_power_test_set_budget(uint32_t budget_ma);
-void entelea_power_test_reset(void);
+void
+entelea_power_test_set_budget(uint32_t budget_ma);
+void
+entelea_power_test_reset(void);
 #endif
 
 #ifdef __cplusplus

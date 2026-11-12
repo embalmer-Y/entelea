@@ -17,11 +17,12 @@ struct entelea_wifi_credentials {
 	uint8_t psk_length;
 };
 
-typedef int (*entelea_credential_read_fn)(void *user, uint8_t *dst, size_t size);
+typedef int (*entelea_credential_read_fn)(void *user, uint8_t *dst,
+					  size_t size);
 
-static inline int entelea_credential_read_text(entelea_credential_read_fn read,
-					       void *user, uint8_t *dst,
-					       size_t capacity, uint8_t len)
+static inline int
+entelea_credential_read_text(entelea_credential_read_fn read, void *user,
+			     uint8_t *dst, size_t capacity, uint8_t len)
 {
 	int ret;
 
@@ -39,16 +40,16 @@ static inline int entelea_credential_read_text(entelea_credential_read_fn read,
 	return 0;
 }
 
-static inline int entelea_wifi_read_fields(struct entelea_wifi_credentials *c,
-					   uint8_t ssid_len, uint8_t psk_len,
-					   entelea_credential_read_fn read,
-					   void *user)
+static inline int
+entelea_wifi_read_fields(struct entelea_wifi_credentials *c, uint8_t ssid_len,
+			 uint8_t psk_len, entelea_credential_read_fn read,
+			 void *user)
 {
 	int ret;
 
 	if (c == NULL || read == NULL || ssid_len == 0 ||
-	    ssid_len > ENTELEA_WIFI_SSID_MAX ||
-	    psk_len < 8 || psk_len > ENTELEA_WIFI_PSK_MAX) {
+	    ssid_len > ENTELEA_WIFI_SSID_MAX || psk_len < 8 ||
+	    psk_len > ENTELEA_WIFI_PSK_MAX) {
 		return -EINVAL;
 	}
 	c->ssid_length = 0;
@@ -68,9 +69,9 @@ static inline int entelea_wifi_read_fields(struct entelea_wifi_credentials *c,
 	return 0;
 }
 
-static inline int entelea_wifi_read_p4c1(struct entelea_wifi_credentials *c,
-					 entelea_credential_read_fn read,
-					 void *user)
+static inline int
+entelea_wifi_read_p4c1(struct entelea_wifi_credentials *c,
+		       entelea_credential_read_fn read, void *user)
 {
 	uint8_t header[6];
 	int ret;

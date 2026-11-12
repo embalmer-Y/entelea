@@ -15,13 +15,12 @@ typedef struct {
 	char api_key[128];
 	char model[48];
 	char ca_bundle[96]; /* 空=系统缺省 bundle */
-	int *touched;        /* 传输触碰计数（联动拒的"不触传输"证据） */
+	int *touched; /* 传输触碰计数（联动拒的"不触传输"证据） */
 } entelea_https_cfg_t;
 
-entelea_result_t entelea_https_chat(void *user,
-				    const entelea_model_msg_t *msgs, uint8_t n,
-				    char *out, size_t out_max,
-				    uint32_t timeout_ms,
-				    entelea_model_usage_t *usage);
+entelea_result_t
+entelea_https_chat(void *user, const entelea_model_msg_t *msgs, uint8_t n,
+		   char *out, size_t out_max, uint32_t timeout_ms,
+		   entelea_model_usage_t *usage);
 
 #endif /* ENTELEA_HTTPS_CHAT_H */

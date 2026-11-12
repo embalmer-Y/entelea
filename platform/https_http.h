@@ -7,24 +7,26 @@
 #include <stdint.h>
 #include <string.h>
 
-static unsigned char https_http_lower(unsigned char c)
+static unsigned char
+https_http_lower(unsigned char c)
 {
-	return c >= 'A' && c <= 'Z' ? (unsigned char)(c + ('a' - 'A')) : c;
+	return c >= 'A' && c <= 'Z' ? (unsigned char) (c + ('a' - 'A')) : c;
 }
 
-static bool https_http_equal(const char *begin, const char *end,
-			     const char *expected)
+static bool
+https_http_equal(const char *begin, const char *end, const char *expected)
 {
 	while (begin < end && *expected != '\0') {
-		if (https_http_lower((unsigned char)*begin++) !=
-		    https_http_lower((unsigned char)*expected++)) {
+		if (https_http_lower((unsigned char) *begin++) !=
+		    https_http_lower((unsigned char) *expected++)) {
 			return false;
 		}
 	}
 	return begin == end && *expected == '\0';
 }
 
-static bool https_http_token(const char *value, size_t capacity, bool empty_ok)
+static bool
+https_http_token(const char *value, size_t capacity, bool empty_ok)
 {
 	const char *end = memchr(value, '\0', capacity);
 
@@ -32,22 +34,23 @@ static bool https_http_token(const char *value, size_t capacity, bool empty_ok)
 		return false;
 	}
 	for (const char *p = value; p < end; p++) {
-		if ((unsigned char)*p <= 0x20 || (unsigned char)*p >= 0x7f) {
+		if ((unsigned char) *p <= 0x20 || (unsigned char) *p >= 0x7f) {
 			return false;
 		}
 	}
 	return true;
 }
 
-static char *https_http_field_colon(char *begin, char *end)
+static char *
+https_http_field_colon(char *begin, char *end)
 {
-	char *colon = memchr(begin, ':', (size_t)(end - begin));
+	char *colon = memchr(begin, ':', (size_t) (end - begin));
 
 	if (colon == NULL || colon == begin) {
 		return NULL;
 	}
 	for (char *p = begin; p < colon; p++) {
-		unsigned char c = (unsigned char)*p;
+		unsigned char c = (unsigned char) *p;
 
 		if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') ||
 		      (c >= 'A' && c <= 'Z') ||
@@ -56,7 +59,7 @@ static char *https_http_field_colon(char *begin, char *end)
 		}
 	}
 	for (char *p = colon + 1; p < end; p++) {
-		unsigned char c = (unsigned char)*p;
+		unsigned char c = (unsigned char) *p;
 
 		if ((c < 0x20 && c != '\t') || c == 0x7f) {
 			return NULL;
@@ -65,7 +68,8 @@ static char *https_http_field_colon(char *begin, char *end)
 	return colon;
 }
 
-static bool https_http_dechunk(char *payload, char *end)
+static bool
+https_http_dechunk(char *payload, char *end)
 {
 	char *p = payload;
 	char *dst = payload;
@@ -75,7 +79,7 @@ static bool https_http_dechunk(char *payload, char *end)
 		size_t digits = 0;
 
 		while (p < end) {
-			unsigned char c = (unsigned char)*p;
+			unsigned char c = (unsigned char) *p;
 			unsigned int digit;
 
 			if (c >= '0' && c <= '9') {
@@ -99,8 +103,8 @@ static bool https_http_dechunk(char *payload, char *end)
 		}
 		if (p < end && *p == ';') {
 			while (p < end && *p != '\r') {
-				if (((unsigned char)*p < 0x20 && *p != '\t') ||
-				    (unsigned char)*p == 0x7f) {
+				if (((unsigned char) *p < 0x20 && *p != '\t') ||
+				    (unsigned char) *p == 0x7f) {
 					return false;
 				}
 				p++;
@@ -135,7 +139,7 @@ static bool https_http_dechunk(char *payload, char *end)
 				p += 2;
 			}
 		}
-		if (length > (size_t)(end - p)) {
+		if (length > (size_t) (end - p)) {
 			return false;
 		}
 		memmove(dst, p, length);
@@ -149,8 +153,9 @@ static bool https_http_dechunk(char *payload, char *end)
 }
 
 /* Buffer has room for a terminator at response[length]. */
-static bool https_http_payload(char *response, size_t length,
-			       bool peer_closed_cleanly, int *status, char **payload)
+static bool
+https_http_payload(char *response, size_t length, bool peer_closed_cleanly,
+		   int *status, char **payload)
 {
 	char *end = response + length;
 	char *line_end;
@@ -166,21 +171,19 @@ static bool https_http_payload(char *response, size_t length,
 	line_end = strstr(response, "\r\n");
 	if (line_end == NULL || line_end - response < 12 ||
 	    memcmp(response, "HTTP/1.", 7) != 0 ||
-	    (response[7] != '0' && response[7] != '1') ||
-	    response[8] != ' ' ||
-	    response[9] < '0' || response[9] > '9' ||
-	    response[10] < '0' || response[10] > '9' ||
-	    response[11] < '0' || response[11] > '9' ||
+	    (response[7] != '0' && response[7] != '1') || response[8] != ' ' ||
+	    response[9] < '0' || response[9] > '9' || response[10] < '0' ||
+	    response[10] > '9' || response[11] < '0' || response[11] > '9' ||
 	    (line_end - response > 12 && response[12] != ' ')) {
 		return false;
 	}
-	*status = (response[9] - '0') * 100 +
-		  (response[10] - '0') * 10 + (response[11] - '0');
+	*status = (response[9] - '0') * 100 + (response[10] - '0') * 10 +
+		  (response[11] - '0');
 	if (*status < 100 || *status > 599) {
 		return false;
 	}
 	for (char *q = response + 12; q < line_end; q++) {
-		unsigned char c = (unsigned char)*q;
+		unsigned char c = (unsigned char) *q;
 
 		if ((c < 0x20 && c != '\t') || c == 0x7f) {
 			return false;
@@ -219,7 +222,7 @@ static bool https_http_payload(char *response, size_t length,
 				if (*q < '0' || *q > '9') {
 					return false;
 				}
-				unsigned int digit = (unsigned int)(*q - '0');
+				unsigned int digit = (unsigned int) (*q - '0');
 
 				if (content_length > (SIZE_MAX - digit) / 10U) {
 					return false;
@@ -228,7 +231,8 @@ static bool https_http_payload(char *response, size_t length,
 			}
 			have_length = true;
 		} else if (https_http_equal(p, colon, "Transfer-Encoding")) {
-			if (chunked || !https_http_equal(value, value_end, "chunked")) {
+			if (chunked ||
+			    !https_http_equal(value, value_end, "chunked")) {
 				return false;
 			}
 			chunked = true;
@@ -246,7 +250,8 @@ static bool https_http_payload(char *response, size_t length,
 			if (!https_http_dechunk(p, end)) {
 				return false;
 			}
-		} else if (have_length && content_length != (size_t)(end - p)) {
+		} else if (have_length &&
+			   content_length != (size_t) (end - p)) {
 			return false;
 		} else if (!have_length && !peer_closed_cleanly) {
 			return false;

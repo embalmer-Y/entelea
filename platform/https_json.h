@@ -7,7 +7,8 @@
 #include <stdint.h>
 #include <string.h>
 
-static size_t https_json_utf8_length(const unsigned char *p)
+static size_t
+https_json_utf8_length(const unsigned char *p)
 {
 	unsigned char c = p[0];
 	unsigned char b1 = p[1];
@@ -16,8 +17,8 @@ static size_t https_json_utf8_length(const unsigned char *p)
 		return b1 >= 0x80 && b1 <= 0xbf ? 2 : 0;
 	}
 	if (c >= 0xe0 && c <= 0xef) {
-		if (b1 < 0x80 || b1 > 0xbf ||
-		    (c == 0xe0 && b1 < 0xa0) || (c == 0xed && b1 > 0x9f)) {
+		if (b1 < 0x80 || b1 > 0xbf || (c == 0xe0 && b1 < 0xa0) ||
+		    (c == 0xed && b1 > 0x9f)) {
 			return 0;
 		}
 		unsigned char b2 = p[2];
@@ -25,8 +26,8 @@ static size_t https_json_utf8_length(const unsigned char *p)
 		return b2 >= 0x80 && b2 <= 0xbf ? 3 : 0;
 	}
 	if (c >= 0xf0 && c <= 0xf4) {
-		if (b1 < 0x80 || b1 > 0xbf ||
-		    (c == 0xf0 && b1 < 0x90) || (c == 0xf4 && b1 > 0x8f)) {
+		if (b1 < 0x80 || b1 > 0xbf || (c == 0xf0 && b1 < 0x90) ||
+		    (c == 0xf4 && b1 > 0x8f)) {
 			return 0;
 		}
 		unsigned char b2 = p[2];
@@ -41,7 +42,8 @@ static size_t https_json_utf8_length(const unsigned char *p)
 	return 0;
 }
 
-static inline bool https_json_escape(const char *in, char *out, size_t out_max)
+static inline bool
+https_json_escape(const char *in, char *out, size_t out_max)
 {
 	static const char hex[] = "0123456789abcdef";
 	size_t o = 0;
@@ -50,10 +52,13 @@ static inline bool https_json_escape(const char *in, char *out, size_t out_max)
 		return false;
 	}
 	for (size_t i = 0; in[i] != '\0'; i++) {
-		unsigned char c = (unsigned char)in[i];
-		size_t need = c >= 0x80
-			? https_json_utf8_length((const unsigned char *)in + i)
-			: (c < 0x20 ? 6 : (c == '"' || c == '\\' ? 2 : 1));
+		unsigned char c = (unsigned char) in[i];
+		size_t need =
+			c >= 0x80 ?
+				https_json_utf8_length(
+					(const unsigned char *) in + i) :
+				(c < 0x20 ? 6 :
+					    (c == '"' || c == '\\' ? 2 : 1));
 
 		if (need == 0 || need > out_max - o - 1) {
 			return false;
@@ -72,16 +77,17 @@ static inline bool https_json_escape(const char *in, char *out, size_t out_max)
 			out[o++] = hex[c & 0x0f];
 		} else if (c == '"' || c == '\\') {
 			out[o++] = '\\';
-			out[o++] = (char)c;
+			out[o++] = (char) c;
 		} else {
-			out[o++] = (char)c;
+			out[o++] = (char) c;
 		}
 	}
 	out[o] = '\0';
 	return true;
 }
 
-static const char *https_json_skip_space(const char *p)
+static const char *
+https_json_skip_space(const char *p)
 {
 	while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') {
 		p++;
@@ -89,13 +95,14 @@ static const char *https_json_skip_space(const char *p)
 	return p;
 }
 
-static bool https_json_hex4(const char **cursor, uint32_t *value)
+static bool
+https_json_hex4(const char **cursor, uint32_t *value)
 {
 	const char *p = *cursor;
 	uint32_t n = 0;
 
 	for (int i = 0; i < 4; i++) {
-		unsigned char c = (unsigned char)p[i];
+		unsigned char c = (unsigned char) p[i];
 		uint32_t digit;
 
 		if (c >= '0' && c <= '9') {
@@ -115,8 +122,8 @@ static bool https_json_hex4(const char **cursor, uint32_t *value)
 }
 
 /* 0=OK, -1=non-string, -2=invalid/truncated, -3=output full. */
-static int https_json_decode_string(const char **cursor, char *out,
-				    size_t out_max)
+static int
+https_json_decode_string(const char **cursor, char *out, size_t out_max)
 {
 	const char *p = *cursor;
 	size_t o = 0;
@@ -128,7 +135,7 @@ static int https_json_decode_string(const char **cursor, char *out,
 		return -1;
 	}
 	while (*p != '\0') {
-		uint32_t c = (unsigned char)*p++;
+		uint32_t c = (unsigned char) *p++;
 		unsigned char bytes[4];
 		size_t count = 1;
 
@@ -143,14 +150,27 @@ static int https_json_decode_string(const char **cursor, char *out,
 			return -2;
 		}
 		if (c == '\\') {
-			c = (unsigned char)*p++;
+			c = (unsigned char) *p++;
 			switch (c) {
-			case '"': case '\\': case '/': break;
-			case 'b': c = '\b'; break;
-			case 'f': c = '\f'; break;
-			case 'n': c = '\n'; break;
-			case 'r': c = '\r'; break;
-			case 't': c = '\t'; break;
+			case '"':
+			case '\\':
+			case '/':
+				break;
+			case 'b':
+				c = '\b';
+				break;
+			case 'f':
+				c = '\f';
+				break;
+			case 'n':
+				c = '\n';
+				break;
+			case 'r':
+				c = '\r';
+				break;
+			case 't':
+				c = '\t';
+				break;
 			case 'u':
 				if (!https_json_hex4(&p, &c)) {
 					return -2;
@@ -175,21 +195,33 @@ static int https_json_decode_string(const char **cursor, char *out,
 					return -2;
 				}
 				if (c <= 0x7f) {
-					bytes[0] = (unsigned char)c;
+					bytes[0] = (unsigned char) c;
 				} else if (c <= 0x7ff) {
-					bytes[0] = (unsigned char)(0xc0 | (c >> 6));
-					bytes[1] = (unsigned char)(0x80 | (c & 0x3f));
+					bytes[0] = (unsigned char) (0xc0 |
+								    (c >> 6));
+					bytes[1] = (unsigned char) (0x80 |
+								    (c & 0x3f));
 					count = 2;
 				} else if (c <= 0xffff) {
-					bytes[0] = (unsigned char)(0xe0 | (c >> 12));
-					bytes[1] = (unsigned char)(0x80 | ((c >> 6) & 0x3f));
-					bytes[2] = (unsigned char)(0x80 | (c & 0x3f));
+					bytes[0] = (unsigned char) (0xe0 |
+								    (c >> 12));
+					bytes[1] = (unsigned char) (0x80 |
+								    ((c >> 6) &
+								     0x3f));
+					bytes[2] = (unsigned char) (0x80 |
+								    (c & 0x3f));
 					count = 3;
 				} else {
-					bytes[0] = (unsigned char)(0xf0 | (c >> 18));
-					bytes[1] = (unsigned char)(0x80 | ((c >> 12) & 0x3f));
-					bytes[2] = (unsigned char)(0x80 | ((c >> 6) & 0x3f));
-					bytes[3] = (unsigned char)(0x80 | (c & 0x3f));
+					bytes[0] = (unsigned char) (0xf0 |
+								    (c >> 18));
+					bytes[1] = (unsigned char) (0x80 |
+								    ((c >> 12) &
+								     0x3f));
+					bytes[2] = (unsigned char) (0x80 |
+								    ((c >> 6) &
+								     0x3f));
+					bytes[3] = (unsigned char) (0x80 |
+								    (c & 0x3f));
 					count = 4;
 				}
 				break;
@@ -197,10 +229,11 @@ static int https_json_decode_string(const char **cursor, char *out,
 				return -2;
 			}
 			if (count == 1) {
-				bytes[0] = (unsigned char)c;
+				bytes[0] = (unsigned char) c;
 			}
 		} else if (c >= 0x80) {
-			const unsigned char *start = (const unsigned char *)p - 1;
+			const unsigned char *start =
+				(const unsigned char *) p - 1;
 
 			count = https_json_utf8_length(start);
 			if (count == 0) {
@@ -211,21 +244,22 @@ static int https_json_decode_string(const char **cursor, char *out,
 			}
 			p += count - 1;
 		} else {
-			bytes[0] = (unsigned char)c;
+			bytes[0] = (unsigned char) c;
 		}
 		if (out != NULL && count > out_max - o - 1) {
 			return -3;
 		}
 		if (out != NULL) {
 			for (size_t i = 0; i < count; i++) {
-				out[o++] = (char)bytes[i];
+				out[o++] = (char) bytes[i];
 			}
 		}
 	}
 	return -2;
 }
 
-static bool https_json_parse_value(const char **cursor, unsigned int depth)
+static bool
+https_json_parse_value(const char **cursor, unsigned int depth)
 {
 	const char *p = https_json_skip_space(*cursor);
 
@@ -240,7 +274,8 @@ static bool https_json_parse_value(const char **cursor, unsigned int depth)
 		p = https_json_skip_space(p + 1);
 		if (*p != '}') {
 			for (;;) {
-				if (https_json_decode_string(&p, NULL, 0) != 0) {
+				if (https_json_decode_string(&p, NULL, 0) !=
+				    0) {
 					return false;
 				}
 				p = https_json_skip_space(p);
@@ -278,8 +313,7 @@ static bool https_json_parse_value(const char **cursor, unsigned int depth)
 			}
 		}
 		p++;
-	} else if (strncmp(p, "true", 4) == 0 ||
-		   strncmp(p, "null", 4) == 0) {
+	} else if (strncmp(p, "true", 4) == 0 || strncmp(p, "null", 4) == 0) {
 		p += 4;
 	} else if (strncmp(p, "false", 5) == 0) {
 		p += 5;
@@ -322,7 +356,8 @@ static bool https_json_parse_value(const char **cursor, unsigned int depth)
 	return true;
 }
 
-static bool https_json_valid(const char *body)
+static bool
+https_json_valid(const char *body)
 {
 	const char *p = https_json_skip_space(body);
 
@@ -330,7 +365,8 @@ static bool https_json_valid(const char *body)
 	       *https_json_skip_space(p) == '\0';
 }
 
-static const char *https_json_member(const char *object, const char *name)
+static const char *
+https_json_member(const char *object, const char *name)
 {
 	const char *found = NULL;
 	const char *p;
@@ -342,7 +378,8 @@ static const char *https_json_member(const char *object, const char *name)
 	while (*p != '}') {
 		char key[32];
 		const char *decoded = p;
-		int key_result = https_json_decode_string(&decoded, key, sizeof(key));
+		int key_result =
+			https_json_decode_string(&decoded, key, sizeof(key));
 
 		if (https_json_decode_string(&p, NULL, 0) != 0) {
 			return NULL;
@@ -375,7 +412,8 @@ static const char *https_json_member(const char *object, const char *name)
 	return found;
 }
 
-static inline int https_json_chat_content(const char *body, char *out, size_t out_max)
+static inline int
+https_json_chat_content(const char *body, char *out, size_t out_max)
 {
 	if (!https_json_valid(body)) {
 		return -2;
@@ -396,8 +434,8 @@ static inline int https_json_chat_content(const char *body, char *out, size_t ou
 	return https_json_decode_string(&content, out, out_max);
 }
 
-static inline bool https_json_extract_uint(const char *body, const char *key,
-					   uint32_t *out)
+static inline bool
+https_json_extract_uint(const char *body, const char *key, uint32_t *out)
 {
 	body = https_json_skip_space(body);
 	const char *usage = https_json_member(body, "usage");
@@ -412,7 +450,7 @@ static inline bool https_json_extract_uint(const char *body, const char *key,
 		return false;
 	}
 	do {
-		uint32_t digit = (uint32_t)(*p++ - '0');
+		uint32_t digit = (uint32_t) (*p++ - '0');
 
 		if (n > (UINT32_MAX - digit) / 10U) {
 			return false;

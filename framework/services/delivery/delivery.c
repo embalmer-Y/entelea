@@ -18,18 +18,21 @@ static entelea_trial_candidate_t current;
 static uint32_t last_epoch; /* 最近一次 submit 赋出的纪元（0=从未） */
 static bool initialized;
 
-static entelea_result_t ensure_initialized(void)
+static entelea_result_t
+ensure_initialized(void)
 {
 	return initialized ? ENTELEA_OK : entelea_trial_restore();
 }
 
-static void clear_candidate(void)
+static void
+clear_candidate(void)
 {
 	memset(&current, 0, sizeof(current));
 }
 
 /* 状态检查（不改变状态）：拒绝顺序与旧 submit 一致。 */
-static entelea_result_t admit_check(uint8_t slot)
+static entelea_result_t
+admit_check(uint8_t slot)
 {
 	entelea_result_t r = ensure_initialized();
 
@@ -47,7 +50,8 @@ static entelea_result_t admit_check(uint8_t slot)
 		return ENTELEA_E_BUSY; /* PENDING 期不受理：已展示的确认对象不可被替换 */
 	}
 	if (state != ENTELEA_TRIAL_NONE &&
-	    current.slot != ENTELEA_TRIAL_SLOT_UNKNOWN && slot != current.slot) {
+	    current.slot != ENTELEA_TRIAL_SLOT_UNKNOWN &&
+	    slot != current.slot) {
 		return ENTELEA_E_BUSY; /* 槽保留：被拒/超时字节仍受门拒，重推须同槽 */
 	}
 	if (last_epoch == UINT32_MAX) {
@@ -56,7 +60,8 @@ static entelea_result_t admit_check(uint8_t slot)
 	return ENTELEA_OK;
 }
 
-static bool perm_valid(const char *perm, uint8_t len)
+static bool
+perm_valid(const char *perm, uint8_t len)
 {
 	entelea_perm_table_t t;
 
@@ -67,12 +72,14 @@ static bool perm_valid(const char *perm, uint8_t len)
 	return entelea_perm_parse_list(perm, len, &t) == ENTELEA_OK;
 }
 
-static bool budget_valid(uint32_t steps)
+static bool
+budget_valid(uint32_t steps)
 {
 	return steps >= 1U && steps <= ENTELEA_TRIAL_STEPS_MAX;
 }
 
-static void admit_commit(const entelea_trial_candidate_t *c)
+static void
+admit_commit(const entelea_trial_candidate_t *c)
 {
 	current = *c;
 	last_epoch++;
@@ -81,8 +88,8 @@ static void admit_commit(const entelea_trial_candidate_t *c)
 }
 
 /* 设备计算候选身份：验签后的整文件摘要；expect 非空时必须与之相等。 */
-static entelea_result_t admit_from_slot(const entelea_trial_request_t *req,
-					const uint8_t *expect)
+static entelea_result_t
+admit_from_slot(const entelea_trial_request_t *req, const uint8_t *expect)
 {
 	entelea_tsap_view_t v;
 	entelea_trial_candidate_t c;
@@ -120,16 +127,18 @@ static entelea_result_t admit_from_slot(const entelea_trial_request_t *req,
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_trial_submit(const entelea_trial_request_t *req)
+entelea_result_t
+entelea_trial_submit(const entelea_trial_request_t *req)
 {
 	return admit_from_slot(req, NULL);
 }
 
 /* 展示对象与当前候选逐字段相等（确认与晋升共用）。 */
-static bool candidate_matches(const entelea_trial_candidate_t *shown)
+static bool
+candidate_matches(const entelea_trial_candidate_t *shown)
 {
-	return memcmp(shown->digest, current.digest,
-		      sizeof(current.digest)) == 0 &&
+	return memcmp(shown->digest, current.digest, sizeof(current.digest)) ==
+		       0 &&
 	       shown->perm_len == current.perm_len &&
 	       memcmp(shown->perm, current.perm, current.perm_len) == 0 &&
 	       shown->budget_steps == current.budget_steps &&
@@ -137,7 +146,8 @@ static bool candidate_matches(const entelea_trial_candidate_t *shown)
 	       shown->slot == current.slot && shown->epoch == current.epoch;
 }
 
-entelea_result_t entelea_trial_confirm(const entelea_trial_candidate_t *shown)
+entelea_result_t
+entelea_trial_confirm(const entelea_trial_candidate_t *shown)
 {
 	if (shown == NULL) {
 		return ENTELEA_E_PARAM;
@@ -157,7 +167,8 @@ entelea_result_t entelea_trial_confirm(const entelea_trial_candidate_t *shown)
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_trial_reject(void)
+entelea_result_t
+entelea_trial_reject(void)
 {
 	entelea_result_t r = ensure_initialized();
 
@@ -171,7 +182,8 @@ entelea_result_t entelea_trial_reject(void)
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_trial_timeout(void)
+entelea_result_t
+entelea_trial_timeout(void)
 {
 	entelea_result_t r = ensure_initialized();
 
@@ -185,7 +197,8 @@ entelea_result_t entelea_trial_timeout(void)
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_trial_end(void)
+entelea_result_t
+entelea_trial_end(void)
 {
 	entelea_result_t r = ensure_initialized();
 
@@ -200,12 +213,14 @@ entelea_result_t entelea_trial_end(void)
 	return ENTELEA_OK;
 }
 
-entelea_trial_state_t entelea_trial_state(void)
+entelea_trial_state_t
+entelea_trial_state(void)
 {
 	return initialized ? state : ENTELEA_TRIAL_UNINITIALIZED;
 }
 
-void entelea_trial_current(entelea_trial_candidate_t *out)
+void
+entelea_trial_current(entelea_trial_candidate_t *out)
 {
 	if (out != NULL) {
 		if (initialized) {
@@ -217,7 +232,8 @@ void entelea_trial_current(entelea_trial_candidate_t *out)
 	}
 }
 
-entelea_result_t entelea_trial_gate(uint8_t slot, const uint8_t digest[32])
+entelea_result_t
+entelea_trial_gate(uint8_t slot, const uint8_t digest[32])
 {
 	if (digest == NULL) {
 		return ENTELEA_E_PARAM;
@@ -228,7 +244,8 @@ entelea_result_t entelea_trial_gate(uint8_t slot, const uint8_t digest[32])
 		return r;
 	}
 	if (state == ENTELEA_TRIAL_NONE ||
-	    (current.slot != ENTELEA_TRIAL_SLOT_UNKNOWN && slot != current.slot)) {
+	    (current.slot != ENTELEA_TRIAL_SLOT_UNKNOWN &&
+	     slot != current.slot)) {
 		return ENTELEA_OK; /* 试用政策不管辖（稳定集准入=D05） */
 	}
 	if (state == ENTELEA_TRIAL_ACTIVE &&
@@ -239,8 +256,9 @@ entelea_result_t entelea_trial_gate(uint8_t slot, const uint8_t digest[32])
 }
 
 /* 授权查询：仅 ACTIVE 且槽与摘要均相符时授予确认的权限与步数。 */
-entelea_result_t entelea_trial_grant(uint8_t slot, const uint8_t digest[32],
-				     entelea_trial_grant_t *out)
+entelea_result_t
+entelea_trial_grant(uint8_t slot, const uint8_t digest[32],
+		    entelea_trial_grant_t *out)
 {
 	if (digest == NULL || out == NULL || slot >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_PARAM;
@@ -263,8 +281,8 @@ entelea_result_t entelea_trial_grant(uint8_t slot, const uint8_t digest[32],
 
 /* ---- 工厂 intake（域外/未知 payload fail-closed） ---- */
 
-entelea_result_t entelea_factory_intake(const entelea_factory_candidate_t *fc,
-					uint8_t slot)
+entelea_result_t
+entelea_factory_intake(const entelea_factory_candidate_t *fc, uint8_t slot)
 {
 	if (fc == NULL || slot >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_PARAM;
@@ -298,7 +316,8 @@ entelea_result_t entelea_factory_intake(const entelea_factory_candidate_t *fc,
 #define TRIAL_REC_LEN (TRIAL_REC_DIG_OFF + 32U)
 /* 同一双副本 meta 记录内追加每槽稳定项：present|digest|budget|plen|perm。 */
 #define STABLE_ITEM_LEN (1U + 32U + 4U + 1U + ENTELEA_TRIAL_PERM_MAX)
-#define PERSIST_REC_LEN (TRIAL_REC_LEN + ENTELEA_APP_SLOT_COUNT * STABLE_ITEM_LEN)
+#define PERSIST_REC_LEN \
+	(TRIAL_REC_LEN + ENTELEA_APP_SLOT_COUNT * STABLE_ITEM_LEN)
 
 typedef struct {
 	bool present;
@@ -308,21 +327,24 @@ typedef struct {
 
 static stable_entry_t stable[ENTELEA_APP_SLOT_COUNT];
 
-static void put_le32(uint8_t *p, uint32_t v)
+static void
+put_le32(uint8_t *p, uint32_t v)
 {
-	p[0] = (uint8_t)v;
-	p[1] = (uint8_t)(v >> 8);
-	p[2] = (uint8_t)(v >> 16);
-	p[3] = (uint8_t)(v >> 24);
+	p[0] = (uint8_t) v;
+	p[1] = (uint8_t) (v >> 8);
+	p[2] = (uint8_t) (v >> 16);
+	p[3] = (uint8_t) (v >> 24);
 }
 
-static uint32_t get_le32(const uint8_t *p)
+static uint32_t
+get_le32(const uint8_t *p)
 {
-	return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
-	       ((uint32_t)p[3] << 24);
+	return (uint32_t) p[0] | ((uint32_t) p[1] << 8) |
+	       ((uint32_t) p[2] << 16) | ((uint32_t) p[3] << 24);
 }
 
-entelea_result_t entelea_trial_flush(void)
+entelea_result_t
+entelea_trial_flush(void)
 {
 	uint8_t rec[PERSIST_REC_LEN];
 	uint8_t verify[PERSIST_REC_LEN];
@@ -339,7 +361,7 @@ entelea_result_t entelea_trial_flush(void)
 
 	memset(rec, 0, sizeof(rec));
 	rec[0] = TRIAL_PERSIST_VER;
-	rec[1] = (uint8_t)state;
+	rec[1] = (uint8_t) state;
 	rec[2] = current.version;
 	rec[3] = current.slot;
 	put_le32(rec + 4, last_epoch);
@@ -364,7 +386,8 @@ entelea_result_t entelea_trial_flush(void)
 	if (r != ENTELEA_OK) {
 		return r;
 	}
-	r = entelea_storage_meta_read_mirrored(verify, sizeof(verify), &verify_len);
+	r = entelea_storage_meta_read_mirrored(verify, sizeof(verify),
+					       &verify_len);
 	if (r != ENTELEA_OK || verify_len != sizeof(rec) ||
 	    memcmp(rec, verify, sizeof(rec)) != 0) {
 		return ENTELEA_E_IO;
@@ -374,7 +397,8 @@ entelea_result_t entelea_trial_flush(void)
 
 /* ---- 稳定记录（D-E）：每槽一项，与试用同一双副本 meta 记录原子持久。 */
 
-entelea_result_t entelea_trial_promote(const entelea_trial_candidate_t *shown)
+entelea_result_t
+entelea_trial_promote(const entelea_trial_candidate_t *shown)
 {
 	if (shown == NULL) {
 		return ENTELEA_E_PARAM;
@@ -410,7 +434,8 @@ entelea_result_t entelea_trial_promote(const entelea_trial_candidate_t *shown)
 	return r;
 }
 
-entelea_result_t entelea_stable_revoke(uint8_t slot)
+entelea_result_t
+entelea_stable_revoke(uint8_t slot)
 {
 	entelea_result_t r;
 
@@ -432,8 +457,9 @@ entelea_result_t entelea_stable_revoke(uint8_t slot)
 	return entelea_trial_flush();
 }
 
-entelea_result_t entelea_stable_grant(uint8_t slot, const uint8_t digest[32],
-				      entelea_trial_grant_t *out)
+entelea_result_t
+entelea_stable_grant(uint8_t slot, const uint8_t digest[32],
+		     entelea_trial_grant_t *out)
 {
 	if (digest == NULL || out == NULL || slot >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_PARAM;
@@ -444,15 +470,16 @@ entelea_result_t entelea_stable_grant(uint8_t slot, const uint8_t digest[32],
 	if (r != ENTELEA_OK) {
 		return r;
 	}
-	if (!stable[slot].present ||
-	    memcmp(digest, stable[slot].digest, sizeof(stable[slot].digest)) != 0) {
+	if (!stable[slot].present || memcmp(digest, stable[slot].digest,
+					    sizeof(stable[slot].digest)) != 0) {
 		return ENTELEA_E_PERM;
 	}
 	*out = stable[slot].grant;
 	return ENTELEA_OK;
 }
 
-static entelea_result_t meta_is_erased(bool *erased)
+static entelea_result_t
+meta_is_erased(bool *erased)
 {
 	uint8_t block[64];
 	uint32_t size = entelea_storage_part_size(ENTELEA_PART_META);
@@ -476,7 +503,8 @@ static entelea_result_t meta_is_erased(bool *erased)
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_trial_restore(void)
+entelea_result_t
+entelea_trial_restore(void)
 {
 	uint8_t rec[PERSIST_REC_LEN];
 	uint16_t len = 0;
@@ -507,7 +535,7 @@ entelea_result_t entelea_trial_restore(void)
 	const uint32_t budget = whole ? get_le32(rec + 8) : 0U;
 	const bool perm_ok =
 		whole && rec[12] <= ENTELEA_TRIAL_PERM_MAX &&
-		perm_valid((const char *)(rec + TRIAL_REC_PERM_OFF), rec[12]);
+		perm_valid((const char *) (rec + TRIAL_REC_PERM_OFF), rec[12]);
 	bool stable_ok = whole;
 
 	for (uint8_t i = 0; whole && i < ENTELEA_APP_SLOT_COUNT; i++) {
@@ -518,7 +546,7 @@ entelea_result_t entelea_trial_restore(void)
 			     (budget_valid(get_le32(p + 33)) &&
 			      p[37] <= ENTELEA_TRIAL_PERM_MAX &&
 			      (p[37] == 0U ||
-			       perm_valid((const char *)(p + 38), p[37]))));
+			       perm_valid((const char *) (p + 38), p[37]))));
 	}
 	const bool valid = stable_ok && rec[0] == TRIAL_PERSIST_VER &&
 			   rec[1] <= ENTELEA_TRIAL_TIMEOUT &&
@@ -535,7 +563,7 @@ entelea_result_t entelea_trial_restore(void)
 	if (ep > last_epoch) {
 		last_epoch = ep; /* 单调：恢复不回退纪元计数 */
 	}
-	state = (entelea_trial_state_t)rec[1];
+	state = (entelea_trial_state_t) rec[1];
 	if (state != ENTELEA_TRIAL_NONE) {
 		current.version = rec[2];
 		current.slot = rec[3];
@@ -551,7 +579,8 @@ entelea_result_t entelea_trial_restore(void)
 
 		stable[i].present = p[0] == 1U;
 		if (stable[i].present) {
-			memcpy(stable[i].digest, p + 1, sizeof(stable[i].digest));
+			memcpy(stable[i].digest, p + 1,
+			       sizeof(stable[i].digest));
 			stable[i].grant.budget_steps = get_le32(p + 33);
 			stable[i].grant.perm_len = p[37];
 			memcpy(stable[i].grant.perm, p + 38, p[37]);
@@ -562,8 +591,8 @@ entelea_result_t entelea_trial_restore(void)
 
 #ifdef ENTELEA_TEST
 /* 状态机测试接缝：直接接受调用方摘要，不验签（生产路径不得使用）。 */
-entelea_result_t entelea_trial_submit_with_digest_for_test(
-	const entelea_trial_candidate_t *cand)
+entelea_result_t
+entelea_trial_submit_with_digest_for_test(const entelea_trial_candidate_t *cand)
 {
 	if (cand == NULL || cand->slot >= ENTELEA_APP_SLOT_COUNT ||
 	    !perm_valid(cand->perm, cand->perm_len)) {
@@ -581,7 +610,8 @@ entelea_result_t entelea_trial_submit_with_digest_for_test(
 	return ENTELEA_OK;
 }
 
-void entelea_trial_test_reset(void)
+void
+entelea_trial_test_reset(void)
 {
 	state = ENTELEA_TRIAL_NONE;
 	clear_candidate();

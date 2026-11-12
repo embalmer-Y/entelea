@@ -11,7 +11,8 @@ static const unsigned char self_pk[32] = {
 #include "tnacl_self_pk.inc"
 };
 
-int ts_tnacl_selftest(void)
+int
+ts_tnacl_selftest(void)
 {
 	unsigned char m[1024];
 	unsigned long long mlen = 0;

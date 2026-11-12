@@ -14,9 +14,9 @@ typedef struct {
 	uint32_t timeout_ms;
 } https_timer_t;
 
-static entelea_result_t https_timer_start(https_timer_t *timer,
-					  https_time_reader_t read_ms,
-					  uint32_t timeout_ms)
+static entelea_result_t
+https_timer_start(https_timer_t *timer, https_time_reader_t read_ms,
+		  uint32_t timeout_ms)
 {
 	uint64_t now;
 
@@ -29,8 +29,8 @@ static entelea_result_t https_timer_start(https_timer_t *timer,
 	return timeout_ms == 0 ? ENTELEA_E_TIMEOUT : ENTELEA_OK;
 }
 
-static entelea_result_t https_timer_check(https_timer_t *timer,
-					  https_time_reader_t read_ms)
+static entelea_result_t
+https_timer_check(https_timer_t *timer, https_time_reader_t read_ms)
 {
 	uint64_t now;
 
@@ -38,8 +38,8 @@ static entelea_result_t https_timer_check(https_timer_t *timer,
 		return ENTELEA_E_STATE;
 	}
 	timer->last_ms = now;
-	return now - timer->start_ms >= timer->timeout_ms
-		? ENTELEA_E_TIMEOUT : ENTELEA_OK;
+	return now - timer->start_ms >= timer->timeout_ms ? ENTELEA_E_TIMEOUT :
+							    ENTELEA_OK;
 }
 
 #endif /* ENTELEA_HTTPS_TIME_H */

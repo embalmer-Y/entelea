@@ -26,35 +26,44 @@ typedef enum {
  * 不伪造默认时基。绑定 NULL 恢复未绑定。
  * feed 可在 ISR 调用，此时绑定时钟的 read_ms 必须 ISR 安全
  * （平台 uptime 适配器满足；见 platform/zephyr 合同）。 */
-entelea_result_t entelea_wdt_bind_clock(const entelea_clock_t *clock);
+entelea_result_t
+entelea_wdt_bind_clock(const entelea_clock_t *clock);
 
 /** [thread] init 期注册喂狗源；period_ms 出处 DEC-22/27 语义。started 后拒绝。 */
-entelea_result_t entelea_wdt_register(entelea_wdt_src_t src, uint32_t period_ms);
+entelea_result_t
+entelea_wdt_register(entelea_wdt_src_t src, uint32_t period_ms);
 
 /** [any] 原子更新 last_feed；首次 feed = 激活（未激活源不参与逾期判定）。 */
-void entelea_wdt_feed(entelea_wdt_src_t src);
+void
+entelea_wdt_feed(entelea_wdt_src_t src);
 
 /** [any] 声明式阻塞豁免窗（绝对截止 = now + budget；60s 钳制；feed 清除；
  * 不激活未激活源）。窗内不判逾；超窗恢复判逾（fail-safe 保持）。 */
-void entelea_wdt_grace(entelea_wdt_src_t src, uint32_t budget_ms);
+void
+entelea_wdt_grace(entelea_wdt_src_t src, uint32_t budget_ms);
 
 /** [thread] 去激活喂狗源（停止后无人喂是预期态，不判逾期；下次 feed 重新激活）。 */
-void entelea_wdt_deactivate(entelea_wdt_src_t src);
+void
+entelea_wdt_deactivate(entelea_wdt_src_t src);
 
 /** [thread] 启动巡检（sysworkq 周期项，周期 = min(periods)/2；无注册源按
  * 硬上限巡检）。CONFIG_TASK_WDT 时挂 L3 通道（callback=NULL → 过期即
  * sys_reboot——软巡检卡死兜底）。失败显式返回，不报告成功。 */
-entelea_result_t entelea_wdt_start(void);
+entelea_result_t
+entelea_wdt_start(void);
 
 /** [any] 巡检周期 = min(periods)/2（观测/测试用）。 */
-uint32_t entelea_wdt_patrol_period_ms(void);
+uint32_t
+entelea_wdt_patrol_period_ms(void);
 
 /** [any] 全局停机（system_fail 调用）：置位后新巡检不喂、不重排、不判逾，
  * 已在飞的喂狗调用可能完成；wdt_start 拒绝。一次性，无解除路径。 */
-void entelea_wdt_halt(void);
+void
+entelea_wdt_halt(void);
 
 /** [any] 时钟读取失败/回退累计（单调护栏沿用最后有效值期间的观测）。 */
-uint32_t entelea_wdt_clock_faults(void);
+uint32_t
+entelea_wdt_clock_faults(void);
 
 /* 时钟失明策略（A1，owner 定案）：连续 ENTELEA_WDT_BLIND_ROUNDS 轮巡检
  * 时间不可知 → system_fail（载荷 0xFF 非源编号，标识时钟失明）。 */
@@ -73,12 +82,17 @@ uint32_t entelea_wdt_clock_faults(void);
  * 与豁免窗活性查询。 */
 #ifdef ENTELEA_TEST
 /** 测试隔离：源表/启动/halted/时钟护栏全清。 */
-void entelea_wdt_test_reset(void);
-entelea_wdt_src_t entelea_wdt_patrol_once(void);
-bool entelea_wdt_grace_active(entelea_wdt_src_t src);
-void entelea_wdt_test_after_elapsed_sample(void (*hook)(void));
+void
+entelea_wdt_test_reset(void);
+entelea_wdt_src_t
+entelea_wdt_patrol_once(void);
+bool
+entelea_wdt_grace_active(entelea_wdt_src_t src);
+void
+entelea_wdt_test_after_elapsed_sample(void (*hook)(void));
 /** 确定性驱动一次巡检体（halted 语义测试用）；返回是否实际执行。 */
-bool entelea_wdt_test_patrol_tick(void);
+bool
+entelea_wdt_test_patrol_tick(void);
 #endif
 
 #ifdef __cplusplus

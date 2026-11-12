@@ -16,13 +16,15 @@ static entelea_media_backend_t backends[ENTELEA_MEDIA_CLASS_COUNT];
 static void *backend_users[ENTELEA_MEDIA_CLASS_COUNT];
 static bool bounds[ENTELEA_MEDIA_CLASS_COUNT];
 
-static bool class_ok(entelea_media_class_t cls)
+static bool
+class_ok(entelea_media_class_t cls)
 {
-	return (int)cls >= 0 && cls < ENTELEA_MEDIA_CLASS_COUNT;
+	return (int) cls >= 0 && cls < ENTELEA_MEDIA_CLASS_COUNT;
 }
 
-entelea_result_t entelea_media_bind(entelea_media_class_t cls,
-				    entelea_media_backend_t b, void *user)
+entelea_result_t
+entelea_media_bind(entelea_media_class_t cls, entelea_media_backend_t b,
+		   void *user)
 {
 	if (!class_ok(cls)) {
 		return ENTELEA_E_PARAM;
@@ -41,8 +43,8 @@ entelea_result_t entelea_media_bind(entelea_media_class_t cls,
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_media_capture_start(entelea_media_class_t cls,
-					     entelea_principal_t ctx)
+entelea_result_t
+entelea_media_capture_start(entelea_media_class_t cls, entelea_principal_t ctx)
 {
 	if (!class_ok(cls)) {
 		return ENTELEA_E_PARAM;
@@ -62,8 +64,8 @@ entelea_result_t entelea_media_capture_start(entelea_media_class_t cls,
 	return backends[cls].start(backend_users[cls]);
 }
 
-entelea_result_t entelea_media_poll(entelea_media_class_t cls,
-				    entelea_media_frame_t *out)
+entelea_result_t
+entelea_media_poll(entelea_media_class_t cls, entelea_media_frame_t *out)
 {
 	if (!class_ok(cls)) {
 		return ENTELEA_E_PARAM;
@@ -74,20 +76,23 @@ entelea_result_t entelea_media_poll(entelea_media_class_t cls,
 	if (out == NULL) {
 		return ENTELEA_E_PARAM;
 	}
-	if (backends[cls].state(backend_users[cls]) != ENTELEA_MEDIA_CAPTURING) {
+	if (backends[cls].state(backend_users[cls]) !=
+	    ENTELEA_MEDIA_CAPTURING) {
 		return ENTELEA_E_STATE; /* 未采集/已停——不复活 */
 	}
 	return backends[cls].poll(backend_users[cls], out);
 }
 
-void entelea_media_capture_stop(entelea_media_class_t cls)
+void
+entelea_media_capture_stop(entelea_media_class_t cls)
 {
 	if (class_ok(cls) && bounds[cls]) {
 		backends[cls].stop(backend_users[cls]); /* 后端幂等 */
 	}
 }
 
-entelea_media_state_t entelea_media_state(entelea_media_class_t cls)
+entelea_media_state_t
+entelea_media_state(entelea_media_class_t cls)
 {
 	if (!class_ok(cls) || !bounds[cls]) {
 		return ENTELEA_MEDIA_IDLE; /* 未绑定=IDLE（不伪装可用） */
@@ -108,9 +113,9 @@ static struct {
 	uint64_t now;
 } fake[ENTELEA_MEDIA_CLASS_COUNT];
 
-void entelea_media_fake_set_frames(entelea_media_class_t cls,
-				   const uint8_t *data, uint32_t len,
-				   uint32_t count)
+void
+entelea_media_fake_set_frames(entelea_media_class_t cls, const uint8_t *data,
+			      uint32_t len, uint32_t count)
 {
 	if (!class_ok(cls)) {
 		return;
@@ -123,21 +128,24 @@ void entelea_media_fake_set_frames(entelea_media_class_t cls,
 	fake[cls].remaining = count;
 }
 
-void entelea_media_fake_fail_next(entelea_media_class_t cls)
+void
+entelea_media_fake_fail_next(entelea_media_class_t cls)
 {
 	if (class_ok(cls)) {
 		fake[cls].fail_next = true;
 	}
 }
 
-uint32_t entelea_media_fake_start_calls(entelea_media_class_t cls)
+uint32_t
+entelea_media_fake_start_calls(entelea_media_class_t cls)
 {
 	return class_ok(cls) ? fake[cls].start_calls : 0;
 }
 
-static entelea_result_t fake_start(void *user)
+static entelea_result_t
+fake_start(void *user)
 {
-	entelea_media_class_t cls = (entelea_media_class_t)(uintptr_t)user;
+	entelea_media_class_t cls = (entelea_media_class_t) (uintptr_t) user;
 
 	fake[cls].start_calls++;
 	if (fake[cls].fail_next) {
@@ -148,9 +156,10 @@ static entelea_result_t fake_start(void *user)
 	return ENTELEA_OK;
 }
 
-static entelea_result_t fake_poll(void *user, entelea_media_frame_t *out)
+static entelea_result_t
+fake_poll(void *user, entelea_media_frame_t *out)
 {
-	entelea_media_class_t cls = (entelea_media_class_t)(uintptr_t)user;
+	entelea_media_class_t cls = (entelea_media_class_t) (uintptr_t) user;
 
 	if (fake[cls].fail_next) {
 		fake[cls].fail_next = false;
@@ -169,16 +178,18 @@ static entelea_result_t fake_poll(void *user, entelea_media_frame_t *out)
 	return ENTELEA_OK;
 }
 
-static void fake_stop(void *user)
+static void
+fake_stop(void *user)
 {
-	entelea_media_class_t cls = (entelea_media_class_t)(uintptr_t)user;
+	entelea_media_class_t cls = (entelea_media_class_t) (uintptr_t) user;
 
 	fake[cls].state = ENTELEA_MEDIA_IDLE;
 }
 
-static entelea_media_state_t fake_state(void *user)
+static entelea_media_state_t
+fake_state(void *user)
 {
-	entelea_media_class_t cls = (entelea_media_class_t)(uintptr_t)user;
+	entelea_media_class_t cls = (entelea_media_class_t) (uintptr_t) user;
 
 	return fake[cls].state;
 }
@@ -190,7 +201,8 @@ entelea_media_backend_t entelea_media_fake_backend = {
 	.state = fake_state,
 };
 
-void entelea_media_test_reset(void)
+void
+entelea_media_test_reset(void)
 {
 	memset(fake, 0, sizeof(fake));
 	memset(backends, 0, sizeof(backends));

@@ -4,7 +4,8 @@
 
 #include <stddef.h>
 
-static inline void entelea_secure_zero(void *buffer, size_t size)
+static inline void
+entelea_secure_zero(void *buffer, size_t size)
 {
 	volatile unsigned char *p = buffer;
 

@@ -19,9 +19,10 @@ static uint32_t cap_pulse;
 static bool pwm_fail_next;
 static int set_calls;
 
-static int fake_set_cycles(const struct device *dev, uint32_t channel,
-			   uint32_t period_cycles, uint32_t pulse_cycles,
-			   pwm_flags_t flags)
+static int
+fake_set_cycles(const struct device *dev, uint32_t channel,
+		uint32_t period_cycles, uint32_t pulse_cycles,
+		pwm_flags_t flags)
 {
 	ARG_UNUSED(dev);
 	ARG_UNUSED(channel);
@@ -36,8 +37,9 @@ static int fake_set_cycles(const struct device *dev, uint32_t channel,
 	return 0;
 }
 
-static int fake_get_cycles_per_sec(const struct device *dev, uint32_t channel,
-				   uint64_t *rate)
+static int
+fake_get_cycles_per_sec(const struct device *dev, uint32_t channel,
+			uint64_t *rate)
 {
 	ARG_UNUSED(dev);
 	ARG_UNUSED(channel);
@@ -51,12 +53,15 @@ static DEVICE_API(pwm, fake_pwm_api) = {
 };
 
 DEVICE_DT_DEFINE(DT_NODELABEL(fake_pwm), NULL, NULL, NULL, NULL, POST_KERNEL,
-		CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &fake_pwm_api);
+		 CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &fake_pwm_api);
 
 static const entelea_out_channel_t bus_ch = {
-	.uid = "pwmbus", .kind = ENTELEA_CH_PWM,
-	.poweron = {.u = 0}, .linkloss = {.u = 0}, .fault = {.u = 0},
-	.limits = {.min = 0, .max = 0xFFFFFFFF},
+	.uid = "pwmbus",
+	.kind = ENTELEA_CH_PWM,
+	.poweron = { .u = 0 },
+	.linkloss = { .u = 0 },
+	.fault = { .u = 0 },
+	.limits = { .min = 0, .max = 0xFFFFFFFF },
 };
 
 /* 打包：高16=hz/100、低16=permille。 */
@@ -71,7 +76,8 @@ ZTEST(framework_safety_pwm, test_pwm_zero_value_stops_output)
 	zassert_equal(entelea_safety_register_channel(&bus_ch), ENTELEA_OK);
 	/* poweron 值 u=0：解码为停止（pulse=0），修复前该写被拒绝。 */
 	zassert_equal(entelea_safety_poweron_init(), ENTELEA_OK);
-	zassert_true(set_calls > 0, "zero poweron value must reach the backend");
+	zassert_true(set_calls > 0,
+		     "zero poweron value must reach the backend");
 	zassert_equal(cap_pulse, 0U, "u==0 = duty zero (physical stop)");
 	zassert_equal(cap_period, 1000000000U, "stop uses the fixed 1s period");
 
@@ -79,15 +85,17 @@ ZTEST(framework_safety_pwm, test_pwm_zero_value_stops_output)
 	entelea_safety_set_link(true);
 	entelea_out_value_t rb;
 
-	zassert_equal(entelea_safety_commit("pwmbus", (entelea_out_value_t){.u = 0}),
+	zassert_equal(entelea_safety_commit("pwmbus",
+					    (entelea_out_value_t) { .u = 0 }),
 		      ENTELEA_OK);
 	zassert_equal(entelea_safety_readback("pwmbus", &rb), ENTELEA_OK);
 	zassert_equal(rb.u, 0U);
 	zassert_equal(cap_pulse, 0U, "explicit zero commit = stop");
 
 	/* 正常值换算：1000Hz × 50%。 */
-	zassert_equal(entelea_safety_commit("pwmbus",
-					    (entelea_out_value_t){.u = PACK(1000, 500)}),
+	zassert_equal(entelea_safety_commit(
+			      "pwmbus",
+			      (entelea_out_value_t) { .u = PACK(1000, 500) }),
 		      ENTELEA_OK);
 	zassert_equal(cap_period, 1000000U, "1e9/1000Hz");
 	zassert_equal(cap_pulse, 500000U, "50% duty");
@@ -102,8 +110,9 @@ ZTEST(framework_safety_pwm, test_backend_failure_never_reports_success)
 	zassert_equal(entelea_drv_pwm_init(), 0);
 	zassert_equal(entelea_safety_register_channel(&bus_ch), ENTELEA_OK);
 	entelea_safety_set_link(true);
-	zassert_equal(entelea_safety_commit("pwmbus",
-					    (entelea_out_value_t){.u = PACK(1000, 100)}),
+	zassert_equal(entelea_safety_commit(
+			      "pwmbus",
+			      (entelea_out_value_t) { .u = PACK(1000, 100) }),
 		      ENTELEA_OK);
 	entelea_out_value_t rb;
 
@@ -113,8 +122,9 @@ ZTEST(framework_safety_pwm, test_backend_failure_never_reports_success)
 	size_t writes = entelea_driver_sim_writes("pwmbus", recs, 8);
 
 	pwm_fail_next = true;
-	zassert_equal(entelea_safety_commit("pwmbus",
-					    (entelea_out_value_t){.u = PACK(1000, 900)}),
+	zassert_equal(entelea_safety_commit(
+			      "pwmbus",
+			      (entelea_out_value_t) { .u = PACK(1000, 900) }),
 		      ENTELEA_E_IO, "backend failure must propagate");
 	zassert_equal(entelea_safety_readback("pwmbus", &rb), ENTELEA_OK);
 	zassert_equal(rb.u, good, "shadow must not advance on failure");
@@ -152,26 +162,30 @@ ZTEST(framework_safety_pwm, test_bound_backend_unready_fails)
 	entelea_ch_state_t st;
 
 	zassert_equal(entelea_safety_channel_state("pwmbus", &st), ENTELEA_OK);
-	zassert_equal(st, ENTELEA_ST_SAFE_FAULT, "写失败通道撤销输出资格（A2）");
+	zassert_equal(st, ENTELEA_ST_SAFE_FAULT,
+		      "写失败通道撤销输出资格（A2）");
 	/* 后端就绪 → 显式 recover 恢复输出路径。 */
 	zassert_equal(entelea_drv_pwm_init(), 0);
 	entelea_safety_set_link(true);
 	zassert_equal(entelea_safety_channel_recover("pwmbus"), ENTELEA_OK);
 	zassert_equal(entelea_safety_channel_state("pwmbus", &st), ENTELEA_OK);
 	zassert_equal(st, ENTELEA_ST_ACTIVE, "link up → ACTIVE after recover");
-	zassert_equal(entelea_safety_commit("pwmbus", (entelea_out_value_t){.u = 0}),
+	zassert_equal(entelea_safety_commit("pwmbus",
+					    (entelea_out_value_t) { .u = 0 }),
 		      ENTELEA_OK, "ready backend accepts commits again");
 	/* 运行中后端再次未就绪（就绪位丢失）：ACTIVE 下的提交必须显式 E_IO，
 	 * 且提交失败保持 ACTIVE（可重试；与安全态写失败的 A2 语义区分）。 */
 	entelea_drv_test_reset();
-	zassert_equal(entelea_safety_commit("pwmbus",
-					    (entelea_out_value_t){.u = PACK(1000, 100)}),
+	zassert_equal(entelea_safety_commit(
+			      "pwmbus",
+			      (entelea_out_value_t) { .u = PACK(1000, 100) }),
 		      ENTELEA_E_IO, "unready bound backend must fail commits");
 	zassert_equal(entelea_safety_channel_state("pwmbus", &st), ENTELEA_OK);
 	zassert_equal(st, ENTELEA_ST_ACTIVE, "commit 失败不迁移状态（可重试）");
 	zassert_equal(entelea_drv_pwm_init(), 0);
-	zassert_equal(entelea_safety_commit("pwmbus",
-					    (entelea_out_value_t){.u = PACK(1000, 100)}),
+	zassert_equal(entelea_safety_commit(
+			      "pwmbus",
+			      (entelea_out_value_t) { .u = PACK(1000, 100) }),
 		      ENTELEA_OK, "backend ready again accepts commits");
 }
 
@@ -184,8 +198,9 @@ ZTEST(framework_safety_pwm, test_failed_safety_write_revokes_output)
 	zassert_equal(entelea_safety_register_channel(&bus_ch), ENTELEA_OK);
 	zassert_equal(entelea_safety_poweron_init(), ENTELEA_OK);
 	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
-	zassert_equal(entelea_safety_commit("pwmbus",
-					    (entelea_out_value_t){.u = PACK(1000, 100)}),
+	zassert_equal(entelea_safety_commit(
+			      "pwmbus",
+			      (entelea_out_value_t) { .u = PACK(1000, 100) }),
 		      ENTELEA_OK);
 	entelea_ch_state_t st;
 	entelea_out_value_t rb;
@@ -194,25 +209,33 @@ ZTEST(framework_safety_pwm, test_failed_safety_write_revokes_output)
 	pwm_fail_next = true;
 	zassert_equal(entelea_safety_set_link(false), ENTELEA_E_IO);
 	zassert_equal(entelea_safety_channel_state("pwmbus", &st), ENTELEA_OK);
-	zassert_equal(st, ENTELEA_ST_SAFE_FAULT, "failed linkloss write revokes output");
+	zassert_equal(st, ENTELEA_ST_SAFE_FAULT,
+		      "failed linkloss write revokes output");
 	zassert_equal(entelea_safety_readback("pwmbus", &rb), ENTELEA_OK);
-	zassert_equal(rb.u, PACK(1000, 100), "影子保留最后确认值（不伪称已落安全值）");
+	zassert_equal(rb.u, PACK(1000, 100),
+		      "影子保留最后确认值（不伪称已落安全值）");
 
 	/* 失败后的下一次请求必须被拒——即使后端已恢复（须显式 recover）。 */
-	zassert_equal(entelea_safety_commit("pwmbus",
-					    (entelea_out_value_t){.u = PACK(1000, 900)}),
-		      ENTELEA_E_STATE, "next request after failed safety write");
+	zassert_equal(entelea_safety_commit(
+			      "pwmbus",
+			      (entelea_out_value_t) { .u = PACK(1000, 900) }),
+		      ENTELEA_E_STATE,
+		      "next request after failed safety write");
 
 	/* detach 写失败同语义。 */
 	zassert_equal(entelea_safety_channel_recover("pwmbus"), ENTELEA_OK);
 	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
 	pwm_fail_next = true;
-	zassert_equal(entelea_safety_force_channel_fault("pwmbus"), ENTELEA_E_IO);
+	zassert_equal(entelea_safety_force_channel_fault("pwmbus"),
+		      ENTELEA_E_IO);
 	zassert_equal(entelea_safety_channel_state("pwmbus", &st), ENTELEA_OK);
-	zassert_equal(st, ENTELEA_ST_SAFE_FAULT, "failed detach write revokes output");
-	zassert_equal(entelea_safety_commit("pwmbus",
-					    (entelea_out_value_t){.u = PACK(1000, 100)}),
-		      ENTELEA_E_STATE, "next request after failed detach write");
+	zassert_equal(st, ENTELEA_ST_SAFE_FAULT,
+		      "failed detach write revokes output");
+	zassert_equal(entelea_safety_commit(
+			      "pwmbus",
+			      (entelea_out_value_t) { .u = PACK(1000, 100) }),
+		      ENTELEA_E_STATE,
+		      "next request after failed detach write");
 	/* 范围界定：单通道 detach 失败不升级整系统（A2 按通道；升级①仅
 	 * estop/system_fail 强停面）。正向控制：tick 仍可执行。 */
 	zassert_true(entelea_wdt_test_patrol_tick(),
@@ -221,8 +244,9 @@ ZTEST(framework_safety_pwm, test_failed_safety_write_revokes_output)
 	/* 显式恢复闭环。 */
 	zassert_equal(entelea_safety_channel_recover("pwmbus"), ENTELEA_OK);
 	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
-	zassert_equal(entelea_safety_commit("pwmbus",
-					    (entelea_out_value_t){.u = PACK(1000, 100)}),
+	zassert_equal(entelea_safety_commit(
+			      "pwmbus",
+			      (entelea_out_value_t) { .u = PACK(1000, 100) }),
 		      ENTELEA_OK, "recover restores the output path");
 }
 
@@ -230,9 +254,11 @@ ZTEST(framework_safety_pwm, test_failed_safety_write_revokes_output)
 ZTEST(framework_safety_pwm, test_release_eligibility_by_fault_source)
 {
 	static const entelea_out_channel_t rel = {
-		.uid = "rel1", .kind = ENTELEA_CH_GPIO,
-		.poweron = {.b = false}, .linkloss = {.b = false},
-		.fault = {.b = false},
+		.uid = "rel1",
+		.kind = ENTELEA_CH_GPIO,
+		.poweron = { .b = false },
+		.linkloss = { .b = false },
+		.fault = { .b = false },
 	};
 
 	entelea_safety_test_reset();
@@ -246,7 +272,8 @@ ZTEST(framework_safety_pwm, test_release_eligibility_by_fault_source)
 
 	/* pwmbus：detach 写失败 → SAFE_FAULT（仅 recover 可恢复）。 */
 	pwm_fail_next = true;
-	zassert_equal(entelea_safety_force_channel_fault("pwmbus"), ENTELEA_E_IO);
+	zassert_equal(entelea_safety_force_channel_fault("pwmbus"),
+		      ENTELEA_E_IO);
 	/* rel1：单通道 detach 写成功 → SAFE_FAULT（无全局 estop 锁存，
 	 * 但可与写失败通道并存于同一注册表）。 */
 	zassert_equal(entelea_safety_force_channel_fault("rel1"), ENTELEA_OK);
@@ -257,7 +284,8 @@ ZTEST(framework_safety_pwm, test_release_eligibility_by_fault_source)
 	zassert_equal(entelea_safety_channel_state("pwmbus", &st), ENTELEA_OK);
 	zassert_equal(st, ENTELEA_ST_SAFE_FAULT,
 		      "写失败通道不得经 clear_fault 恢复");
-	zassert_equal(entelea_safety_commit("pwmbus", (entelea_out_value_t){.u = 0}),
+	zassert_equal(entelea_safety_commit("pwmbus",
+					    (entelea_out_value_t) { .u = 0 }),
 		      ENTELEA_E_STATE, "输出资格仍然撤销");
 	zassert_equal(entelea_safety_channel_recover("pwmbus"), ENTELEA_OK,
 		      "显式 recover 是唯一恢复路径");
@@ -284,12 +312,14 @@ ZTEST(framework_safety_pwm, test_force_write_failure_keeps_last_confirmed)
 	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
 	const uint32_t confirmed = PACK(1000, 100);
 
-	zassert_equal(entelea_safety_commit("pwmbus",
-					    (entelea_out_value_t){.u = confirmed}),
-		      ENTELEA_OK);
+	zassert_equal(
+		entelea_safety_commit("pwmbus",
+				      (entelea_out_value_t) { .u = confirmed }),
+		ENTELEA_OK);
 	uint32_t fails = entelea_safety_force_write_failures();
 
-	zassert_true(entelea_wdt_test_patrol_tick(), "正向控制：estop 前未停机");
+	zassert_true(entelea_wdt_test_patrol_tick(),
+		     "正向控制：estop 前未停机");
 	pwm_fail_next = true;
 	entelea_safety_force_all_fault(); /* estop：绑定通道写失败 */
 	zassert_true(entelea_safety_force_write_failures() > fails, "失败留痕");
@@ -305,7 +335,8 @@ ZTEST(framework_safety_pwm, test_force_write_failure_keeps_last_confirmed)
 
 	zassert_equal(entelea_safety_channel_state("pwmbus", &st), ENTELEA_OK);
 	zassert_equal(st, ENTELEA_ST_SAFE_FAULT, "资格仍撤销（物理未知）");
-	zassert_equal(entelea_safety_commit("pwmbus", (entelea_out_value_t){.u = 0}),
+	zassert_equal(entelea_safety_commit("pwmbus",
+					    (entelea_out_value_t) { .u = 0 }),
 		      ENTELEA_E_STATE);
 	entelea_wdt_test_reset();
 }
@@ -316,9 +347,11 @@ ZTEST(framework_safety_pwm, test_force_write_failure_keeps_last_confirmed)
 ZTEST(framework_safety_pwm, test_failed_force_stop_is_terminal)
 {
 	static const entelea_out_channel_t ok_ch = {
-		.uid = "okgpio", .kind = ENTELEA_CH_GPIO,
-		.poweron = {.b = false}, .linkloss = {.b = false},
-		.fault = {.b = false},
+		.uid = "okgpio",
+		.kind = ENTELEA_CH_GPIO,
+		.poweron = { .b = false },
+		.linkloss = { .b = false },
+		.fault = { .b = false },
 	};
 	entelea_ch_state_t st;
 
@@ -338,7 +371,8 @@ ZTEST(framework_safety_pwm, test_failed_force_stop_is_terminal)
 	zassert_true(entelea_safety_estop_latched(), "锁存不得被释放");
 	zassert_equal(entelea_safety_channel_state("okgpio", &st), ENTELEA_OK);
 	zassert_equal(st, ENTELEA_ST_SAFE_FAULT, "成功落驱通道也不得恢复");
-	zassert_equal(entelea_safety_commit("okgpio", (entelea_out_value_t){.b = true}),
+	zassert_equal(entelea_safety_commit(
+			      "okgpio", (entelea_out_value_t) { .b = true }),
 		      ENTELEA_E_STATE, "停机后不得再输出");
 	zassert_equal(entelea_safety_channel_recover("okgpio"), ENTELEA_E_STATE,
 		      "单通道 recover 同样拒绝");

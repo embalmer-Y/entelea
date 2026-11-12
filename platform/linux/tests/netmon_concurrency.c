@@ -10,7 +10,8 @@ static pthread_barrier_t barrier;
 static int failed;
 static struct entelea_wifi_observer observer;
 
-static int check_observer(void)
+static int
+check_observer(void)
 {
 	entelea_wifi_observer_event(&observer, ENTELEA_WIFI_ASSOCIATED, 1);
 	entelea_wifi_observer_event(&observer, ENTELEA_WIFI_DHCP_BOUND, 2);
@@ -35,32 +36,37 @@ static int check_observer(void)
 	       entelea_dep_state(ENTELEA_DEP_NET) != ENTELEA_DEP_DOWN;
 }
 
-static void *good_worker(void *arg)
+static void *
+good_worker(void *arg)
 {
-	(void)arg;
-	(void)pthread_barrier_wait(&barrier);
+	(void) arg;
+	(void) pthread_barrier_wait(&barrier);
 	for (uint64_t i = 0; i < 100000; i++) {
-		if (entelea_dep_report(ENTELEA_DEP_NET, true, i) != ENTELEA_OK) {
+		if (entelea_dep_report(ENTELEA_DEP_NET, true, i) !=
+		    ENTELEA_OK) {
 			return &failed;
 		}
 	}
 	return NULL;
 }
 
-static void *bad_worker(void *arg)
+static void *
+bad_worker(void *arg)
 {
-	(void)arg;
-	(void)pthread_barrier_wait(&barrier);
+	(void) arg;
+	(void) pthread_barrier_wait(&barrier);
 	for (uint64_t i = 0; i < 100000; i++) {
-		if (entelea_dep_report(ENTELEA_DEP_NET, false, i) != ENTELEA_OK) {
+		if (entelea_dep_report(ENTELEA_DEP_NET, false, i) !=
+		    ENTELEA_OK) {
 			return &failed;
 		}
-		(void)entelea_dep_state(ENTELEA_DEP_NET);
+		(void) entelea_dep_state(ENTELEA_DEP_NET);
 	}
 	return NULL;
 }
 
-int main(void)
+int
+main(void)
 {
 	pthread_t good, bad;
 	void *good_result, *bad_result;
@@ -70,8 +76,8 @@ int main(void)
 	    pthread_create(&bad, NULL, bad_worker, NULL) != 0 ||
 	    pthread_join(good, &good_result) != 0 ||
 	    pthread_join(bad, &bad_result) != 0 ||
-	    pthread_barrier_destroy(&barrier) != 0 ||
-	    good_result != NULL || bad_result != NULL ||
+	    pthread_barrier_destroy(&barrier) != 0 || good_result != NULL ||
+	    bad_result != NULL ||
 	    entelea_dep_report(ENTELEA_DEP_NET, false, 100000) != ENTELEA_OK ||
 	    entelea_dep_state(ENTELEA_DEP_NET) != ENTELEA_DEP_DOWN ||
 	    check_observer() != 0) {

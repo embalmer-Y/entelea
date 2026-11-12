@@ -16,14 +16,16 @@
 #include <entelea/safety.h>
 #include "internal.h"
 
-static struct entelea_ch_slot *slot_of(const entelea_out_channel_t *ch);
+static struct entelea_ch_slot *
+slot_of(const entelea_out_channel_t *ch);
 
-static void sim_record(struct entelea_ch_slot *s, const entelea_out_value_t *v)
+static void
+sim_record(struct entelea_ch_slot *s, const entelea_out_value_t *v)
 {
 	if (s == NULL) {
 		return;
 	}
-	s->sim_rec.ring[s->sim_rec.head] = (entelea_write_rec_t){
+	s->sim_rec.ring[s->sim_rec.head] = (entelea_write_rec_t) {
 		.t_ms = entelea_safety_now_ms(),
 		.value_u = entelea_value_encode(s->desc->kind, *v),
 	};
@@ -33,7 +35,8 @@ static void sim_record(struct entelea_ch_slot *s, const entelea_out_value_t *v)
 	}
 }
 
-static int sim_write(const entelea_out_channel_t *ch, const entelea_out_value_t *v)
+static int
+sim_write(const entelea_out_channel_t *ch, const entelea_out_value_t *v)
 {
 	/* 桩路径：真机后端同样先记录（golden 连续性）再写寄存器。
 	 * 桩本身不失败——后端失败语义经真机路径返回值承担（ztest 用
@@ -42,7 +45,8 @@ static int sim_write(const entelea_out_channel_t *ch, const entelea_out_value_t 
 	return 0;
 }
 
-static int sim_read(const entelea_out_channel_t *ch, entelea_out_value_t *out)
+static int
+sim_read(const entelea_out_channel_t *ch, entelea_out_value_t *out)
 {
 	struct entelea_ch_slot *s = slot_of(ch);
 
@@ -64,7 +68,8 @@ static const struct gpio_dt_spec real_io =
 static const char *const real_io_uid = DT_PROP(DT_PATH(zephyr_user), uid);
 static bool real_io_ready;
 
-int entelea_drv_gpio_init(void)
+int
+entelea_drv_gpio_init(void)
 {
 	if (!gpio_is_ready_dt(&real_io)) {
 		return -EIO;
@@ -76,8 +81,8 @@ int entelea_drv_gpio_init(void)
 	return 0;
 }
 
-static int gpio_real_write(const entelea_out_channel_t *ch,
-			   const entelea_out_value_t *v)
+static int
+gpio_real_write(const entelea_out_channel_t *ch, const entelea_out_value_t *v)
 {
 	if (strcmp(ch->uid, real_io_uid) == 0) {
 		/* 绑定通道：后端未就绪（未 init/init 失败/设备不 ready）=
@@ -99,7 +104,8 @@ static int gpio_real_write(const entelea_out_channel_t *ch,
 
 #define ENTELEA_GPIO_WRITE gpio_real_write
 #else /* 未启用/无 DT 绑定：桩路径（init 报错） */
-int entelea_drv_gpio_init(void)
+int
+entelea_drv_gpio_init(void)
 {
 	return -ENODEV;
 }
@@ -114,12 +120,14 @@ int entelea_drv_gpio_init(void)
  * 失败进 pwm_err 计数（观测面；无锁单写者递增）。 */
 #if defined(ENTELEA_DRV_PWM) && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), pwm_uid)
 #include <zephyr/drivers/pwm.h>
-static const struct pwm_dt_spec real_pwm = PWM_DT_SPEC_GET(DT_PATH(zephyr_user));
+static const struct pwm_dt_spec real_pwm =
+	PWM_DT_SPEC_GET(DT_PATH(zephyr_user));
 static const char *const real_pwm_uid = DT_PROP(DT_PATH(zephyr_user), pwm_uid);
 static bool real_pwm_ready;
 static uint32_t pwm_err;
 
-int entelea_drv_pwm_init(void)
+int
+entelea_drv_pwm_init(void)
 {
 	if (!device_is_ready(real_pwm.dev)) {
 		return -ENODEV;
@@ -128,7 +136,8 @@ int entelea_drv_pwm_init(void)
 	return 0;
 }
 
-uint32_t entelea_drv_pwm_err_count(void)
+uint32_t
+entelea_drv_pwm_err_count(void)
 {
 	return pwm_err;
 }
@@ -137,7 +146,8 @@ uint32_t entelea_drv_pwm_err_count(void)
  * u==0（hz==0 且 permille==0）= 停止：占空 0（固定 1s 周期、脉宽 0），
  * 保证故障/安全态零值物理停止输出（缺陷 2）。hz==0 且 permille>0 或
  * permille>1000 = 非法编码。 */
-static int pwm_decode(uint32_t u, uint32_t *period_ns, uint32_t *pulse_ns)
+static int
+pwm_decode(uint32_t u, uint32_t *period_ns, uint32_t *pulse_ns)
 {
 	uint32_t hz = (u >> 16) * 100U;
 	uint32_t permille = u & 0xFFFFU;
@@ -156,12 +166,12 @@ static int pwm_decode(uint32_t u, uint32_t *period_ns, uint32_t *pulse_ns)
 	uint32_t period = 1000000000U / hz;
 
 	*period_ns = period;
-	*pulse_ns = (uint32_t)((uint64_t)period * permille / 1000U);
+	*pulse_ns = (uint32_t) ((uint64_t) period * permille / 1000U);
 	return 0;
 }
 
-static int pwm_real_write(const entelea_out_channel_t *ch,
-			  const entelea_out_value_t *v)
+static int
+pwm_real_write(const entelea_out_channel_t *ch, const entelea_out_value_t *v)
 {
 	if (strcmp(ch->uid, real_pwm_uid) == 0) {
 		/* 绑定通道：后端未就绪 = 显式失败（二轮 review 发现 2）。 */
@@ -176,8 +186,8 @@ static int pwm_real_write(const entelea_out_channel_t *ch,
 			pwm_err++;
 			return -EINVAL; /* 打包域外：显式失败，不静默不写 */
 		}
-		if (pwm_set(real_pwm.dev, real_pwm.channel, period_ns,
-			    pulse_ns, real_pwm.flags) != 0) {
+		if (pwm_set(real_pwm.dev, real_pwm.channel, period_ns, pulse_ns,
+			    real_pwm.flags) != 0) {
 			pwm_err++; /* 后端失败传播：commit 不因此变 OK */
 			return -EIO; /* 失败不写 golden 记录（环形=已执行写） */
 		}
@@ -189,12 +199,14 @@ static int pwm_real_write(const entelea_out_channel_t *ch,
 
 #define ENTELEA_PWM_WRITE pwm_real_write
 #else
-int entelea_drv_pwm_init(void)
+int
+entelea_drv_pwm_init(void)
 {
 	return -ENODEV;
 }
 
-uint32_t entelea_drv_pwm_err_count(void)
+uint32_t
+entelea_drv_pwm_err_count(void)
 {
 	return 0;
 }
@@ -203,13 +215,13 @@ uint32_t entelea_drv_pwm_err_count(void)
 #endif
 
 const entelea_driver_ops_t entelea_drivers[ENTELEA_CH_KIND_COUNT] = {
-	[ENTELEA_CH_GPIO] = {ENTELEA_GPIO_WRITE, sim_read},
-	[ENTELEA_CH_PWM] = {ENTELEA_PWM_WRITE, sim_read},
-	[ENTELEA_CH_POWER] = {sim_write, sim_read},
+	[ENTELEA_CH_GPIO] = { ENTELEA_GPIO_WRITE, sim_read },
+	[ENTELEA_CH_PWM] = { ENTELEA_PWM_WRITE, sim_read },
+	[ENTELEA_CH_POWER] = { sim_write, sim_read },
 };
 
-size_t entelea_driver_sim_writes(const char *uid, entelea_write_rec_t *out,
-		size_t max)
+size_t
+entelea_driver_sim_writes(const char *uid, entelea_write_rec_t *out, size_t max)
 {
 	int i = entelea_ch_find(uid);
 
@@ -242,8 +254,8 @@ static const struct gpio_dt_spec estop_spec =
 static struct gpio_callback estop_cb;
 
 /* estop ISR：直达安全态，不经协议栈/调度排队（调用图纪律见 force.c）。 */
-static void estop_isr(const struct device *dev, struct gpio_callback *cb,
-		      uint32_t pins)
+static void
+estop_isr(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
 {
 	ARG_UNUSED(dev);
 	ARG_UNUSED(cb);
@@ -252,7 +264,8 @@ static void estop_isr(const struct device *dev, struct gpio_callback *cb,
 }
 #endif
 
-entelea_result_t entelea_safety_estop_init(void)
+entelea_result_t
+entelea_safety_estop_init(void)
 {
 #if DT_NODE_HAS_PROP(ESTOP_GPIO_NODE, estop_gpios)
 	if (!gpio_is_ready_dt(&estop_spec)) {
@@ -291,7 +304,8 @@ entelea_result_t entelea_safety_estop_init(void)
 }
 
 /* estop 引脚原始电平（0/1；-1=未绑定）——接线诊断/现场观测面。 */
-int entelea_safety_estop_level_raw(void)
+int
+entelea_safety_estop_level_raw(void)
 {
 #if DT_NODE_HAS_PROP(ESTOP_GPIO_NODE, estop_gpios)
 	return gpio_pin_get_raw(estop_spec.port, estop_spec.pin);
@@ -303,7 +317,8 @@ int entelea_safety_estop_level_raw(void)
 /* estop 边沿映射——**逻辑**边沿语义（0=上升缺省=按下沿/1=下降=松开沿
  * /2=双沿；未知 fail-safe 上升）。物理沿翻译归 drivers.c 装配点
  * （r14：ACTIVE_LOW 下逻辑上升=物理下降）。 */
-int entelea_safety_estop_edge_of(uint8_t flags)
+int
+entelea_safety_estop_edge_of(uint8_t flags)
 {
 	switch (flags) {
 	case 1:
@@ -316,7 +331,8 @@ int entelea_safety_estop_edge_of(uint8_t flags)
 	}
 }
 
-static struct entelea_ch_slot *slot_of(const entelea_out_channel_t *ch)
+static struct entelea_ch_slot *
+slot_of(const entelea_out_channel_t *ch)
 {
 	if (ch == NULL) {
 		return NULL;
@@ -330,7 +346,8 @@ static struct entelea_ch_slot *slot_of(const entelea_out_channel_t *ch)
 }
 
 #ifdef ENTELEA_TEST
-void entelea_drv_test_reset(void)
+void
+entelea_drv_test_reset(void)
 {
 	/* 测试隔离：后端就绪位/失败计数复位（配合未就绪负测）。 */
 #if defined(ENTELEA_DRV_GPIO) && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), uid)

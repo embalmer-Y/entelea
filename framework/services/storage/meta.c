@@ -13,13 +13,14 @@
 
 #define REC_HDR 8 /* seq u32 | len u16 | crc16 u16（小端） */
 
-static uint32_t meta_stride(void)
+static uint32_t
+meta_stride(void)
 {
 	return entelea_store_backend.size(ENTELEA_PART_META) / 2;
 }
 
-static entelea_result_t read_rec(uint8_t copy, uint32_t *seq, uint16_t *len,
-				 uint8_t *data)
+static entelea_result_t
+read_rec(uint8_t copy, uint32_t *seq, uint16_t *len, uint8_t *data)
 {
 	uint8_t hdr[REC_HDR];
 	uint32_t stride = meta_stride();
@@ -36,8 +37,9 @@ static entelea_result_t read_rec(uint8_t copy, uint32_t *seq, uint16_t *len,
 	if (*len == 0 || *len > ENTELEA_STORAGE_META_MAX) {
 		return ENTELEA_E_IO;
 	}
-	if (entelea_store_backend.read(ENTELEA_PART_META, copy * stride + REC_HDR,
-				       data, *len) != ENTELEA_OK) {
+	if (entelea_store_backend.read(ENTELEA_PART_META,
+				       copy * stride + REC_HDR, data,
+				       *len) != ENTELEA_OK) {
 		return ENTELEA_E_IO;
 	}
 	if (entelea_crc16(data, *len) != crc) {
@@ -46,8 +48,8 @@ static entelea_result_t read_rec(uint8_t copy, uint32_t *seq, uint16_t *len,
 	return ENTELEA_OK;
 }
 
-static entelea_result_t write_rec(uint8_t copy, uint32_t seq, const void *buf,
-				  uint16_t len)
+static entelea_result_t
+write_rec(uint8_t copy, uint32_t seq, const void *buf, uint16_t len)
 {
 	uint8_t rec[REC_HDR + ENTELEA_STORAGE_META_MAX];
 	uint32_t stride = meta_stride();
@@ -82,7 +84,8 @@ static entelea_result_t write_rec(uint8_t copy, uint32_t seq, const void *buf,
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_storage_meta_write(const void *buf, uint16_t len)
+entelea_result_t
+entelea_storage_meta_write(const void *buf, uint16_t len)
 {
 	if (buf == NULL || len == 0 || len > ENTELEA_STORAGE_META_MAX) {
 		return ENTELEA_E_PARAM;
@@ -110,8 +113,8 @@ entelea_result_t entelea_storage_meta_write(const void *buf, uint16_t len)
 	return write_rec(inactive, cur_seq + 1, buf, len);
 }
 
-entelea_result_t entelea_storage_meta_read(void *buf, uint16_t cap,
-					   uint16_t *len)
+entelea_result_t
+entelea_storage_meta_read(void *buf, uint16_t cap, uint16_t *len)
 {
 	if (buf == NULL || len == NULL) {
 		return ENTELEA_E_PARAM;
@@ -139,8 +142,8 @@ entelea_result_t entelea_storage_meta_read(void *buf, uint16_t cap,
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_storage_meta_read_mirrored(void *buf, uint16_t cap,
-						    uint16_t *len)
+entelea_result_t
+entelea_storage_meta_read_mirrored(void *buf, uint16_t cap, uint16_t *len)
 {
 	uint8_t data0[ENTELEA_STORAGE_META_MAX];
 	uint8_t data1[ENTELEA_STORAGE_META_MAX];
@@ -151,8 +154,8 @@ entelea_result_t entelea_storage_meta_read_mirrored(void *buf, uint16_t cap,
 		return ENTELEA_E_PARAM;
 	}
 	if (read_rec(0, &s0, &l0, data0) != ENTELEA_OK ||
-	    read_rec(1, &s1, &l1, data1) != ENTELEA_OK ||
-	    l0 != l1 || memcmp(data0, data1, l0) != 0) {
+	    read_rec(1, &s1, &l1, data1) != ENTELEA_OK || l0 != l1 ||
+	    memcmp(data0, data1, l0) != 0) {
 		return ENTELEA_E_IO;
 	}
 	if (l0 > cap) {
@@ -164,18 +167,20 @@ entelea_result_t entelea_storage_meta_read_mirrored(void *buf, uint16_t cap,
 }
 
 #ifdef ENTELEA_TEST
-entelea_result_t entelea_storage_meta_corrupt_test(uint8_t copy_idx)
+entelea_result_t
+entelea_storage_meta_corrupt_test(uint8_t copy_idx)
 {
 	if (copy_idx > 1) {
 		return ENTELEA_E_PARAM;
 	}
 	uint32_t stride = meta_stride();
 
-	if (entelea_store_backend.erase_off(ENTELEA_PART_META, copy_idx * stride,
+	if (entelea_store_backend.erase_off(ENTELEA_PART_META,
+					    copy_idx * stride,
 					    stride) != ENTELEA_OK) {
 		return ENTELEA_E_IO;
 	}
-	uint8_t garbage[REC_HDR] = {0xDE, 0xAD, 0xBE, 0xEF, 0, 0, 0, 0};
+	uint8_t garbage[REC_HDR] = { 0xDE, 0xAD, 0xBE, 0xEF, 0, 0, 0, 0 };
 
 	return entelea_store_backend.write(ENTELEA_PART_META, copy_idx * stride,
 					   garbage, REC_HDR);

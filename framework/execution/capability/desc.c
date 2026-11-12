@@ -10,12 +10,13 @@
 static const entelea_periph_desc_t *descs[ENTELEA_PERIPH_DESCS_MAX];
 static size_t desc_count;
 
-static bool desc_valid(const entelea_periph_desc_t *d)
+static bool
+desc_valid(const entelea_periph_desc_t *d)
 {
 	if (d == NULL || d->uid == NULL || d->uid[0] == '\0' ||
-	    (int)d->kind < 0 || d->kind >= ENTELEA_DEV_KIND_COUNT ||
-	    (int)d->perm_class < 0 || d->perm_class >= ENTELEA_PERM_CLASS_COUNT ||
-	    d->inst > 31) {
+	    (int) d->kind < 0 || d->kind >= ENTELEA_DEV_KIND_COUNT ||
+	    (int) d->perm_class < 0 ||
+	    d->perm_class >= ENTELEA_PERM_CLASS_COUNT || d->inst > 31) {
 		return false;
 	}
 	if (d->kind == ENTELEA_DEV_OUTPUT && d->safety_uid == NULL) {
@@ -24,33 +25,36 @@ static bool desc_valid(const entelea_periph_desc_t *d)
 	return true;
 }
 
-static int find_idx(const char *uid)
+static int
+find_idx(const char *uid)
 {
 	if (uid == NULL) {
 		return -1;
 	}
 	for (size_t i = 0; i < desc_count; i++) {
 		if (strcmp(descs[i]->uid, uid) == 0) {
-			return (int)i;
+			return (int) i;
 		}
 	}
 	return -1;
 }
 
-const entelea_periph_desc_t *entelea_periph_find(const char *uid)
+const entelea_periph_desc_t *
+entelea_periph_find(const char *uid)
 {
 	int i = find_idx(uid);
 
 	return i < 0 ? NULL : descs[i];
 }
 
-size_t entelea_periph_count(void)
+size_t
+entelea_periph_count(void)
 {
 	return desc_count;
 }
 
-entelea_result_t entelea_periph_register(const entelea_periph_desc_t *list,
-					 size_t count)
+entelea_result_t
+entelea_periph_register(const entelea_periph_desc_t *list, size_t count)
 {
 	if (list == NULL && count > 0) {
 		return ENTELEA_E_PARAM;
@@ -78,9 +82,9 @@ entelea_result_t entelea_periph_register(const entelea_periph_desc_t *list,
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_periph_acquire(entelea_principal_t ctx,
-					const char *uid,
-					const entelea_periph_desc_t **out)
+entelea_result_t
+entelea_periph_acquire(entelea_principal_t ctx, const char *uid,
+		       const entelea_periph_desc_t **out)
 {
 	if (out != NULL) {
 		*out = NULL;
@@ -91,9 +95,9 @@ entelea_result_t entelea_periph_acquire(entelea_principal_t ctx,
 		return ENTELEA_E_NOTFOUND;
 	}
 	entelea_result_t r = entelea_perm_check(ctx, d->perm_class,
-						d->kind == ENTELEA_DEV_OUTPUT
-							? ENTELEA_PERM_WRITE
-							: ENTELEA_PERM_READ,
+						d->kind == ENTELEA_DEV_OUTPUT ?
+							ENTELEA_PERM_WRITE :
+							ENTELEA_PERM_READ,
 						d->inst);
 
 	if (r != ENTELEA_OK) {
@@ -102,7 +106,8 @@ entelea_result_t entelea_periph_acquire(entelea_principal_t ctx,
 	if (d->kind == ENTELEA_DEV_OUTPUT) {
 		entelea_ch_state_t st;
 
-		if (entelea_safety_channel_state(d->safety_uid, &st) != ENTELEA_OK) {
+		if (entelea_safety_channel_state(d->safety_uid, &st) !=
+		    ENTELEA_OK) {
 			return ENTELEA_E_STATE; /* 声明了通道但未注册 */
 		}
 		if (st != ENTELEA_ST_ACTIVE) {
@@ -115,7 +120,8 @@ entelea_result_t entelea_periph_acquire(entelea_principal_t ctx,
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_periph_detach(const char *uid)
+entelea_result_t
+entelea_periph_detach(const char *uid)
 {
 	const entelea_periph_desc_t *d = entelea_periph_find(uid);
 
@@ -129,7 +135,8 @@ entelea_result_t entelea_periph_detach(const char *uid)
 }
 
 #ifdef ENTELEA_TEST
-void entelea_periph_test_reset(void)
+void
+entelea_periph_test_reset(void)
 {
 	memset(descs, 0, sizeof(descs));
 	desc_count = 0;

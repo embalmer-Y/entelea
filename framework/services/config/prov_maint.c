@@ -14,7 +14,8 @@
 
 static bool maint_written_this_boot;
 
-entelea_result_t entelea_prov_write_maint(const uint8_t *cbor, uint32_t len)
+entelea_result_t
+entelea_prov_write_maint(const uint8_t *cbor, uint32_t len)
 {
 	if (cbor == NULL || len == 0 || len + 6 > 4096) {
 		return ENTELEA_E_PARAM;
@@ -35,7 +36,8 @@ entelea_result_t entelea_prov_write_maint(const uint8_t *cbor, uint32_t len)
 	if (entelea_storage_erase(ENTELEA_PART_PROV) != ENTELEA_OK) {
 		return ENTELEA_E_IO;
 	}
-	if (entelea_storage_write(ENTELEA_PART_PROV, 0, rec, 6 + len) != ENTELEA_OK) {
+	if (entelea_storage_write(ENTELEA_PART_PROV, 0, rec, 6 + len) !=
+	    ENTELEA_OK) {
 		return ENTELEA_E_IO;
 	}
 	maint_written_this_boot = true;
@@ -43,12 +45,14 @@ entelea_result_t entelea_prov_write_maint(const uint8_t *cbor, uint32_t len)
 }
 
 #ifdef ENTELEA_TEST
-void entelea_prov_maint_test_reset(void)
+void
+entelea_prov_maint_test_reset(void)
 {
 	maint_written_this_boot = false;
 }
 
-entelea_result_t entelea_prov_write_test(const uint8_t *cbor, uint32_t len)
+entelea_result_t
+entelea_prov_write_test(const uint8_t *cbor, uint32_t len)
 {
 	if (cbor == NULL || len == 0 || len + 6 > 4096) {
 		return ENTELEA_E_PARAM;
@@ -61,7 +65,8 @@ entelea_result_t entelea_prov_write_test(const uint8_t *cbor, uint32_t len)
 	if (entelea_storage_erase(ENTELEA_PART_PROV) != ENTELEA_OK) {
 		return ENTELEA_E_IO;
 	}
-	if (entelea_storage_write(ENTELEA_PART_PROV, 0, rec, 6 + len) != ENTELEA_OK) {
+	if (entelea_storage_write(ENTELEA_PART_PROV, 0, rec, 6 + len) !=
+	    ENTELEA_OK) {
 		return ENTELEA_E_IO;
 	}
 	return ENTELEA_OK;

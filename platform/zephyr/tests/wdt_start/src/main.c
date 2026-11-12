@@ -15,7 +15,8 @@
 
 static uint64_t virt_now;
 
-static entelea_result_t virt_read_ms(void *user, uint64_t *out)
+static entelea_result_t
+virt_read_ms(void *user, uint64_t *out)
 {
 	ARG_UNUSED(user);
 	*out = virt_now;
@@ -36,9 +37,11 @@ static int add_result;
 static int add_calls;
 static int platform_clock_mode;
 
-entelea_result_t __real_entelea_platform_clock_init(entelea_clock_t *clock);
+entelea_result_t
+__real_entelea_platform_clock_init(entelea_clock_t *clock);
 
-entelea_result_t __wrap_entelea_platform_clock_init(entelea_clock_t *clock)
+entelea_result_t
+__wrap_entelea_platform_clock_init(entelea_clock_t *clock)
 {
 	if (platform_clock_mode == 1) {
 		return ENTELEA_E_IO;
@@ -50,15 +53,17 @@ entelea_result_t __wrap_entelea_platform_clock_init(entelea_clock_t *clock)
 	return __real_entelea_platform_clock_init(clock);
 }
 
-int __wrap_task_wdt_init(const struct device *hw)
+int
+__wrap_task_wdt_init(const struct device *hw)
 {
 	ARG_UNUSED(hw);
 	init_calls++;
 	return init_result;
 }
 
-int __wrap_task_wdt_add(uint32_t reload_period, task_wdt_callback_t callback,
-			void *user_data)
+int
+__wrap_task_wdt_add(uint32_t reload_period, task_wdt_callback_t callback,
+		    void *user_data)
 {
 	ARG_UNUSED(reload_period);
 	ARG_UNUSED(callback);
@@ -69,7 +74,8 @@ int __wrap_task_wdt_add(uint32_t reload_period, task_wdt_callback_t callback,
 
 static int feed_calls;
 
-void __wrap_task_wdt_feed(int channel_id)
+void
+__wrap_task_wdt_feed(int channel_id)
 {
 	ARG_UNUSED(channel_id);
 	feed_calls++;
@@ -115,7 +121,8 @@ ZTEST(wdt_start_failures, test_failed_start_never_reports_ready)
 
 	add_result = -EINVAL;
 	zassert_equal(entelea_wdt_start(), ENTELEA_E_IO);
-	zassert_equal(add_calls, 2, "Failed start must not set the started flag");
+	zassert_equal(add_calls, 2,
+		      "Failed start must not set the started flag");
 	zassert_equal(init_calls, 2,
 		      "Retry must not reinitialize a running task watchdog");
 #endif
@@ -135,7 +142,8 @@ ZTEST(wdt_start_failures, test_halt_stops_patrol_from_any_context)
 	zassert_true(entelea_wdt_test_patrol_tick(), "halt 前巡检体应执行");
 	/* 正向控制（三轮 review 发现 6）：wrapper 确实被链接且真实路径
 	 * 经过它——零计数不得作为“零喂狗”的证据。 */
-	zassert_true(feed_calls > 0, "positive control: patrol must feed task_wdt");
+	zassert_true(feed_calls > 0,
+		     "positive control: patrol must feed task_wdt");
 	entelea_wdt_halt();
 	int snap = feed_calls;
 

@@ -13,7 +13,8 @@
 static uint64_t virt_now;
 static bool clock_fail_next; /* 一次性读失败注入（缺陷 5 负测） */
 
-static entelea_result_t virt_read_ms(void *user, uint64_t *out)
+static entelea_result_t
+virt_read_ms(void *user, uint64_t *out)
 {
 	ARG_UNUSED(user);
 	if (clock_fail_next) {
@@ -36,14 +37,16 @@ static entelea_clock_t virt_clock = {
 static int order_log[8];
 static int order_n;
 
-static void sub_a(const entelea_event_t *e, void *u)
+static void
+sub_a(const entelea_event_t *e, void *u)
 {
 	ARG_UNUSED(e);
 	ARG_UNUSED(u);
 	order_log[order_n++] = 'A';
 }
 
-static void sub_b(const entelea_event_t *e, void *u)
+static void
+sub_b(const entelea_event_t *e, void *u)
 {
 	ARG_UNUSED(e);
 	ARG_UNUSED(u);
@@ -59,7 +62,7 @@ ZTEST(framework_core, test_evt_subscribe_order_and_capacity)
 		      ENTELEA_OK);
 
 	order_n = 0;
-	const entelea_event_t e = {.id = ENTELEA_EVT_BOOT_STEP};
+	const entelea_event_t e = { .id = ENTELEA_EVT_BOOT_STEP };
 
 	entelea_evt_publish(&e);
 	zassert_equal(order_n, 2, "both subscribers called");
@@ -81,9 +84,10 @@ static int isr_evt_seen;
 
 ZTEST(framework_core, test_evt_copy_rejects_bad_payloads)
 {
-	uint8_t bytes[5] = {0};
-	entelea_event_t evt = {.id = ENTELEA_EVT_BOOT_DONE, .data = bytes,
-			       .len = sizeof(bytes)};
+	uint8_t bytes[5] = { 0 };
+	entelea_event_t evt = { .id = ENTELEA_EVT_BOOT_DONE,
+				.data = bytes,
+				.len = sizeof(bytes) };
 
 	zassert_equal(entelea_evt_publish_copy(NULL), ENTELEA_E_PARAM);
 	zassert_equal(entelea_evt_publish_copy(&evt), ENTELEA_E_RANGE);
@@ -99,21 +103,23 @@ ZTEST(framework_core, test_evt_copy_rejects_bad_payloads)
 struct isr_payload_rec {
 	uint32_t magic;
 };
-static const struct isr_payload_rec isr_payload = {.magic = 0xC0FFEEU};
+static const struct isr_payload_rec isr_payload = { .magic = 0xC0FFEEU };
 
-static void isr_publish_fn(const void *arg)
+static void
+isr_publish_fn(const void *arg)
 {
 	const entelea_event_t *e = arg;
 
 	entelea_evt_publish(e); /* [ISR] 路径：投递队列 */
 }
 
-static void evt_boot_done_cb(const entelea_event_t *e, void *u)
+static void
+evt_boot_done_cb(const entelea_event_t *e, void *u)
 {
 	ARG_UNUSED(e);
 	if (e->data != NULL && e->len == sizeof(isr_payload) &&
-	    ((const struct isr_payload_rec *)e->data)->magic == 0xC0FFEEU) {
-		*((int *)u) += 1;
+	    ((const struct isr_payload_rec *) e->data)->magic == 0xC0FFEEU) {
+		*((int *) u) += 1;
 	}
 }
 
@@ -121,8 +127,8 @@ ZTEST(framework_core, test_evt_isr_queue_and_payload_lifetime)
 {
 	static int seen;
 
-	zassert_equal(entelea_evt_subscribe(ENTELEA_EVT_BOOT_DONE, evt_boot_done_cb,
-					    &seen),
+	zassert_equal(entelea_evt_subscribe(ENTELEA_EVT_BOOT_DONE,
+					    evt_boot_done_cb, &seen),
 		      ENTELEA_OK);
 	const entelea_event_t e = {
 		.id = ENTELEA_EVT_BOOT_DONE,
@@ -133,7 +139,8 @@ ZTEST(framework_core, test_evt_isr_queue_and_payload_lifetime)
 	seen = 0;
 	isr_evt_seen = 0;
 	irq_offload(isr_publish_fn, &e);
-	zassert_equal(seen, 0, "ISR publish must be queued, not dispatched inline");
+	zassert_equal(seen, 0,
+		      "ISR publish must be queued, not dispatched inline");
 	entelea_evt_poll_drain();
 	zassert_equal(seen, 1, "queued event dispatched after drain");
 	zassert_equal(entelea_evt_queue_dropped(), 0, "no drops expected");
@@ -142,7 +149,8 @@ ZTEST(framework_core, test_evt_isr_queue_and_payload_lifetime)
 static int warn_seen;
 static entelea_wdt_warn_evt_t last_warn;
 
-static void wdt_warn_cb(const entelea_event_t *e, void *u)
+static void
+wdt_warn_cb(const entelea_event_t *e, void *u)
 {
 	ARG_UNUSED(u);
 	const entelea_wdt_warn_evt_t *p = e->data;
@@ -165,13 +173,15 @@ ZTEST(framework_core, test_wdt_math_and_failover)
 
 	zassert_equal(entelea_wdt_bind_clock(&virt_clock), ENTELEA_OK);
 	virt_now = 1000;
-	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 100), ENTELEA_OK);
+	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 100),
+		      ENTELEA_OK);
 	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 100),
 		      ENTELEA_E_STATE, "已注册源重复注册拒绝");
 	zassert_equal(entelea_wdt_patrol_period_ms(), 50, "patrol = min/2");
 
-	zassert_equal(entelea_evt_subscribe(ENTELEA_EVT_WDT_WARN, wdt_warn_cb, NULL),
-		      ENTELEA_OK);
+	zassert_equal(
+		entelea_evt_subscribe(ENTELEA_EVT_WDT_WARN, wdt_warn_cb, NULL),
+		ENTELEA_OK);
 
 	/* 激活语义：注册未喂狗（未激活）的源不参与逾期判定。 */
 	virt_now = 1300;
@@ -197,17 +207,19 @@ ZTEST(framework_core, test_wdt_math_and_failover)
 	static const entelea_out_channel_t ch = {
 		.uid = "wdt_probe",
 		.kind = ENTELEA_CH_GPIO,
-		.poweron = {.b = false},
-		.linkloss = {.b = false},
-		.fault = {.b = true},
+		.poweron = { .b = false },
+		.linkloss = { .b = false },
+		.fault = { .b = true },
 	};
 	zassert_equal(entelea_safety_register_channel(&ch), ENTELEA_OK);
 	entelea_safety_system_fail(ENTELEA_FAIL_WDT(ENTELEA_WDT_SYWORK));
 	zassert_equal(entelea_safety_test_fail_reason(),
-		      ENTELEA_FAIL_WDT(ENTELEA_WDT_SYWORK), "fail reason observable");
+		      ENTELEA_FAIL_WDT(ENTELEA_WDT_SYWORK),
+		      "fail reason observable");
 	entelea_ch_state_t st;
 
-	zassert_equal(entelea_safety_channel_state("wdt_probe", &st), ENTELEA_OK);
+	zassert_equal(entelea_safety_channel_state("wdt_probe", &st),
+		      ENTELEA_OK);
 	zassert_equal(st, ENTELEA_ST_SAFE_FAULT, "system fail -> SAFE_FAULT");
 
 	/* 豁免窗数学：窗内不判逾/超窗恢复判逾/feed 清除/budget=0 no-op/
@@ -216,23 +228,28 @@ ZTEST(framework_core, test_wdt_math_and_failover)
 	virt_now = 1600; /* elapsed=149 > period=100：无窗必逾 */
 	entelea_wdt_grace(ENTELEA_WDT_SYWORK, 400);
 	zassert_true(entelea_wdt_grace_active(ENTELEA_WDT_SYWORK), "grace set");
-	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT, "窗内不判逾");
+	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT,
+		      "窗内不判逾");
 	virt_now = 2001; /* deadline=2000 已过 */
-	zassert_false(entelea_wdt_grace_active(ENTELEA_WDT_SYWORK), "窗过期为假");
+	zassert_false(entelea_wdt_grace_active(ENTELEA_WDT_SYWORK),
+		      "窗过期为假");
 	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_SYWORK,
 		      "超窗恢复判逾（fail-safe 保持）");
 	entelea_wdt_feed(ENTELEA_WDT_SYWORK); /* 基线 2001 + 清窗 */
 	virt_now = 2150;
 	entelea_wdt_grace(ENTELEA_WDT_SYWORK, 0);
-	zassert_false(entelea_wdt_grace_active(ENTELEA_WDT_SYWORK), "budget=0 no-op");
+	zassert_false(entelea_wdt_grace_active(ENTELEA_WDT_SYWORK),
+		      "budget=0 no-op");
 	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_SYWORK,
 		      "zero-budget 不设窗：照常判逾");
 	entelea_wdt_feed(ENTELEA_WDT_SYWORK); /* 基线 2150 */
 	virt_now = 2151;
 	entelea_wdt_grace(ENTELEA_WDT_SYWORK, 100000); /* 超 60s 上限 → 钳制 */
-	zassert_true(entelea_wdt_grace_active(ENTELEA_WDT_SYWORK), "钳制后窗在位");
+	zassert_true(entelea_wdt_grace_active(ENTELEA_WDT_SYWORK),
+		     "钳制后窗在位");
 	virt_now = 62150; /* 钳制 deadline = 2151+60000=62151：窗内最后一点 */
-	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT, "钳制窗仍生效");
+	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT,
+		      "钳制窗仍生效");
 	virt_now = 62151; /* == deadline：窗闭 → 判逾 */
 	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_SYWORK,
 		      "钳制窗超时恢复判逾");
@@ -240,7 +257,8 @@ ZTEST(framework_core, test_wdt_math_and_failover)
 	virt_now = 63000;
 	entelea_wdt_deactivate(ENTELEA_WDT_SYWORK);
 	entelea_wdt_grace(ENTELEA_WDT_SYWORK, 400);
-	virt_now = 63501; /* 若 grace 误激活源：deadline 63400 已超 → 逾期可见 */
+	virt_now =
+		63501; /* 若 grace 误激活源：deadline 63400 已超 → 逾期可见 */
 	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT,
 		      "grace 不激活未激活源");
 }
@@ -251,7 +269,8 @@ ZTEST(framework_core, test_clock_guard_keeps_last_good)
 	entelea_wdt_test_reset();
 	zassert_equal(entelea_wdt_bind_clock(&virt_clock), ENTELEA_OK);
 	virt_now = 5000;
-	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 1000), ENTELEA_OK);
+	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 1000),
+		      ENTELEA_OK);
 	entelea_wdt_feed(ENTELEA_WDT_SYWORK); /* last_feed = last_good = 5000 */
 	zassert_equal(entelea_wdt_clock_faults(), 0);
 	/* 读失败（时间仅前进到界内 5200）：护栏沿用 5000 → elapsed=0。
@@ -279,7 +298,8 @@ ZTEST(framework_core, test_wdt_blind_clock_fails_safe)
 	entelea_safety_test_reset();
 	zassert_equal(entelea_wdt_bind_clock(&virt_clock), ENTELEA_OK);
 	virt_now = 5000;
-	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 1000), ENTELEA_OK);
+	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 1000),
+		      ENTELEA_OK);
 	entelea_wdt_feed(ENTELEA_WDT_SYWORK);
 
 	/* 单轮/两轮失败：不判逾、不假活、不触发 fail-safe；好读复位轮数。 */
@@ -287,9 +307,11 @@ ZTEST(framework_core, test_wdt_blind_clock_fails_safe)
 		clock_fail_next = true;
 		zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT);
 	}
-	zassert_equal(entelea_safety_test_fail_reason(), 0, "两轮失明不得提前 fail");
+	zassert_equal(entelea_safety_test_fail_reason(), 0,
+		      "两轮失明不得提前 fail");
 	virt_now = 5200;
-	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT, "好读恢复判时");
+	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT,
+		      "好读恢复判时");
 	clock_fail_next = true;
 	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT);
 	/* 复位后重新累计：1 轮失明不触发。 */
@@ -302,7 +324,7 @@ ZTEST(framework_core, test_wdt_blind_clock_fails_safe)
 		zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT);
 	}
 	clock_fail_next = true;
-	(void)entelea_wdt_patrol_once();
+	(void) entelea_wdt_patrol_once();
 	zassert_equal(entelea_safety_test_fail_reason(),
 		      ENTELEA_FAIL_WDT_CLOCK_BLIND, "3 轮失明必须 fail-safe");
 	zassert_false(entelea_wdt_test_patrol_tick(), "fail 后巡检不得执行");
@@ -317,7 +339,8 @@ ZTEST(framework_core, test_wdt_persistent_rollback_counts_blind)
 	entelea_safety_test_reset();
 	zassert_equal(entelea_wdt_bind_clock(&virt_clock), ENTELEA_OK);
 	virt_now = 5000;
-	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 1000), ENTELEA_OK);
+	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 1000),
+		      ENTELEA_OK);
 	entelea_wdt_feed(ENTELEA_WDT_SYWORK);
 
 	/* 两轮回退：不判逾不假活（修复前回退 ok=true 把轮数归零，
@@ -327,17 +350,19 @@ ZTEST(framework_core, test_wdt_persistent_rollback_counts_blind)
 		      "回退轮不得伪逾期");
 	virt_now = 3000;
 	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT);
-	zassert_equal(entelea_safety_test_fail_reason(), 0, "两轮回退不得提前 fail");
+	zassert_equal(entelea_safety_test_fail_reason(), 0,
+		      "两轮回退不得提前 fail");
 	/* 好读复位轮数（回退后恢复前进 = 时间重新可知）。 */
 	virt_now = 5100;
-	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT, "好读恢复判时");
+	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT,
+		      "好读恢复判时");
 	/* 重新累计：3 轮连续回退 → fail-safe（载荷 0xFF）。 */
 	virt_now = 4900;
 	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT);
 	virt_now = 4800;
 	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT);
 	virt_now = 4700;
-	(void)entelea_wdt_patrol_once();
+	(void) entelea_wdt_patrol_once();
 	zassert_equal(entelea_safety_test_fail_reason(),
 		      ENTELEA_FAIL_WDT_CLOCK_BLIND,
 		      "持续回退必须按 A1 计入失明轮数并 fail-safe");
@@ -347,13 +372,15 @@ ZTEST(framework_core, test_wdt_persistent_rollback_counts_blind)
 }
 
 /* ---- ISR 上下文并发冒烟（R-E）：feed 从 ISR 调用，簿记一致 ---- */
-static void isr_feed_fn(const void *arg)
+static void
+isr_feed_fn(const void *arg)
 {
 	ARG_UNUSED(arg);
 	entelea_wdt_feed(ENTELEA_WDT_SYWORK);
 }
 
-static void interleaved_isr_feed(void)
+static void
+interleaved_isr_feed(void)
 {
 	virt_now++;
 	irq_offload(isr_feed_fn, NULL);
@@ -364,15 +391,17 @@ ZTEST(framework_core, test_wdt_feed_between_clock_and_snapshot)
 	entelea_wdt_test_reset();
 	zassert_equal(entelea_wdt_bind_clock(&virt_clock), ENTELEA_OK);
 	virt_now = 1000;
-	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 1000), ENTELEA_OK);
+	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 1000),
+		      ENTELEA_OK);
 	entelea_wdt_feed(ENTELEA_WDT_SYWORK);
 
 	entelea_wdt_test_after_elapsed_sample(interleaved_isr_feed);
 	entelea_wdt_src_t result = entelea_wdt_patrol_once();
 
 	entelea_wdt_test_after_elapsed_sample(NULL);
-	zassert_equal(result, ENTELEA_WDT_COUNT,
-		      "ISR feed after sampling time must not fabricate a timeout");
+	zassert_equal(
+		result, ENTELEA_WDT_COUNT,
+		"ISR feed after sampling time must not fabricate a timeout");
 	virt_now = 2002;
 	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_SYWORK,
 		      "a genuinely overdue feed must still be detected");
@@ -383,15 +412,17 @@ ZTEST(framework_core, test_wdt_elapsed_across_u32_wrap)
 {
 	entelea_wdt_test_reset();
 	zassert_equal(entelea_wdt_bind_clock(&virt_clock), ENTELEA_OK);
-	virt_now = (uint64_t)UINT32_MAX - 10;
-	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 100), ENTELEA_OK);
+	virt_now = (uint64_t) UINT32_MAX - 10;
+	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 100),
+		      ENTELEA_OK);
 	entelea_wdt_feed(ENTELEA_WDT_SYWORK);
-	virt_now = (uint64_t)UINT32_MAX + 20;
+	virt_now = (uint64_t) UINT32_MAX + 20;
 	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_COUNT,
 		      "32-bit clock wrap must preserve a short interval");
-	virt_now = (uint64_t)UINT32_MAX + 100;
-	zassert_equal(entelea_wdt_patrol_once(), ENTELEA_WDT_SYWORK,
-		      "a real timeout across 32-bit wrap must remain detectable");
+	virt_now = (uint64_t) UINT32_MAX + 100;
+	zassert_equal(
+		entelea_wdt_patrol_once(), ENTELEA_WDT_SYWORK,
+		"a real timeout across 32-bit wrap must remain detectable");
 	entelea_wdt_test_reset();
 }
 
@@ -400,10 +431,12 @@ ZTEST(framework_core, test_isr_context_clock_bookkeeping)
 	entelea_wdt_test_reset();
 	zassert_equal(entelea_wdt_bind_clock(&virt_clock), ENTELEA_OK);
 	virt_now = 100;
-	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 1000), ENTELEA_OK);
+	zassert_equal(entelea_wdt_register(ENTELEA_WDT_SYWORK, 1000),
+		      ENTELEA_OK);
 	for (int i = 0; i < 30; i++) {
 		virt_now = 100 + (i + 1) * 100;
-		irq_offload(isr_feed_fn, NULL); /* ISR 上下文读时钟（临界区内簿记） */
+		irq_offload(isr_feed_fn,
+			    NULL); /* ISR 上下文读时钟（临界区内簿记） */
 	}
 	zassert_equal(entelea_wdt_clock_faults(), 0, "无撕裂/失败计数");
 	/* 末次 feed @3100；+1001 → 精确逾期（证明 ISR 侧时间戳未丢失）。 */
@@ -419,16 +452,18 @@ ZTEST(framework_core, test_boot_step_order_is_spec)
 	 * R02 四步 = 旧 M1 四步（core_init 占位更名 supervision_ready）；
 	 * 后续业务批次只在尾部追加。 */
 	static const char *const expected[] = {
-		"estop_gpio", "safety_poweron", "wdt_start", "supervision_ready",
-		"storage_init", "d12_bootguard",
+		"estop_gpio",	     "safety_poweron", "wdt_start",
+		"supervision_ready", "storage_init",   "d12_bootguard",
 	};
 
 	zassert_equal(ENTELEA_PLATFORM_BOOT_STEP_COUNT, 6,
 		      "step count = r16 d12 首步 + R02 四步 + R03 尾部追加");
 	for (int i = 0; i < ENTELEA_PLATFORM_BOOT_STEP_COUNT; i++) {
-		zassert_ok(strcmp(entelea_platform_boot_steps[i].name, expected[i]),
+		zassert_ok(strcmp(entelea_platform_boot_steps[i].name,
+				  expected[i]),
 			   "boot step order changed at %d", i);
-		zassert_not_null(entelea_platform_boot_steps[i].fn, "step fn wired");
+		zassert_not_null(entelea_platform_boot_steps[i].fn,
+				 "step fn wired");
 	}
 }
 

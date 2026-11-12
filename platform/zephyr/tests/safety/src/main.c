@@ -13,10 +13,11 @@
 #include <entelea/safety.h>
 
 static uint64_t virt_now;
-static bool clock_fail_next;   /* 一次性读失败注入 */
+static bool clock_fail_next; /* 一次性读失败注入 */
 static bool clock_fail_persist; /* 持续失败模式（二轮 review：持续故障类别） */
 
-static entelea_result_t virt_read_ms(void *user, uint64_t *out)
+static entelea_result_t
+virt_read_ms(void *user, uint64_t *out)
 {
 	ARG_UNUSED(user);
 	if (clock_fail_next) {
@@ -40,18 +41,19 @@ static entelea_clock_t virt_clock = {
 
 static entelea_result_t isr_commit_res;
 
-static void isr_commit_fn(const void *arg)
+static void
+isr_commit_fn(const void *arg)
 {
 	const char *uid = arg;
-	entelea_out_value_t v = {.u = 500};
+	entelea_out_value_t v = { .u = 500 };
 
 	isr_commit_res = entelea_safety_commit(uid, v);
 }
 
 ZTEST(framework_safety, test_safety_full_scenario)
 {
-	entelea_out_value_t v = {.u = 0};
-	entelea_out_value_t rb = {0};
+	entelea_out_value_t v = { .u = 0 };
+	entelea_out_value_t rb = { 0 };
 	entelea_ch_state_t st;
 
 	entelea_safety_test_reset(); /* 容量算术敏感（fill 至 32）——显式净基线 */
@@ -61,34 +63,47 @@ ZTEST(framework_safety, test_safety_full_scenario)
 	/* ---- 1. 注册校验：三态缺一/值越限/uid 非法 → 拒绝，不留半注册 ---- */
 	zassert_equal(entelea_safety_register_channel(NULL), ENTELEA_E_PARAM);
 	const entelea_out_channel_t over_max = {
-		.uid = "bad1", .kind = ENTELEA_CH_PWM,
-		.poweron = {.u = 2000}, .linkloss = {.u = 0}, .fault = {.u = 0},
-		.limits = {.min = 0, .max = 1000},
+		.uid = "bad1",
+		.kind = ENTELEA_CH_PWM,
+		.poweron = { .u = 2000 },
+		.linkloss = { .u = 0 },
+		.fault = { .u = 0 },
+		.limits = { .min = 0, .max = 1000 },
 	};
-	zassert_equal(entelea_safety_register_channel(&over_max), ENTELEA_E_PARAM,
-		      "poweron 超 max 拒绝");
+	zassert_equal(entelea_safety_register_channel(&over_max),
+		      ENTELEA_E_PARAM, "poweron 超 max 拒绝");
 
-	static const entelea_out_channel_t pwm_ch = { /* min=100 限幅用例 */
-		.uid = "pwm1", .kind = ENTELEA_CH_PWM,
-		.poweron = {.u = 100}, .linkloss = {.u = 100}, .fault = {.u = 100},
-		.limits = {.min = 100, .max = 1000},
+	static const entelea_out_channel_t pwm_ch = {
+		/* min=100 限幅用例 */
+		.uid = "pwm1",		 .kind = ENTELEA_CH_PWM,
+		.poweron = { .u = 100 }, .linkloss = { .u = 100 },
+		.fault = { .u = 100 },	 .limits = { .min = 100, .max = 1000 },
 	};
-	static const entelea_out_channel_t slew_ch = { /* slew 用例：5/ms */
-		.uid = "slew1", .kind = ENTELEA_CH_PWM,
-		.poweron = {.u = 0}, .linkloss = {.u = 0}, .fault = {.u = 0},
-		.limits = {.min = 0, .max = 1000, .slew_per_ms = 5},
+	static const entelea_out_channel_t slew_ch = {
+		/* slew 用例：5/ms */
+		.uid = "slew1",
+		.kind = ENTELEA_CH_PWM,
+		.poweron = { .u = 0 },
+		.linkloss = { .u = 0 },
+		.fault = { .u = 0 },
+		.limits = { .min = 0, .max = 1000, .slew_per_ms = 5 },
 	};
-	static const entelea_out_channel_t pwr_ch = { /* 受控供电：限流 500mA */
-		.uid = "pwr1", .kind = ENTELEA_CH_POWER,
-		.poweron = {.pwr = {.en = false, .ma = 0}},
-		.linkloss = {.pwr = {.en = false, .ma = 0}},
-		.fault = {.pwr = {.en = false, .ma = 0}},
-		.limits = {.current_limit_ma = 500},
+	static const entelea_out_channel_t pwr_ch = {
+		/* 受控供电：限流 500mA */
+		.uid = "pwr1",
+		.kind = ENTELEA_CH_POWER,
+		.poweron = { .pwr = { .en = false, .ma = 0 } },
+		.linkloss = { .pwr = { .en = false, .ma = 0 } },
+		.fault = { .pwr = { .en = false, .ma = 0 } },
+		.limits = { .current_limit_ma = 500 },
 	};
-	static const entelea_out_channel_t det_ch = { /* detach/recover 用例 */
-		.uid = "det1", .kind = ENTELEA_CH_GPIO,
-		.poweron = {.b = false}, .linkloss = {.b = false},
-		.fault = {.b = true},
+	static const entelea_out_channel_t det_ch = {
+		/* detach/recover 用例 */
+		.uid = "det1",
+		.kind = ENTELEA_CH_GPIO,
+		.poweron = { .b = false },
+		.linkloss = { .b = false },
+		.fault = { .b = true },
 	};
 	zassert_equal(entelea_safety_register_channel(&pwm_ch), ENTELEA_OK);
 	zassert_equal(entelea_safety_register_channel(&slew_ch), ENTELEA_OK);
@@ -133,7 +148,8 @@ ZTEST(framework_safety, test_safety_full_scenario)
 	zassert_equal(entelea_safety_commit("slew1", v), ENTELEA_OK); /* 基线 */
 	virt_now = 1010; /* Δt=10 → 界 = 5×10 = 50 */
 	v.u = 150;
-	zassert_equal(entelea_safety_commit("slew1", v), ENTELEA_OK, "within bound");
+	zassert_equal(entelea_safety_commit("slew1", v), ENTELEA_OK,
+		      "within bound");
 	virt_now = 1011; /* Δt=1 → 界 = 5×1 = 5 */
 	v.u = 300;
 	zassert_equal(entelea_safety_commit("slew1", v), ENTELEA_E_RANGE,
@@ -148,9 +164,12 @@ ZTEST(framework_safety, test_safety_full_scenario)
 	clock_fail_persist = true; /* 持续失败：重复提交不得逐步改变输出 */
 	for (int i = 0; i < 3; i++) {
 		zassert_equal(
-			entelea_safety_commit("slew1", (entelea_out_value_t){.u = 300}),
-			ENTELEA_E_STATE, "unreadable clock must reject slew commits");
-		zassert_equal(entelea_safety_readback("slew1", &rb), ENTELEA_OK);
+			entelea_safety_commit(
+				"slew1", (entelea_out_value_t) { .u = 300 }),
+			ENTELEA_E_STATE,
+			"unreadable clock must reject slew commits");
+		zassert_equal(entelea_safety_readback("slew1", &rb),
+			      ENTELEA_OK);
 		zassert_equal(rb.u, 155, "输出不得在时钟失明期间改变");
 	}
 	clock_fail_persist = false;
@@ -175,11 +194,13 @@ ZTEST(framework_safety, test_safety_full_scenario)
 	zassert_equal(rb.pwr.ma, 400);
 
 	/* ---- 4. 单通道 detach/recover（物理不在场 = 故障态；重附 = 上电态） ---- */
-	zassert_equal(entelea_safety_force_channel_fault("noperf"), ENTELEA_E_NOTFOUND);
+	zassert_equal(entelea_safety_force_channel_fault("noperf"),
+		      ENTELEA_E_NOTFOUND);
 	zassert_equal(entelea_safety_force_channel_fault("det1"), ENTELEA_OK);
 	zassert_equal(entelea_safety_channel_state("det1", &st), ENTELEA_OK);
 	zassert_equal(st, ENTELEA_ST_SAFE_FAULT, "detach -> SAFE_FAULT");
-	zassert_equal(entelea_safety_commit("det1", (entelea_out_value_t){.b = false}),
+	zassert_equal(entelea_safety_commit(
+			      "det1", (entelea_out_value_t) { .b = false }),
 		      ENTELEA_E_STATE, "detached channel rejects writes");
 	zassert_equal(entelea_safety_readback("det1", &rb), ENTELEA_OK);
 	zassert_true(rb.b, "fault value applied");
@@ -191,7 +212,8 @@ ZTEST(framework_safety, test_safety_full_scenario)
 
 	/* ---- 5. ISR 调 [thread] API 拒绝 ---- */
 	v.u = 500;
-	zassert_equal(entelea_safety_commit("pwm1", v), ENTELEA_OK, "前置：ACTIVE 可写");
+	zassert_equal(entelea_safety_commit("pwm1", v), ENTELEA_OK,
+		      "前置：ACTIVE 可写");
 	isr_commit_res = ENTELEA_OK;
 	irq_offload(isr_commit_fn, "pwm1");
 	zassert_equal(isr_commit_res, ENTELEA_E_PERM, "ISR 调 commit 必须被拒");
@@ -204,21 +226,24 @@ ZTEST(framework_safety, test_safety_full_scenario)
 		snprintf(names[i], sizeof(names[i]), "fill%02d", i);
 		fill[i] = pwm_ch;
 		fill[i].uid = names[i];
-		zassert_equal(entelea_safety_register_channel(&fill[i]), ENTELEA_OK,
-			      "fill %d", i);
+		zassert_equal(entelea_safety_register_channel(&fill[i]),
+			      ENTELEA_OK, "fill %d", i);
 	}
 	static const entelea_out_channel_t one_more = {
-		.uid = "overflow1", .kind = ENTELEA_CH_GPIO,
-		.poweron = {.b = false}, .linkloss = {.b = false},
-		.fault = {.b = false},
+		.uid = "overflow1",
+		.kind = ENTELEA_CH_GPIO,
+		.poweron = { .b = false },
+		.linkloss = { .b = false },
+		.fault = { .b = false },
 	};
-	zassert_equal(entelea_safety_register_channel(&one_more), ENTELEA_E_NOMEM,
-		      "registry full");
+	zassert_equal(entelea_safety_register_channel(&one_more),
+		      ENTELEA_E_NOMEM, "registry full");
 
 	/* ---- 7. estop 直达 + 锁存与释放（clear 是唯一释放路径） ---- */
 	entelea_safety_force_all_fault();
 	/* 观测面 getter（r14）：闩位与触发时刻（virt_now=1021 段）。 */
-	zassert_true(entelea_safety_estop_latched(), "estop latched observable");
+	zassert_true(entelea_safety_estop_latched(),
+		     "estop latched observable");
 	zassert_equal(entelea_safety_estop_latched_at(), 1021,
 		      "estop latched_at observable");
 	zassert_equal(entelea_safety_channel_state("pwm1", &st), ENTELEA_OK);
@@ -239,7 +264,8 @@ ZTEST(framework_safety, test_safety_full_scenario)
 	zassert_equal(entelea_safety_channel_state("pwm1", &st), ENTELEA_OK);
 	zassert_equal(st, ENTELEA_ST_ACTIVE, "conditional recovery to ACTIVE");
 	zassert_equal(entelea_safety_readback("pwm1", &rb), ENTELEA_OK);
-	zassert_equal(rb.u, 100, "clear 不回写：保持 fault 安全值直至显式 commit");
+	zassert_equal(rb.u, 100,
+		      "clear 不回写：保持 fault 安全值直至显式 commit");
 	v.u = 300;
 	zassert_equal(entelea_safety_commit("pwm1", v), ENTELEA_OK,
 		      "write path restored after clear");
@@ -271,29 +297,37 @@ ZTEST(framework_safety, test_slew_total_budget_per_ms)
 	entelea_safety_test_reset();
 	zassert_equal(entelea_safety_bind_clock(&virt_clock), ENTELEA_OK);
 	static const entelea_out_channel_t rate1 = {
-		.uid = "rate1", .kind = ENTELEA_CH_PWM,
-		.poweron = {.u = 0}, .linkloss = {.u = 0}, .fault = {.u = 0},
-		.limits = {.min = 0, .max = 1000, .slew_per_ms = 1},
+		.uid = "rate1",
+		.kind = ENTELEA_CH_PWM,
+		.poweron = { .u = 0 },
+		.linkloss = { .u = 0 },
+		.fault = { .u = 0 },
+		.limits = { .min = 0, .max = 1000, .slew_per_ms = 1 },
 	};
 	zassert_equal(entelea_safety_register_channel(&rate1), ENTELEA_OK);
 	entelea_safety_set_link(true);
 
 	virt_now = 5000;
-	zassert_equal(entelea_safety_commit("rate1", (entelea_out_value_t){.u = 0}),
+	zassert_equal(entelea_safety_commit("rate1",
+					    (entelea_out_value_t) { .u = 0 }),
 		      ENTELEA_OK); /* 基线：shadow 0, last_t 5000 */
 	/* 同一毫秒 200 笔上跳请求：每笔 dt=0 → 界 0 → 拆分回当前值。 */
 	for (int i = 0; i < 200; i++) {
 		zassert_equal(
-			entelea_safety_commit("rate1", (entelea_out_value_t){.u = 200}),
-			ENTELEA_E_RANGE, "same-ms commits must not move the output");
+			entelea_safety_commit(
+				"rate1", (entelea_out_value_t) { .u = 200 }),
+			ENTELEA_E_RANGE,
+			"same-ms commits must not move the output");
 	}
 	entelea_out_value_t rb;
 
 	zassert_equal(entelea_safety_readback("rate1", &rb), ENTELEA_OK);
-	zassert_equal(rb.u, 0, "total same-ms movement must be 0 (was 200 pre-fix)");
+	zassert_equal(rb.u, 0,
+		      "total same-ms movement must be 0 (was 200 pre-fix)");
 	/* 下一毫秒：预算 1/ms。 */
 	virt_now = 5001;
-	zassert_equal(entelea_safety_commit("rate1", (entelea_out_value_t){.u = 5}),
+	zassert_equal(entelea_safety_commit("rate1",
+					    (entelea_out_value_t) { .u = 5 }),
 		      ENTELEA_E_RANGE);
 	zassert_equal(entelea_safety_readback("rate1", &rb), ENTELEA_OK);
 	zassert_equal(rb.u, 1, "next-ms budget = slew*1");
@@ -305,14 +339,20 @@ ZTEST(framework_safety, test_slew_total_budget_per_ms)
 ZTEST(framework_safety, test_clock_rollback_rejects_slew_commit)
 {
 	static const entelea_out_channel_t ra = {
-		.uid = "rb-a", .kind = ENTELEA_CH_PWM,
-		.poweron = {.u = 0}, .linkloss = {.u = 0}, .fault = {.u = 0},
-		.limits = {.min = 0, .max = 1000, .slew_per_ms = 1},
+		.uid = "rb-a",
+		.kind = ENTELEA_CH_PWM,
+		.poweron = { .u = 0 },
+		.linkloss = { .u = 0 },
+		.fault = { .u = 0 },
+		.limits = { .min = 0, .max = 1000, .slew_per_ms = 1 },
 	};
 	static const entelea_out_channel_t rbb = {
-		.uid = "rb-b", .kind = ENTELEA_CH_PWM,
-		.poweron = {.u = 0}, .linkloss = {.u = 0}, .fault = {.u = 0},
-		.limits = {.min = 0, .max = 1000, .slew_per_ms = 1},
+		.uid = "rb-b",
+		.kind = ENTELEA_CH_PWM,
+		.poweron = { .u = 0 },
+		.linkloss = { .u = 0 },
+		.fault = { .u = 0 },
+		.limits = { .min = 0, .max = 1000, .slew_per_ms = 1 },
 	};
 	entelea_out_value_t rb;
 
@@ -321,23 +361,29 @@ ZTEST(framework_safety, test_clock_rollback_rejects_slew_commit)
 	zassert_equal(entelea_safety_register_channel(&ra), ENTELEA_OK);
 	zassert_equal(entelea_safety_register_channel(&rbb), ENTELEA_OK);
 	virt_now = 1000;
-	zassert_equal(entelea_safety_poweron_init(), ENTELEA_OK); /* 锚点 0@1000 */
+	zassert_equal(entelea_safety_poweron_init(),
+		      ENTELEA_OK); /* 锚点 0@1000 */
 	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
 	virt_now = 1100;
-	zassert_equal(entelea_safety_commit("rb-b", (entelea_out_value_t){.u = 50}),
+	zassert_equal(entelea_safety_commit("rb-b",
+					    (entelea_out_value_t) { .u = 50 }),
 		      ENTELEA_OK); /* 最后有效时刻推进到 1100 */
 
 	virt_now = 900; /* 时钟回退 */
 	uint32_t faults = entelea_safety_clock_faults();
 
-	zassert_equal(entelea_safety_commit("rb-a", (entelea_out_value_t){.u = 100}),
-		      ENTELEA_E_STATE, "rollback = unknown time: no slew bound");
+	zassert_equal(entelea_safety_commit("rb-a",
+					    (entelea_out_value_t) { .u = 100 }),
+		      ENTELEA_E_STATE,
+		      "rollback = unknown time: no slew bound");
 	zassert_equal(entelea_safety_readback("rb-a", &rb), ENTELEA_OK);
 	zassert_equal(rb.u, 0U, "回退期间输出不得改变");
-	zassert_true(entelea_safety_clock_faults() > faults, "回退计入时钟故障");
+	zassert_true(entelea_safety_clock_faults() > faults,
+		     "回退计入时钟故障");
 
 	virt_now = 1101; /* 时钟追上：正常计量（界 = 1×101） */
-	zassert_equal(entelea_safety_commit("rb-a", (entelea_out_value_t){.u = 100}),
+	zassert_equal(entelea_safety_commit("rb-a",
+					    (entelea_out_value_t) { .u = 100 }),
 		      ENTELEA_OK);
 	zassert_equal(entelea_safety_readback("rb-a", &rb), ENTELEA_OK);
 	zassert_equal(rb.u, 100U);
@@ -349,9 +395,12 @@ ZTEST(framework_safety, test_slew_baseline_persists_across_transitions)
 	entelea_safety_test_reset();
 	zassert_equal(entelea_safety_bind_clock(&virt_clock), ENTELEA_OK);
 	static const entelea_out_channel_t ramp = {
-		.uid = "ramp", .kind = ENTELEA_CH_PWM,
-		.poweron = {.u = 0}, .linkloss = {.u = 0}, .fault = {.u = 0},
-		.limits = {.min = 0, .max = 1000, .slew_per_ms = 5},
+		.uid = "ramp",
+		.kind = ENTELEA_CH_PWM,
+		.poweron = { .u = 0 },
+		.linkloss = { .u = 0 },
+		.fault = { .u = 0 },
+		.limits = { .min = 0, .max = 1000, .slew_per_ms = 5 },
 	};
 	zassert_equal(entelea_safety_register_channel(&ramp), ENTELEA_OK);
 
@@ -360,7 +409,8 @@ ZTEST(framework_safety, test_slew_baseline_persists_across_transitions)
 	zassert_equal(entelea_safety_poweron_init(), ENTELEA_OK);
 	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
 	virt_now = 10; /* 界 = 5×10 = 50 */
-	zassert_equal(entelea_safety_commit("ramp", (entelea_out_value_t){.u = 1000}),
+	zassert_equal(entelea_safety_commit(
+			      "ramp", (entelea_out_value_t) { .u = 1000 }),
 		      ENTELEA_E_RANGE, "首笔从确认基线爬升（决定 C）");
 	entelea_out_value_t rb;
 
@@ -370,11 +420,13 @@ ZTEST(framework_safety, test_slew_baseline_persists_across_transitions)
 	/* estop→clear 循环不再产生免跳：fault 写=确认写刷新锚点，
 	 * clear 无物理写保留基线，随后同毫秒提交界=0。 */
 	virt_now = 100;
-	zassert_equal(entelea_safety_commit("ramp", (entelea_out_value_t){.u = 100}),
+	zassert_equal(entelea_safety_commit("ramp",
+					    (entelea_out_value_t) { .u = 100 }),
 		      ENTELEA_OK); /* 界 5×90=450 ≥ 100−50：整笔通过 */
 	entelea_safety_force_all_fault(); /* fault=0 确认写 @t=100 */
 	zassert_equal(entelea_safety_clear_fault(), ENTELEA_OK);
-	zassert_equal(entelea_safety_commit("ramp", (entelea_out_value_t){.u = 1000}),
+	zassert_equal(entelea_safety_commit(
+			      "ramp", (entelea_out_value_t) { .u = 1000 }),
 		      ENTELEA_E_RANGE, "estop-clear 循环不得免跳");
 	zassert_equal(entelea_safety_readback("ramp", &rb), ENTELEA_OK);
 	zassert_equal(rb.u, 0, "循环后同毫秒界=0（修复前可免跳至 1000）");
@@ -383,9 +435,11 @@ ZTEST(framework_safety, test_slew_baseline_persists_across_transitions)
 	virt_now = 200;
 	zassert_equal(entelea_safety_force_channel_fault("ramp"), ENTELEA_OK);
 	virt_now = 210;
-	zassert_equal(entelea_safety_channel_recover("ramp"), ENTELEA_OK); /* 0@210 */
+	zassert_equal(entelea_safety_channel_recover("ramp"),
+		      ENTELEA_OK); /* 0@210 */
 	virt_now = 211; /* 界 = 5×1 = 5 */
-	zassert_equal(entelea_safety_commit("ramp", (entelea_out_value_t){.u = 100}),
+	zassert_equal(entelea_safety_commit("ramp",
+					    (entelea_out_value_t) { .u = 100 }),
 		      ENTELEA_E_RANGE);
 	zassert_equal(entelea_safety_readback("ramp", &rb), ENTELEA_OK);
 	zassert_equal(rb.u, 5, "recover 后从确认值爬升");
@@ -399,9 +453,11 @@ ZTEST(framework_safety, test_poweron_preserves_estop_latch)
 	virt_now = 0;
 
 	static const entelea_out_channel_t pc = {
-		.uid = "estop-guard", .kind = ENTELEA_CH_GPIO,
-		.poweron = {.b = true}, .linkloss = {.b = false},
-		.fault = {.b = false},
+		.uid = "estop-guard",
+		.kind = ENTELEA_CH_GPIO,
+		.poweron = { .b = true },
+		.linkloss = { .b = false },
+		.fault = { .b = false },
 	};
 	zassert_equal(entelea_safety_register_channel(&pc), ENTELEA_OK);
 	zassert_equal(entelea_safety_estop_init(), ENTELEA_OK);
@@ -409,13 +465,15 @@ ZTEST(framework_safety, test_poweron_preserves_estop_latch)
 	entelea_ch_state_t st;
 	entelea_out_value_t rb;
 
-	zassert_equal(entelea_safety_channel_state("estop-guard", &st), ENTELEA_OK);
+	zassert_equal(entelea_safety_channel_state("estop-guard", &st),
+		      ENTELEA_OK);
 	zassert_equal(st, ENTELEA_ST_SAFE_FAULT);
 
 	entelea_write_rec_t recs[8];
 	size_t before = entelea_driver_sim_writes("estop-guard", recs, 8);
 	zassert_equal(entelea_safety_poweron_init(), ENTELEA_OK);
-	zassert_equal(entelea_safety_channel_state("estop-guard", &st), ENTELEA_OK);
+	zassert_equal(entelea_safety_channel_state("estop-guard", &st),
+		      ENTELEA_OK);
 	zassert_equal(st, ENTELEA_ST_SAFE_FAULT, "poweron 不得覆盖 estop 锁存");
 	zassert_equal(entelea_safety_readback("estop-guard", &rb), ENTELEA_OK);
 	zassert_false(rb.b, "影子保持 fault 值");
@@ -424,7 +482,8 @@ ZTEST(framework_safety, test_poweron_preserves_estop_latch)
 	zassert_equal(after, before, "锁存期不产生新的物理写");
 	/* 锁存期 set_link 同样不得改写该通道（SAFE_FAULT 非迁移源态）。 */
 	zassert_equal(entelea_safety_set_link(false), ENTELEA_OK);
-	zassert_equal(entelea_safety_channel_state("estop-guard", &st), ENTELEA_OK);
+	zassert_equal(entelea_safety_channel_state("estop-guard", &st),
+		      ENTELEA_OK);
 	zassert_equal(st, ENTELEA_ST_SAFE_FAULT);
 }
 
@@ -433,9 +492,11 @@ ZTEST(framework_safety, test_poweron_writes_driver)
 	entelea_safety_test_reset();
 
 	static const entelea_out_channel_t pc = {
-		.uid = "pw-ch", .kind = ENTELEA_CH_GPIO,
-		.poweron = {.b = true}, .linkloss = {.b = false},
-		.fault = {.b = false},
+		.uid = "pw-ch",
+		.kind = ENTELEA_CH_GPIO,
+		.poweron = { .b = true },
+		.linkloss = { .b = false },
+		.fault = { .b = false },
 	};
 
 	zassert_equal(entelea_safety_register_channel(&pc), ENTELEA_OK);

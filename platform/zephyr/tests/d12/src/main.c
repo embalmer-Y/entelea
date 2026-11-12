@@ -25,27 +25,30 @@ static bool load_fail;
 static bool save_fail;
 static int save_count;
 
-static entelea_result_t fake_read(void *user, uint64_t *out)
+static entelea_result_t
+fake_read(void *user, uint64_t *out)
 {
 	if (fake_fail) {
 		return ENTELEA_E_IO;
 	}
-	*out = *(uint64_t *)user;
+	*out = *(uint64_t *) user;
 	return ENTELEA_OK;
 }
 
-static entelea_result_t fake_wall_read(void *user, uint64_t *out)
+static entelea_result_t
+fake_wall_read(void *user, uint64_t *out)
 {
 	if (wall_fail) {
 		return ENTELEA_E_STATE;
 	}
-	*out = *(uint64_t *)user;
+	*out = *(uint64_t *) user;
 	return ENTELEA_OK;
 }
 
-static entelea_result_t fake_load(void *user, uint8_t out[ENTELEA_D12_REC_LEN])
+static entelea_result_t
+fake_load(void *user, uint8_t out[ENTELEA_D12_REC_LEN])
 {
-	(void)user;
+	(void) user;
 	if (load_fail) {
 		return ENTELEA_E_IO;
 	}
@@ -56,10 +59,10 @@ static entelea_result_t fake_load(void *user, uint8_t out[ENTELEA_D12_REC_LEN])
 	return ENTELEA_OK;
 }
 
-static entelea_result_t fake_save(void *user,
-				  const uint8_t in[ENTELEA_D12_REC_LEN])
+static entelea_result_t
+fake_save(void *user, const uint8_t in[ENTELEA_D12_REC_LEN])
 {
-	(void)user;
+	(void) user;
 	if (save_fail) {
 		return ENTELEA_E_IO;
 	}
@@ -81,7 +84,8 @@ static entelea_d12_store_t store = {
 };
 
 /* 重绑全部端口（不清持久记录）：模拟掉电重启后的启动装配。 */
-static void reboot(void)
+static void
+reboot(void)
 {
 	entelea_d12_test_reset();
 	zassert_ok(entelea_clock_init(&clk, fake_read, &fake_now, 1));
@@ -92,7 +96,8 @@ static void reboot(void)
 }
 
 /* 新设备：清持久记录，墙钟置于 DAY0 当日。 */
-static void bind(uint64_t t0)
+static void
+bind(uint64_t t0)
 {
 	fake_now = t0;
 	fake_fail = false;
@@ -107,22 +112,22 @@ static void bind(uint64_t t0)
 }
 
 /* 测试内独立编码的持久记录（格式见 d12.c），用于预置计数状态。 */
-static void seed(uint32_t day, uint16_t reserved)
+static void
+seed(uint32_t day, uint16_t reserved)
 {
-	static const uint8_t magic[4] = {'D', '1', '2', 'G'};
+	static const uint8_t magic[4] = { 'D', '1', '2', 'G' };
 
 	memcpy(rec, magic, sizeof(magic));
 	rec[4] = 1;
 	rec[5] = 0;
-	rec[6] = (uint8_t)(reserved & 0xFF);
-	rec[7] = (uint8_t)(reserved >> 8);
-	rec[8] = (uint8_t)(day & 0xFF);
-	rec[9] = (uint8_t)((day >> 8) & 0xFF);
-	rec[10] = (uint8_t)((day >> 16) & 0xFF);
-	rec[11] = (uint8_t)((day >> 24) & 0xFF);
+	rec[6] = (uint8_t) (reserved & 0xFF);
+	rec[7] = (uint8_t) (reserved >> 8);
+	rec[8] = (uint8_t) (day & 0xFF);
+	rec[9] = (uint8_t) ((day >> 8) & 0xFF);
+	rec[10] = (uint8_t) ((day >> 16) & 0xFF);
+	rec[11] = (uint8_t) ((day >> 24) & 0xFF);
 	rec_present = true;
 }
-
 
 ZTEST_SUITE(framework_d12, NULL, NULL, NULL, NULL, NULL);
 
@@ -364,7 +369,8 @@ ZTEST(framework_d12, test_store_save_failure_refuses_without_admission)
 {
 	bind(1000);
 	save_fail = true;
-	zassert_equal(entelea_d12_model_allow(), ENTELEA_E_STATE, "写失败不放行");
+	zassert_equal(entelea_d12_model_allow(), ENTELEA_E_STATE,
+		      "写失败不放行");
 	zassert_equal(entelea_d12_model_calls(), 0);
 	zassert_equal(save_count, 0);
 	save_fail = false;
@@ -383,7 +389,8 @@ ZTEST(framework_d12, test_daily_cap_survives_reboot)
 		zassert_equal(entelea_d12_model_allow(), ENTELEA_OK, "余量 10");
 	}
 	fake_now += 60000;
-	zassert_equal(entelea_d12_model_allow(), ENTELEA_E_BUSY, "日额 200 用尽");
+	zassert_equal(entelea_d12_model_allow(), ENTELEA_E_BUSY,
+		      "日额 200 用尽");
 	reboot();
 	fake_now += 60000;
 	zassert_equal(entelea_d12_model_allow(), ENTELEA_E_BUSY, "重启不重置");
@@ -422,7 +429,8 @@ static struct k_thread conc_thread[CONC_THREADS];
 static struct k_sem conc_done;
 static atomic_t conc_ok;
 
-static void conc_worker(void *a, void *b, void *c)
+static void
+conc_worker(void *a, void *b, void *c)
 {
 	ARG_UNUSED(a);
 	ARG_UNUSED(b);

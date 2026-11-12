@@ -27,11 +27,11 @@ struct inst {
 	wasm_module_inst_t inst;
 	wasm_exec_env_t env;
 	entelea_principal_t owner;
-	uint8_t slot;       /* 装载来源（试用门复核对象） */
+	uint8_t slot; /* 装载来源（试用门复核对象） */
 	uint8_t digest[32]; /* 装载时整文件 sha256 */
-	bool grant_ok;               /* 本次调用的确认授权有效（ACTIVE 且字节相符） */
-	entelea_perm_table_t grant;  /* 确认的权限列表（仅 grant_ok 时有效） */
-	uint32_t budget_steps;       /* 执行步数上限：确认值，否则设备上限 */
+	bool grant_ok; /* 本次调用的确认授权有效（ACTIVE 且字节相符） */
+	entelea_perm_table_t grant; /* 确认的权限列表（仅 grant_ok 时有效） */
+	uint32_t budget_steps; /* 执行步数上限：确认值，否则设备上限 */
 };
 static struct inst insts[MAX_INST];
 static bool wamr_inited;
@@ -40,8 +40,9 @@ static uint8_t wamr_heap[ENTELEA_WASM_HEAP_SIZE] __aligned(8);
 /* 代表 native：宿主注入 principal 裁决（gpio:read:0 门）——证明
  * natives 只信注入身份。Wasm 侧传入整数被忽略。 */
 /* D-B 取交集：确认的权限列表与宿主注入的 principal 授权都须允许。 */
-static bool app_allows(const struct inst *it, entelea_perm_class_t cls,
-		       entelea_perm_op_t op, uint8_t inst)
+static bool
+app_allows(const struct inst *it, entelea_perm_class_t cls,
+	   entelea_perm_op_t op, uint8_t inst)
 {
 	if (it == NULL || !it->grant_ok) {
 		return false;
@@ -52,19 +53,20 @@ static bool app_allows(const struct inst *it, entelea_perm_class_t cls,
 	return entelea_perm_check(it->owner, cls, op, inst) == ENTELEA_OK;
 }
 
-static int32_t probe_decide(const struct inst *it, uint32_t ctx_opaque_ignored)
+static int32_t
+probe_decide(const struct inst *it, uint32_t ctx_opaque_ignored)
 {
-	(void)ctx_opaque_ignored;
+	(void) ctx_opaque_ignored;
 	if (!app_allows(it, ENTELEA_PERM_GPIO, ENTELEA_PERM_READ, 0)) {
 		return ENTELEA_E_PERM;
 	}
 	return 1; /* 授权可见 */
 }
 
-static int32_t native_host_probe(wasm_exec_env_t env,
-				 uint32_t ctx_opaque_ignored)
+static int32_t
+native_host_probe(wasm_exec_env_t env, uint32_t ctx_opaque_ignored)
 {
-	struct inst *it = (struct inst *)wasm_runtime_get_user_data(env);
+	struct inst *it = (struct inst *) wasm_runtime_get_user_data(env);
 
 	return probe_decide(it, ctx_opaque_ignored);
 }
@@ -72,8 +74,8 @@ static int32_t native_host_probe(wasm_exec_env_t env,
 #ifdef ENTELEA_TEST
 /* 裁决函数直达钩子（伪造/失效 principal、确认权限缺失等难以经 load 构造的
  * 输入）；grant=NULL 表示没有确认权限。VM→native 真路径由 tests/wasm 覆盖。 */
-int32_t entelea_wasm_test_probe_decide(entelea_principal_t owner,
-				       const char *grant)
+int32_t
+entelea_wasm_test_probe_decide(entelea_principal_t owner, const char *grant)
 {
 	struct inst fake;
 
@@ -81,8 +83,8 @@ int32_t entelea_wasm_test_probe_decide(entelea_principal_t owner,
 	fake.owner = owner;
 	if (grant != NULL) {
 		entelea_perm_table_init(&fake.grant);
-		if (entelea_perm_parse_list(grant, strlen(grant), &fake.grant) !=
-		    ENTELEA_OK) {
+		if (entelea_perm_parse_list(grant, strlen(grant),
+					    &fake.grant) != ENTELEA_OK) {
 			return ENTELEA_E_PARAM;
 		}
 		fake.grant_ok = true;
@@ -94,13 +96,14 @@ int32_t entelea_wasm_test_probe_decide(entelea_principal_t owner,
 static NativeSymbol native_syms[] = {
 	{
 		"host_probe",
-		(void *)native_host_probe,
+		(void *) native_host_probe,
 		"(i)i",
 		NULL,
 	},
 };
 
-entelea_result_t entelea_wasm_init(void)
+entelea_result_t
+entelea_wasm_init(void)
 {
 	if (wamr_inited) {
 		return ENTELEA_OK;
@@ -130,7 +133,8 @@ entelea_result_t entelea_wasm_init(void)
  * 单趟捕获（store.c entelea_pkg_file_digest_capture）写入此处。 */
 static uint8_t load_buf[ENTELEA_APP_SLOT_SIZE / 4]; /* 64KB 装载上限 */
 
-static struct inst *find_free(void)
+static struct inst *
+find_free(void)
 {
 	for (int i = 0; i < MAX_INST; i++) {
 		if (!insts[i].used) {
@@ -140,7 +144,8 @@ static struct inst *find_free(void)
 	return NULL;
 }
 
-static struct inst *find_app(uint32_t app_id)
+static struct inst *
+find_app(uint32_t app_id)
 {
 	for (int i = 0; i < MAX_INST; i++) {
 		if (insts[i].used && insts[i].app_id == app_id) {
@@ -153,14 +158,16 @@ static struct inst *find_app(uint32_t app_id)
 /* 唯一模块（V1 单实例）：活实例引用它与装载缓冲，存活期间不得卸载/覆写。 */
 static wasm_module_t module;
 
-static bool same_principal(entelea_principal_t a, entelea_principal_t b)
+static bool
+same_principal(entelea_principal_t a, entelea_principal_t b)
 {
 	return a._handle == b._handle && a._gen == b._gen &&
 	       a.app_id == b.app_id;
 }
 
 /* 导出 ABI 白名单 ()->i32 | (i32)->i32：返回形参个数；不符 = -1。 */
-static int abi_params(wasm_function_inst_t f, wasm_module_inst_t mi)
+static int
+abi_params(wasm_function_inst_t f, wasm_module_inst_t mi)
 {
 	wasm_valkind_t k;
 
@@ -183,8 +190,8 @@ static int abi_params(wasm_function_inst_t f, wasm_module_inst_t mi)
 	return k == WASM_I32 ? 1 : -1;
 }
 
-entelea_result_t entelea_wasm_load(uint8_t slot, entelea_principal_t owner,
-				   uint32_t *app_id_out)
+entelea_result_t
+entelea_wasm_load(uint8_t slot, entelea_principal_t owner, uint32_t *app_id_out)
 {
 	if (app_id_out == NULL || slot >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_PARAM;
@@ -250,14 +257,15 @@ entelea_result_t entelea_wasm_load(uint8_t slot, entelea_principal_t owner,
 	if (it->inst == NULL) {
 		return ENTELEA_E_IO;
 	}
-	it->env = wasm_runtime_create_exec_env(it->inst, ENTELEA_WASM_STACK_SIZE);
+	it->env =
+		wasm_runtime_create_exec_env(it->inst, ENTELEA_WASM_STACK_SIZE);
 	if (it->env == NULL) {
 		wasm_runtime_deinstantiate(it->inst);
 		it->inst = NULL;
 		return ENTELEA_E_IO;
 	}
 	it->used = true;
-	it->app_id = (uint32_t)(it - insts) + 1;
+	it->app_id = (uint32_t) (it - insts) + 1;
 	it->owner = owner; /* RF1 P1-8：身份在 load 绑定，call 不可替换 */
 	it->slot = slot;
 	memcpy(it->digest, dg, sizeof(it->digest));
@@ -269,9 +277,9 @@ entelea_result_t entelea_wasm_load(uint8_t slot, entelea_principal_t owner,
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx,
-				   const char *fn, int32_t arg,
-				   uint32_t timeout_ms, int32_t *ret_out)
+entelea_result_t
+entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx, const char *fn,
+		  int32_t arg, uint32_t timeout_ms, int32_t *ret_out)
 {
 	struct inst *it = find_app(app_id);
 
@@ -297,7 +305,8 @@ entelea_result_t entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx,
 	   * 稳定记录摘要相符时授予权限与步数。其余无 natives 权限（A1），执行配额取
 	   * 设备上限。 */
 		entelea_trial_grant_t g;
-		entelea_result_t gr = entelea_trial_grant(it->slot, it->digest, &g);
+		entelea_result_t gr =
+			entelea_trial_grant(it->slot, it->digest, &g);
 
 		if (gr != ENTELEA_OK) {
 			gr = entelea_stable_grant(it->slot, it->digest, &g);
@@ -322,8 +331,7 @@ entelea_result_t entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx,
 			return gate;
 		}
 	}
-	wasm_function_inst_t f =
-		wasm_runtime_lookup_function(it->inst, fn);
+	wasm_function_inst_t f = wasm_runtime_lookup_function(it->inst, fn);
 
 	if (f == NULL) {
 		return ENTELEA_E_NOTFOUND;
@@ -335,7 +343,7 @@ entelea_result_t entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx,
 	if (np < 0 || (np == 0 && arg != 0)) {
 		return ENTELEA_E_PARAM;
 	}
-	uint32_t argv[1] = {(uint32_t)arg};
+	uint32_t argv[1] = { (uint32_t) arg };
 
 	/* 有界执行：timeout_ms 经步预算指令配额近似（1000 指令/ms——DEC-48③
 	 * 语义；到期 = WAMR 配额异常 = E_TIMEOUT 有界停止）。WAMR 形参为
@@ -353,8 +361,8 @@ entelea_result_t entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx,
 	if (limit > it->budget_steps) {
 		limit = it->budget_steps; /* D-C：min(请求, 确认步数, 设备上限) */
 	}
-	wasm_runtime_set_instruction_count_limit(it->env, (int)limit);
-	bool ok = wasm_runtime_call_wasm(it->env, f, (uint32_t)np, argv);
+	wasm_runtime_set_instruction_count_limit(it->env, (int) limit);
+	bool ok = wasm_runtime_call_wasm(it->env, f, (uint32_t) np, argv);
 
 	if (!ok) {
 		/* 异常面（E-2 收窄）：配额到期 ≠ trap——到期=E_TIMEOUT
@@ -362,22 +370,22 @@ entelea_result_t entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx,
 		 * 不可信，停止销毁。判别=WAMR 异常串（fast/classic 解释器
 		 * 同源 "instruction limit exceeded"——pinned 25bd7eb）。 */
 		const char *ex = wasm_runtime_get_exception(it->inst);
-		bool quota = ex != NULL && strstr(ex, "instruction limit") != NULL;
+		bool quota =
+			ex != NULL && strstr(ex, "instruction limit") != NULL;
 
 		wasm_runtime_clear_exception(it->inst);
 		entelea_wasm_stop(app_id);
 		return quota ? ENTELEA_E_TIMEOUT : ENTELEA_E_IO;
 	}
 	if (ret_out != NULL) {
-		*ret_out = (int32_t)argv[0];
+		*ret_out = (int32_t) argv[0];
 	}
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_wasm_call_default(uint32_t app_id,
-					  entelea_principal_t ctx,
-					  const char *fn, int32_t arg,
-					  int32_t *ret_out)
+entelea_result_t
+entelea_wasm_call_default(uint32_t app_id, entelea_principal_t ctx,
+			  const char *fn, int32_t arg, int32_t *ret_out)
 {
 	return entelea_wasm_call(app_id, ctx, fn, arg,
 				 ENTELEA_WASM_DEFAULT_INSTRUCTIONS /
@@ -385,7 +393,8 @@ entelea_result_t entelea_wasm_call_default(uint32_t app_id,
 				 ret_out);
 }
 
-entelea_result_t entelea_wasm_stop(uint32_t app_id)
+entelea_result_t
+entelea_wasm_stop(uint32_t app_id)
 {
 	struct inst *it = find_app(app_id);
 
@@ -405,7 +414,8 @@ entelea_result_t entelea_wasm_stop(uint32_t app_id)
 	return ENTELEA_OK;
 }
 
-uint8_t entelea_wasm_instance_count(void)
+uint8_t
+entelea_wasm_instance_count(void)
 {
 	uint8_t n = 0;
 
@@ -418,7 +428,8 @@ uint8_t entelea_wasm_instance_count(void)
 }
 
 #ifdef ENTELEA_TEST
-void entelea_wasm_test_reset(void)
+void
+entelea_wasm_test_reset(void)
 {
 	for (int i = 0; i < MAX_INST; i++) {
 		if (insts[i].used) {

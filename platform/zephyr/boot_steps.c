@@ -16,26 +16,29 @@
  * 测试=空过）。SAFE-HALT 判定经 entelea_platform_d12_safe_halt 由
  * 装配层消费（防护不进 system_fail——那会 MWDT 复位+1 反成风暴源）。 */
 #ifndef ENTELEA_REQUIRE_D12_BOOTGUARD
-__weak bool entelea_platform_d12_bootguard(void)
+__weak bool
+entelea_platform_d12_bootguard(void)
 {
 	return false;
 }
 
-__weak bool entelea_platform_d12_safe_halt(void)
+__weak bool
+entelea_platform_d12_safe_halt(void)
 {
 	return false;
 }
 #endif
 
 /* 持久端口弱缺省：仅链接 d12_store.c 的目标有强实现（KV）。 */
-__weak entelea_result_t entelea_platform_d12_store_init(
-	entelea_d12_store_t *store)
+__weak entelea_result_t
+entelea_platform_d12_store_init(entelea_d12_store_t *store)
 {
-	(void)store;
+	(void) store;
 	return ENTELEA_E_UNINIT;
 }
 
-static entelea_result_t step_d12_bootguard(void)
+static entelea_result_t
+step_d12_bootguard(void)
 {
 	static entelea_clock_t d12_clock; /* 独立实例（uptime 单调，幂等） */
 	static entelea_lock_t d12_lock;
@@ -70,42 +73,49 @@ static entelea_result_t step_d12_bootguard(void)
 		r = entelea_d12_bind_store(&d12_store);
 	}
 	if (r != ENTELEA_OK) {
-		printk("[d12] store unbound (%d): model calls fail closed\n", r);
+		printk("[d12] store unbound (%d): model calls fail closed\n",
+		       r);
 	}
-	(void)entelea_platform_d12_bootguard();
+	(void) entelea_platform_d12_bootguard();
 	return ENTELEA_OK; /* SAFE-HALT 判定归装配层（见上注） */
 }
 
 /* 板级 flash 后端弱桩（R03 板级批）：默认无 flash 面（RAM 后端）；
  * 链接 platform/zephyr/flash_store.c 的目标获得强实现。 */
-__weak entelea_result_t entelea_platform_storage_mount_flash(void)
+__weak entelea_result_t
+entelea_platform_storage_mount_flash(void)
 {
 	return ENTELEA_E_UNINIT;
 }
 
-static entelea_result_t step_estop_gpio(void)
+static entelea_result_t
+step_estop_gpio(void)
 {
 	return entelea_safety_estop_init();
 }
 
-static entelea_result_t step_safety_poweron(void)
+static entelea_result_t
+step_safety_poweron(void)
 {
 	return entelea_safety_poweron_init();
 }
 
-static entelea_result_t step_wdt_start(void)
+static entelea_result_t
+step_wdt_start(void)
 {
 	return entelea_wdt_start();
 }
 
-static entelea_result_t step_supervision_ready(void)
+static entelea_result_t
+step_supervision_ready(void)
 {
 	/* 顺序锚定占位（旧 core_init 同语义）：事件/时钟为静态绑定，
 	 * 由装配 main 在执行器前完成；无动态 init。 */
 	return ENTELEA_OK;
 }
 
-static entelea_result_t step_storage_init(void)
+static entelea_result_t
+step_storage_init(void)
 {
 	/* R03 尾部追加：存储初始化 + noinit 消费；上次异常复位留痕经
 	 * entelea_storage_last_reset 由装配/观测面上报（打印留在平台层）。
@@ -121,11 +131,12 @@ static entelea_result_t step_storage_init(void)
 	return entelea_storage_init();
 }
 
-const entelea_boot_step_t entelea_platform_boot_steps[ENTELEA_PLATFORM_BOOT_STEP_COUNT] = {
-	{"estop_gpio", step_estop_gpio},
-	{"safety_poweron", step_safety_poweron},
-	{"wdt_start", step_wdt_start},
-	{"supervision_ready", step_supervision_ready},
-	{"storage_init", step_storage_init},
-	{"d12_bootguard", step_d12_bootguard},
-};
+const entelea_boot_step_t
+	entelea_platform_boot_steps[ENTELEA_PLATFORM_BOOT_STEP_COUNT] = {
+		{ "estop_gpio", step_estop_gpio },
+		{ "safety_poweron", step_safety_poweron },
+		{ "wdt_start", step_wdt_start },
+		{ "supervision_ready", step_supervision_ready },
+		{ "storage_init", step_storage_init },
+		{ "d12_bootguard", step_d12_bootguard },
+	};

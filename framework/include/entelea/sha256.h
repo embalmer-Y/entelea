@@ -17,11 +17,15 @@ typedef struct {
 	uint32_t buf_len;
 } entelea_sha256_ctx_t;
 
-entelea_result_t entelea_sha256_init(entelea_sha256_ctx_t *ctx);
-entelea_result_t entelea_sha256_update(entelea_sha256_ctx_t *ctx,
-	const uint8_t *data, size_t len);
-entelea_result_t entelea_sha256_final(entelea_sha256_ctx_t *ctx, uint8_t out[32]);
-entelea_result_t entelea_sha256(const uint8_t *data, size_t len, uint8_t out[32]);
+entelea_result_t
+entelea_sha256_init(entelea_sha256_ctx_t *ctx);
+entelea_result_t
+entelea_sha256_update(entelea_sha256_ctx_t *ctx, const uint8_t *data,
+		      size_t len);
+entelea_result_t
+entelea_sha256_final(entelea_sha256_ctx_t *ctx, uint8_t out[32]);
+entelea_result_t
+entelea_sha256(const uint8_t *data, size_t len, uint8_t out[32]);
 
 #ifdef __cplusplus
 }

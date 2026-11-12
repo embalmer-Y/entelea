@@ -18,7 +18,8 @@
 
 /* ---- 上下文汇聚（有界窗） ---- */
 
-void entelea_ctx_push(entelea_context_window_t *w, const entelea_ctx_event_t *e)
+void
+entelea_ctx_push(entelea_context_window_t *w, const entelea_ctx_event_t *e)
 {
 	if (w == NULL || e == NULL) {
 		return;
@@ -34,8 +35,9 @@ void entelea_ctx_push(entelea_context_window_t *w, const entelea_ctx_event_t *e)
 	}
 }
 
-void entelea_ctx_snapshot(const entelea_context_window_t *w,
-			  entelea_ctx_event_t *out, size_t max, size_t *n)
+void
+entelea_ctx_snapshot(const entelea_context_window_t *w,
+		     entelea_ctx_event_t *out, size_t max, size_t *n)
 {
 	if (w == NULL || n == NULL) {
 		return;
@@ -48,17 +50,19 @@ void entelea_ctx_snapshot(const entelea_context_window_t *w,
 	*n = take;
 }
 
-uint32_t entelea_ctx_dropped(const entelea_context_window_t *w)
+uint32_t
+entelea_ctx_dropped(const entelea_context_window_t *w)
 {
 	return w == NULL ? 0 : w->dropped;
 }
 
 /* ---- 触发（建议值：窗满 或 显式；无内部定时器——确定性） ---- */
 
-bool entelea_should_deliberate(const entelea_context_window_t *w,
-			       uint64_t now_ms, uint64_t *next_due_ms)
+bool
+entelea_should_deliberate(const entelea_context_window_t *w, uint64_t now_ms,
+			  uint64_t *next_due_ms)
 {
-	(void)now_ms;
+	(void) now_ms;
 	if (next_due_ms != NULL) {
 		*next_due_ms = 0; /* 无周期触发（显式/窗满触发——合同） */
 	}
@@ -67,9 +71,9 @@ bool entelea_should_deliberate(const entelea_context_window_t *w,
 
 /* ---- 执行门 ---- */
 
-entelea_result_t entelea_assistant_execute(entelea_principal_t actor,
-					   const entelea_candidate_t *cand,
-					   int32_t *task_ret)
+entelea_result_t
+entelea_assistant_execute(entelea_principal_t actor,
+			  const entelea_candidate_t *cand, int32_t *task_ret)
 {
 	if (task_ret != NULL) {
 		*task_ret = 0;
@@ -99,11 +103,11 @@ entelea_result_t entelea_assistant_execute(entelea_principal_t actor,
 		 * 伪 E_BUSY 方向安全——拒而非静默双受理）。 */
 		entelea_result_t r = entelea_task_submit(
 			actor, cand->target_uid,
-			(uint16_t)(cand->source.id & 0xFFFFU), cand->value_u,
+			(uint16_t) (cand->source.id & 0xFFFFU), cand->value_u,
 			&id);
 
 		if (r == ENTELEA_OK && task_ret != NULL) {
-			*task_ret = (int32_t)id;
+			*task_ret = (int32_t) id;
 		}
 		return r;
 	}
@@ -115,8 +119,8 @@ entelea_result_t entelea_assistant_execute(entelea_principal_t actor,
 		/* 权限门（review P1 修复）：按目标描述符的真实类/实例裁决
 		 * ——不再以"任一 gpio/pwm write"替代目标面。 */
 		const entelea_periph_desc_t *d = NULL;
-		entelea_result_t pr = entelea_periph_acquire(actor, cand->target_uid,
-							     &d);
+		entelea_result_t pr =
+			entelea_periph_acquire(actor, cand->target_uid, &d);
 
 		if (pr != ENTELEA_OK) {
 			return pr; /* 未注册/越权/非 ACTIVE（模型不能自批） */
@@ -131,7 +135,8 @@ entelea_result_t entelea_assistant_execute(entelea_principal_t actor,
 		 * 权限类一致（review P1：跨类写拒）。DEV_OUTPUT 注册强制
 		 * safety_uid 非空——描述符即权威类面。 */
 		static const entelea_perm_class_t want[] = {
-			ENTELEA_PERM_GPIO, ENTELEA_PERM_PWM, ENTELEA_PERM_POWER};
+			ENTELEA_PERM_GPIO, ENTELEA_PERM_PWM, ENTELEA_PERM_POWER
+		};
 
 		if (d->perm_class != want[cand->value_kind]) {
 			return ENTELEA_E_PARAM;
@@ -142,16 +147,18 @@ entelea_result_t entelea_assistant_execute(entelea_principal_t actor,
 			/* POWER 值必须经 entelea_power_request：power:write
 			 * 权限 + 预算检查-提交原子化（review P1：不再旁路）。 */
 			entelea_out_value_t pv = {
-				.pwr = {.en = cand->value_b, .ma = cand->value_u}};
+				.pwr = { .en = cand->value_b,
+					 .ma = cand->value_u }
+			};
 
 			return entelea_power_request(actor, d->safety_uid, pv);
 		}
 		entelea_out_value_t v;
 
 		if (cand->value_kind == 0) {
-			v = (entelea_out_value_t){.b = cand->value_b};
+			v = (entelea_out_value_t) { .b = cand->value_b };
 		} else {
-			v = (entelea_out_value_t){.u = cand->value_u};
+			v = (entelea_out_value_t) { .u = cand->value_u };
 		}
 		/* 唯一写路径（保护层——无旁路）。 */
 		return entelea_safety_commit(d->safety_uid, v);
@@ -163,7 +170,8 @@ entelea_result_t entelea_assistant_execute(entelea_principal_t actor,
 
 /* ---- 云依赖判定 ---- */
 
-bool entelea_assistant_available(void)
+bool
+entelea_assistant_available(void)
 {
 	/* D08：模型可用 = 模型依赖 UP 且网络 UP（云模型经网络到达）。 */
 	return entelea_dep_state(ENTELEA_DEP_MODEL) == ENTELEA_DEP_UP &&
@@ -171,7 +179,8 @@ bool entelea_assistant_available(void)
 }
 
 #ifdef ENTELEA_TEST
-void entelea_assistant_test_reset(void)
+void
+entelea_assistant_test_reset(void)
 {
 	/* 无模块级可变态（窗由调用方持有）——占位保持接口对称。 */
 }

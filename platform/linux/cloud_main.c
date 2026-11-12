@@ -22,12 +22,16 @@
 
 static int failures;
 
-#define CHECK(expr) do { \
-	if (!(expr)) { printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #expr); \
-		failures++; } \
-} while (0)
+#define CHECK(expr)                                                           \
+	do {                                                                  \
+		if (!(expr)) {                                                \
+			printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #expr); \
+			failures++;                                           \
+		}                                                             \
+	} while (0)
 
-static bool json_str(const char *doc, const char *key, char *out, size_t n)
+static bool
+json_str(const char *doc, const char *key, char *out, size_t n)
 {
 	const char *p = https_json_member(https_json_skip_space(doc), key);
 
@@ -40,35 +44,40 @@ static bool json_str(const char *doc, const char *key, char *out, size_t n)
 	return https_json_decode_string(&p, out, n) == 0 && out[0] != '\0';
 }
 
-static bool parse_base_url(const char *url, char *host, size_t hn,
-			   char *prefix, size_t pn)
+static bool
+parse_base_url(const char *url, char *host, size_t hn, char *prefix, size_t pn)
 {
-	if (strncmp(url, "https://", 8) != 0) return false;
+	if (strncmp(url, "https://", 8) != 0)
+		return false;
 	const char *h = url + 8, *slash = strchr(h, '/');
 
 	if (!slash) {
 		int host_len = snprintf(host, hn, "%s", h);
 		int prefix_len = snprintf(prefix, pn, "/");
 
-		if (host_len < 0 || (size_t)host_len >= hn ||
-		    prefix_len < 0 || (size_t)prefix_len >= pn) return false;
-	}
-	else {
-		size_t hl = (size_t)(slash - h);
-		if (hl >= hn) return false;
-		memcpy(host, h, hl); host[hl] = '\0';
+		if (host_len < 0 || (size_t) host_len >= hn || prefix_len < 0 ||
+		    (size_t) prefix_len >= pn)
+			return false;
+	} else {
+		size_t hl = (size_t) (slash - h);
+		if (hl >= hn)
+			return false;
+		memcpy(host, h, hl);
+		host[hl] = '\0';
 		int prefix_len = snprintf(prefix, pn, "%s", slash);
 
-		if (prefix_len < 0 || (size_t)prefix_len >= pn) return false;
+		if (prefix_len < 0 || (size_t) prefix_len >= pn)
+			return false;
 	}
 	/* 去尾斜杠（路径前缀归一）。 */
 	size_t l = strlen(prefix);
-	if (l > 1 && prefix[l - 1] == '/') prefix[l - 1] = '\0';
+	if (l > 1 && prefix[l - 1] == '/')
+		prefix[l - 1] = '\0';
 	return host[0] != '\0';
 }
 
-static bool report_observation(entelea_clock_t *clock, entelea_dep_kind_t kind,
-			       bool good)
+static bool
+report_observation(entelea_clock_t *clock, entelea_dep_kind_t kind, bool good)
 {
 	entelea_instant_t now;
 
@@ -76,7 +85,8 @@ static bool report_observation(entelea_clock_t *clock, entelea_dep_kind_t kind,
 	       entelea_dep_report(kind, good, now.ms) == ENTELEA_OK;
 }
 
-static bool network_observation(const char *host)
+static bool
+network_observation(const char *host)
 {
 	mbedtls_net_context net;
 
@@ -87,33 +97,37 @@ static bool network_observation(const char *host)
 	return ret == 0;
 }
 
-static bool report_network_pair(entelea_clock_t *clock, const char *host)
+static bool
+report_network_pair(entelea_clock_t *clock, const char *host)
 {
-	const struct timespec gap = {.tv_sec = 1, .tv_nsec = 0};
+	const struct timespec gap = { .tv_sec = 1, .tv_nsec = 0 };
 
 	for (int i = 0; i < 2; i++) {
 		bool good = network_observation(host);
 
-		if (!report_observation(clock, ENTELEA_DEP_NET, good) || !good) {
+		if (!report_observation(clock, ENTELEA_DEP_NET, good) ||
+		    !good) {
 			return false;
 		}
 		if (i == 0 && nanosleep(&gap, NULL) != 0) {
-			(void)entelea_dep_mark_down(ENTELEA_DEP_NET);
+			(void) entelea_dep_mark_down(ENTELEA_DEP_NET);
 			return false;
 		}
 	}
 	return true;
 }
 
-int main(int argc, char **argv)
+int
+main(int argc, char **argv)
 {
 	static char doc[4096];
 	static entelea_https_cfg_t cfg;
 	char api_key[128] = "", base_url[128] = "", model[48] = "";
 	char out[4096] = "";
 	int exit_status = 1;
-	const char *cred_path = argc > 1 ? argv[1]
-		: "/home/emb/project/.cloud-credentials.json";
+	const char *cred_path =
+		argc > 1 ? argv[1] :
+			   "/home/emb/project/.cloud-credentials.json";
 	FILE *f = fopen(cred_path, "r");
 
 	CHECK(f != NULL);
@@ -194,12 +208,14 @@ int main(int argc, char **argv)
 	for (int i = 0; i < 2; i++) {
 		int before = touched;
 
-		r = entelea_model_probe(msgs, 1, out, sizeof(out), 30000, &usage);
+		r = entelea_model_probe(msgs, 1, out, sizeof(out), 30000,
+					&usage);
 		if (touched == before || r != ENTELEA_OK || out[0] == '\0' ||
 		    !report_observation(&d12_clock, ENTELEA_DEP_MODEL, true)) {
-			(void)entelea_dep_mark_down(ENTELEA_DEP_MODEL);
-			fprintf(stderr, "[cloud] model recovery probe failed rc=%d\n",
-				(int)r);
+			(void) entelea_dep_mark_down(ENTELEA_DEP_MODEL);
+			fprintf(stderr,
+				"[cloud] model recovery probe failed rc=%d\n",
+				(int) r);
 			goto cleanup;
 		}
 	}
@@ -210,12 +226,12 @@ int main(int argc, char **argv)
 	r = entelea_model_ask(msgs, 1, out, sizeof(out), 30000, &usage);
 
 	printf("[cloud] ask rc=%d out='%.64s' usage=%u+%u touched=%d\n",
-	       (int)r, out, usage.prompt_tokens, usage.completion_tokens,
+	       (int) r, out, usage.prompt_tokens, usage.completion_tokens,
 	       touched);
 	CHECK(r == ENTELEA_OK);
 	CHECK(out[0] != '\0'); /* 非空 content（字面不设硬断——模型面） */
 	CHECK(touched >= 3);
-	CHECK(entelea_d12_model_calls() == (uint32_t)touched); /* 逐尝试过闸 */
+	CHECK(entelea_d12_model_calls() == (uint32_t) touched); /* 逐尝试过闸 */
 	CHECK(usage.prompt_tokens > 0);
 
 	/* 模拟失联对照：NET DOWN → ask 拒 E_STATE 且不触传输。 */

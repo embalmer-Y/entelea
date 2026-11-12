@@ -27,7 +27,8 @@ static struct {
 } tombstones[ENTELEA_MEM_TOMBSTONES_MAX];
 static uint32_t tombstoned_count;
 
-static bool is_tombstoned(uint64_t t, uint64_t seq)
+static bool
+is_tombstoned(uint64_t t, uint64_t seq)
 {
 	for (int i = 0; i < ENTELEA_MEM_TOMBSTONES_MAX; i++) {
 		if (tombstones[i].active && t >= tombstones[i].from &&
@@ -38,7 +39,8 @@ static bool is_tombstoned(uint64_t t, uint64_t seq)
 	return false;
 }
 
-entelea_result_t entelea_mem_write(bool consent, const entelea_mem_entry_t *e)
+entelea_result_t
+entelea_mem_write(bool consent, const entelea_mem_entry_t *e)
 {
 	if (e == NULL) {
 		return ENTELEA_E_PARAM;
@@ -65,7 +67,8 @@ entelea_result_t entelea_mem_write(bool consent, const entelea_mem_entry_t *e)
 	return ENTELEA_OK;
 }
 
-size_t entelea_mem_read(entelea_mem_entry_t *out, size_t max)
+size_t
+entelea_mem_read(entelea_mem_entry_t *out, size_t max)
 {
 	if (out == NULL) {
 		return 0;
@@ -81,7 +84,8 @@ size_t entelea_mem_read(entelea_mem_entry_t *out, size_t max)
 	return n;
 }
 
-entelea_result_t entelea_mem_delete(uint64_t t_from_ms, uint64_t t_to_ms)
+entelea_result_t
+entelea_mem_delete(uint64_t t_from_ms, uint64_t t_to_ms)
 {
 	if (t_from_ms > t_to_ms) {
 		return ENTELEA_E_PARAM;
@@ -115,18 +119,20 @@ entelea_result_t entelea_mem_delete(uint64_t t_from_ms, uint64_t t_to_ms)
 	return ENTELEA_OK;
 }
 
-void entelea_mem_health(entelea_mem_health_t *out)
+void
+entelea_mem_health(entelea_mem_health_t *out)
 {
 	if (out == NULL) {
 		return;
 	}
-	out->count = (uint16_t)chain_len;
+	out->count = (uint16_t) chain_len;
 	out->evicted = evicted_count;
 	out->tombstoned = tombstoned_count;
 }
 
 #ifdef ENTELEA_TEST
-entelea_result_t entelea_mem_test_set_write_seq(uint64_t seq)
+entelea_result_t
+entelea_mem_test_set_write_seq(uint64_t seq)
 {
 	if (chain_len != 0 || tombstoned_count != 0) {
 		return ENTELEA_E_STATE;
@@ -135,7 +141,8 @@ entelea_result_t entelea_mem_test_set_write_seq(uint64_t seq)
 	return ENTELEA_OK;
 }
 
-void entelea_mem_test_reset(void)
+void
+entelea_mem_test_reset(void)
 {
 	memset(chain, 0, sizeof(chain));
 	memset(chain_seq, 0, sizeof(chain_seq));

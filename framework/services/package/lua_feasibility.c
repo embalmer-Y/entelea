@@ -25,8 +25,9 @@
 
 /* ---- 载荷/版本识别（字节级，fail-closed） ---- */
 
-entelea_result_t entelea_lua_payload_ident(const uint8_t *data, uint32_t len,
-					   entelea_lua_payload_info_t *out)
+entelea_result_t
+entelea_lua_payload_ident(const uint8_t *data, uint32_t len,
+			  entelea_lua_payload_info_t *out)
 {
 	if (data == NULL || out == NULL || len < 4) {
 		return ENTELEA_E_PARAM;
@@ -47,8 +48,8 @@ entelea_result_t entelea_lua_payload_ident(const uint8_t *data, uint32_t len,
 
 /* ---- 内存预算（分配闸——lua_Allocator 挂点语义） ---- */
 
-entelea_result_t entelea_lua_mem_init(entelea_lua_mem_budget_t *b,
-				      uint32_t quota_bytes)
+entelea_result_t
+entelea_lua_mem_init(entelea_lua_mem_budget_t *b, uint32_t quota_bytes)
 {
 	if (b == NULL || quota_bytes == 0) {
 		return ENTELEA_E_PARAM;
@@ -62,8 +63,9 @@ entelea_result_t entelea_lua_mem_init(entelea_lua_mem_budget_t *b,
 
 /* 代表 allocator 的 alloc/realloc/free 钩子：超配额 = 拒（NULL）+计数；
  * 实例隔离 = 每实例独立 budget（无共享池旁路）。 */
-bool entelea_lua_mem_alloc(entelea_lua_mem_budget_t *b, uint32_t old_n,
-			   uint32_t new_n)
+bool
+entelea_lua_mem_alloc(entelea_lua_mem_budget_t *b, uint32_t old_n,
+		      uint32_t new_n)
 {
 	if (b == NULL) {
 		return false;
@@ -87,8 +89,8 @@ bool entelea_lua_mem_alloc(entelea_lua_mem_budget_t *b, uint32_t old_n,
 
 /* ---- 执行预算与有界停止（指令计数闸——sethook count 语义） ---- */
 
-entelea_result_t entelea_lua_exec_init(entelea_lua_exec_budget_t *b,
-				       uint32_t step_budget)
+entelea_result_t
+entelea_lua_exec_init(entelea_lua_exec_budget_t *b, uint32_t step_budget)
 {
 	if (b == NULL || step_budget == 0) {
 		return ENTELEA_E_PARAM;
@@ -101,7 +103,8 @@ entelea_result_t entelea_lua_exec_init(entelea_lua_exec_budget_t *b,
 
 /* 每步调用：超预算 → false（调用方必须停止执行并返回 E_TIMEOUT——
  * 不静默续跑；deadline 语义见 R01 app.h：deadline 不替代执行预算）。 */
-bool entelea_lua_exec_step(entelea_lua_exec_budget_t *b)
+bool
+entelea_lua_exec_step(entelea_lua_exec_budget_t *b)
 {
 	if (b == NULL || b->aborted) {
 		return false;
@@ -117,36 +120,38 @@ bool entelea_lua_exec_step(entelea_lua_exec_budget_t *b)
 /* ---- 工厂产物描述（接入合同结构体——R12 Forge 对拍面） ---- */
 
 /* CBOR 无符号整数（RFC 8949 首选序列化：最短编码）。 */
-static uint32_t put_uint(uint8_t *out, uint32_t v)
+static uint32_t
+put_uint(uint8_t *out, uint32_t v)
 {
 	if (v < 24U) {
-		out[0] = (uint8_t)v;
+		out[0] = (uint8_t) v;
 		return 1;
 	}
 	if (v < 256U) {
 		out[0] = 0x18;
-		out[1] = (uint8_t)v;
+		out[1] = (uint8_t) v;
 		return 2;
 	}
 	if (v < 65536U) {
 		out[0] = 0x19;
-		out[1] = (uint8_t)(v >> 8);
-		out[2] = (uint8_t)v;
+		out[1] = (uint8_t) (v >> 8);
+		out[2] = (uint8_t) v;
 		return 3;
 	}
 	out[0] = 0x1a;
-	out[1] = (uint8_t)(v >> 24);
-	out[2] = (uint8_t)(v >> 16);
-	out[3] = (uint8_t)(v >> 8);
-	out[4] = (uint8_t)v;
+	out[1] = (uint8_t) (v >> 24);
+	out[2] = (uint8_t) (v >> 16);
+	out[3] = (uint8_t) (v >> 8);
+	out[4] = (uint8_t) v;
 	return 5;
 }
 
 /* 与 Forge packer build_manifest 逐字节一致：map(4){0:version, 1:mem_kb,
  * 2:steps, 3:fmt}，int 键按数值升序（RFC 8949 确定性编码）。 */
-entelea_result_t entelea_lua_contract_encode(
-	const entelea_lua_contract_t *c, uint8_t out[ENTELEA_LUA_CONTRACT_CBOR_MAX],
-	uint32_t *out_len)
+entelea_result_t
+entelea_lua_contract_encode(const entelea_lua_contract_t *c,
+			    uint8_t out[ENTELEA_LUA_CONTRACT_CBOR_MAX],
+			    uint32_t *out_len)
 {
 	if (c == NULL || out == NULL || out_len == NULL) {
 		return ENTELEA_E_PARAM;
@@ -155,18 +160,17 @@ entelea_result_t entelea_lua_contract_encode(
 		return ENTELEA_E_PARAM; /* 未知合同版本/载荷格式 fail-closed */
 	}
 	if (c->mem_quota_kb == 0 || c->mem_quota_kb > 512 ||
-	    c->exec_budget_steps == 0 ||
-	    c->exec_budget_steps > 10000000U) {
+	    c->exec_budget_steps == 0 || c->exec_budget_steps > 10000000U) {
 		return ENTELEA_E_PARAM; /* 域外（建议上限：内存 512KB/步
 					 * 1e7——工厂生成侧约束面） */
 	}
-	const uint32_t val[4] = {c->version, c->mem_quota_kb,
-				 c->exec_budget_steps, (uint32_t)c->format};
+	const uint32_t val[4] = { c->version, c->mem_quota_kb,
+				  c->exec_budget_steps, (uint32_t) c->format };
 	uint32_t n = 0;
 
 	out[n++] = 0xa4;
 	for (uint32_t k = 0; k < 4; k++) {
-		out[n++] = (uint8_t)k;
+		out[n++] = (uint8_t) k;
 		n += put_uint(out + n, val[k]);
 	}
 	*out_len = n; /* 上限 1(map)+4(键)+1+3+5+1 = 15 ≤ CBOR_MAX */

@@ -11,20 +11,23 @@
 
 static pthread_mutex_t d12_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-static entelea_result_t d12_lock_take(void *user)
+static entelea_result_t
+d12_lock_take(void *user)
 {
-	(void)user;
-	return pthread_mutex_lock(&d12_mutex) == 0 ? ENTELEA_OK
-						   : ENTELEA_E_STATE;
+	(void) user;
+	return pthread_mutex_lock(&d12_mutex) == 0 ? ENTELEA_OK :
+						     ENTELEA_E_STATE;
 }
 
-static void d12_lock_give(void *user)
+static void
+d12_lock_give(void *user)
 {
-	(void)user;
-	(void)pthread_mutex_unlock(&d12_mutex);
+	(void) user;
+	(void) pthread_mutex_unlock(&d12_mutex);
 }
 
-entelea_result_t entelea_platform_d12_lock_init(entelea_lock_t *lock)
+entelea_result_t
+entelea_platform_d12_lock_init(entelea_lock_t *lock)
 {
 	if (lock == NULL) {
 		return ENTELEA_E_PARAM;
@@ -36,19 +39,21 @@ entelea_result_t entelea_platform_d12_lock_init(entelea_lock_t *lock)
 }
 
 /* 宿主墙钟视为已同步（CLOCK_REALTIME）；读失败即未知。 */
-static entelea_result_t d12_wall_read(void *user, uint64_t *out)
+static entelea_result_t
+d12_wall_read(void *user, uint64_t *out)
 {
 	struct timespec ts;
 
-	(void)user;
+	(void) user;
 	if (clock_gettime(CLOCK_REALTIME, &ts) != 0 || ts.tv_sec < 0) {
 		return ENTELEA_E_STATE;
 	}
-	*out = (uint64_t)ts.tv_sec;
+	*out = (uint64_t) ts.tv_sec;
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_platform_d12_wallclock_init(entelea_wallclock_t *wall)
+entelea_result_t
+entelea_platform_d12_wallclock_init(entelea_wallclock_t *wall)
 {
 	if (wall == NULL) {
 		return ENTELEA_E_PARAM;
@@ -61,10 +66,10 @@ entelea_result_t entelea_platform_d12_wallclock_init(entelea_wallclock_t *wall)
 static uint8_t d12_rec[ENTELEA_D12_REC_LEN];
 static bool d12_rec_present;
 
-static entelea_result_t d12_store_load(void *user,
-				       uint8_t rec[ENTELEA_D12_REC_LEN])
+static entelea_result_t
+d12_store_load(void *user, uint8_t rec[ENTELEA_D12_REC_LEN])
 {
-	(void)user;
+	(void) user;
 	if (!d12_rec_present) {
 		return ENTELEA_E_NOTFOUND;
 	}
@@ -72,16 +77,17 @@ static entelea_result_t d12_store_load(void *user,
 	return ENTELEA_OK;
 }
 
-static entelea_result_t d12_store_save(void *user,
-				       const uint8_t rec[ENTELEA_D12_REC_LEN])
+static entelea_result_t
+d12_store_save(void *user, const uint8_t rec[ENTELEA_D12_REC_LEN])
 {
-	(void)user;
+	(void) user;
 	memcpy(d12_rec, rec, ENTELEA_D12_REC_LEN);
 	d12_rec_present = true;
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_platform_d12_store_init(entelea_d12_store_t *store)
+entelea_result_t
+entelea_platform_d12_store_init(entelea_d12_store_t *store)
 {
 	if (store == NULL) {
 		return ENTELEA_E_PARAM;

@@ -10,7 +10,8 @@
 #include <entelea/safety.h>
 #include <entelea/wdt.h>
 
-static void *net_setup(void)
+static void *
+net_setup(void)
 {
 	entelea_net_test_reset();
 	entelea_safety_test_reset();
@@ -47,9 +48,11 @@ ZTEST(framework_net, test_linkmon_hysteresis_and_guard)
 	/* standalone 模式经 prov 缺省（未装载 = orchestrated）——直接测
 	 * orchestrated 路径：恢复 → set_link(true)。 */
 	static const entelea_out_channel_t ch = {
-		.uid = "netg", .kind = ENTELEA_CH_GPIO,
-		.poweron = {.b = false}, .linkloss = {.b = false},
-		.fault = {.b = false},
+		.uid = "netg",
+		.kind = ENTELEA_CH_GPIO,
+		.poweron = { .b = false },
+		.linkloss = { .b = false },
+		.fault = { .b = false },
 	};
 	zassert_equal(entelea_safety_register_channel(&ch), ENTELEA_OK);
 	zassert_equal(entelea_safety_poweron_init(), ENTELEA_OK);
@@ -64,7 +67,8 @@ ZTEST(framework_net, test_linkmon_hysteresis_and_guard)
 	zassert_equal(st, ENTELEA_ST_ACTIVE, "orchestrated: 恢复→ACTIVE");
 	entelea_net_linkmon_tick(1100 + 6001);
 	zassert_equal(entelea_safety_channel_state("netg", &st), ENTELEA_OK);
-	zassert_equal(st, ENTELEA_ST_SAFE_LINKLOSS, "orchestrated: 断链→LINKLOSS");
+	zassert_equal(st, ENTELEA_ST_SAFE_LINKLOSS,
+		      "orchestrated: 断链→LINKLOSS");
 }
 
 /* ---- 租约：准入/续期/过期/席位视图 ---- */
@@ -90,14 +94,16 @@ ZTEST(framework_net, test_lease_admission_and_views)
 	 * 递增不复用。 */
 	zassert_equal(entelea_net_lease_acquire("host-b", 12000, &id2, &exp),
 		      ENTELEA_E_STATE, "续期内他人仍拒");
-	zassert_equal(entelea_net_lease_acquire("host-b", 15000 + 1, &id2, &exp),
-		      ENTELEA_OK);
+	zassert_equal(
+		entelea_net_lease_acquire("host-b", 15000 + 1, &id2, &exp),
+		ENTELEA_OK);
 	zassert_equal(id2, id1 + 1, "过期重授新 id");
 	/* held_by 视图。 */
 	zassert_true(entelea_net_lease_held_by("host-b", 12000));
 	zassert_false(entelea_net_lease_held_by("host-a", 12000));
 	/* 他人 release 拒；holder release 幂等。 */
-	zassert_equal(entelea_net_lease_release("host-a", 12000), ENTELEA_E_STATE);
+	zassert_equal(entelea_net_lease_release("host-a", 12000),
+		      ENTELEA_E_STATE);
 	zassert_equal(entelea_net_lease_release("host-b", 12000), ENTELEA_OK);
 	zassert_equal(entelea_net_lease_release("host-b", 12000), ENTELEA_OK,
 		      "无租约幂等空操作");
@@ -120,18 +126,18 @@ ZTEST(framework_net, test_lease_admission_and_views)
 static int exec_count;
 static uint8_t last_req;
 
-static entelea_result_t fake_exec(const uint8_t *req, size_t len,
-				  uint8_t *out, size_t *out_len)
+static entelea_result_t
+fake_exec(const uint8_t *req, size_t len, uint8_t *out, size_t *out_len)
 {
 	exec_count++;
 	last_req = req[0];
-	out[0] = (uint8_t)(req[0] + 1);
+	out[0] = (uint8_t) (req[0] + 1);
 	*out_len = 1;
 	return ENTELEA_OK;
 }
 
-static entelea_result_t pending_exec(const uint8_t *req, size_t len,
-				     uint8_t *out, size_t *out_len)
+static entelea_result_t
+pending_exec(const uint8_t *req, size_t len, uint8_t *out, size_t *out_len)
 {
 	exec_count++;
 	out[0] = 0;
@@ -183,7 +189,7 @@ ZTEST(framework_net, test_idem_replay_and_unknown_nocache)
 
 		snprintf(key, sizeof(key), "L%d", i);
 		rlen = sizeof(rep);
-		r = (uint8_t)i;
+		r = (uint8_t) i;
 		zassert_equal(entelea_net_idem_run(key, &r, 1, fake_exec, rep,
 						   &rlen, &replayed),
 			      ENTELEA_OK);
@@ -217,9 +223,10 @@ ZTEST(framework_net, test_idem_replay_and_unknown_nocache)
 }
 
 /* ---- 依赖状态机：恢复防抖/风暴/独立判定 ---- */
-static void dep_state_from_isr(const void *arg)
+static void
+dep_state_from_isr(const void *arg)
 {
-	entelea_dep_state_t *state = (entelea_dep_state_t *)arg;
+	entelea_dep_state_t *state = (entelea_dep_state_t *) arg;
 
 	*state = entelea_dep_state(ENTELEA_DEP_NET);
 }
@@ -235,18 +242,24 @@ ZTEST(framework_net, test_dep_state_machine_and_storm)
 		      ENTELEA_OK);
 	zassert_equal(entelea_dep_state(ENTELEA_DEP_NET), ENTELEA_DEP_DOWN);
 	/* 恢复防抖：1 次 good → DEGRADED（不 UP——风暴抑制）。 */
-	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 200), ENTELEA_OK);
+	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 200),
+		      ENTELEA_OK);
 	zassert_equal(entelea_dep_state(ENTELEA_DEP_NET), ENTELEA_DEP_DEGRADED);
 	/* 恢复风暴：good/bad 交替 → 永不 UP。 */
-	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, false, 300), ENTELEA_OK);
-	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 400), ENTELEA_OK);
+	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, false, 300),
+		      ENTELEA_OK);
+	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 400),
+		      ENTELEA_OK);
 	zassert_equal(entelea_dep_state(ENTELEA_DEP_NET), ENTELEA_DEP_DEGRADED);
-	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, false, 500), ENTELEA_OK);
+	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, false, 500),
+		      ENTELEA_OK);
 	zassert_equal(entelea_dep_state(ENTELEA_DEP_NET), ENTELEA_DEP_DOWN,
 		      "bad 立即 DOWN（保守）");
 	/* 连续 2 good → UP。 */
-	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 600), ENTELEA_OK);
-	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 700), ENTELEA_OK);
+	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 600),
+		      ENTELEA_OK);
+	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 700),
+		      ENTELEA_OK);
 	zassert_equal(entelea_dep_state(ENTELEA_DEP_NET), ENTELEA_DEP_UP);
 	irq_offload(dep_state_from_isr, &isr_state);
 	zassert_equal(isr_state, ENTELEA_DEP_UP, "ISR 查询保留 [any] 合同");
@@ -259,13 +272,12 @@ ZTEST(framework_net, test_dep_state_machine_and_storm)
 	/* 云模型不可用 = 智脑依赖 DOWN（辅助功能暂停；独立 App 照常——
 	 * 各自查询面）。 */
 	zassert_equal(entelea_dep_state(ENTELEA_DEP_APP), ENTELEA_DEP_DOWN);
-	zassert_equal(entelea_dep_report((entelea_dep_kind_t)99, true, 900),
+	zassert_equal(entelea_dep_report((entelea_dep_kind_t) 99, true, 900),
 		      ENTELEA_E_PARAM, "域外 kind 拒");
 	zassert_ok(strcmp(entelea_dep_name(ENTELEA_DEP_MODEL), "model"));
 }
 
 ZTEST_SUITE(framework_net, NULL, net_setup, NULL, NULL, NULL);
-
 
 /* ---- B-1 传输队列：容量/背压/顺序/送达后弹 ---- */
 static uint8_t sink_log[64];
@@ -274,8 +286,8 @@ static uint32_t sink_last_len;
 static uint8_t sink_last_byte;
 static uint8_t sink_last_frame[ENTELEA_AVQ_FRAME_MAX];
 
-static void test_sink(void *user, const char *topic, const uint8_t *payload,
-		      uint32_t len)
+static void
+test_sink(void *user, const char *topic, const uint8_t *payload, uint32_t len)
 {
 	ARG_UNUSED(user);
 	ARG_UNUSED(topic);
@@ -293,10 +305,10 @@ ZTEST(framework_net, test_avq_sink_receives_full_frame_lengths)
 	entelea_netqueue_test_reset();
 	entelea_netqueue_bind_sink(test_sink, NULL);
 	uint8_t frame[ENTELEA_AVQ_FRAME_MAX];
-	const uint32_t lengths[] = {255, 256, 512};
+	const uint32_t lengths[] = { 255, 256, 512 };
 
 	for (uint32_t i = 0; i < sizeof(frame); i++) {
-		frame[i] = (uint8_t)(i % 251);
+		frame[i] = (uint8_t) (i % 251);
 	}
 	for (size_t i = 0; i < ARRAY_SIZE(lengths); i++) {
 		uint32_t len = lengths[i];
@@ -307,7 +319,8 @@ ZTEST(framework_net, test_avq_sink_receives_full_frame_lengths)
 		zassert_equal(entelea_netqueue_flush(), 1);
 		zassert_equal(sink_last_len, len, "sink 长度不得截断");
 		zassert_equal(sink_last_byte, frame[len - 1], "sink 获得整帧");
-		zassert_ok(memcmp(sink_last_frame, frame, len), "帧内容不得截断");
+		zassert_ok(memcmp(sink_last_frame, frame, len),
+			   "帧内容不得截断");
 	}
 	entelea_netqueue_test_reset();
 }
@@ -338,12 +351,12 @@ ZTEST(framework_net, test_avq_pubq_bounded_queues)
 	zassert_equal(sink_log[1], 4, "顺序保持 2/3");
 	zassert_equal(sink_log[2], 5, "顺序保持 3/3");
 	/* avq_pop 调用方缓冲不足：整帧语义。 */
-	uint8_t one0[1] = {0};
-	uint8_t tiny[2] = {0};
+	uint8_t one0[1] = { 0 };
+	uint8_t tiny[2] = { 0 };
 
 	entelea_netqueue_bind_sink(NULL, NULL);
 	zassert_equal(entelea_avq_push(one0, 1), ENTELEA_OK);
-	zassert_equal(entelea_avq_pop(tiny, 0, &(uint32_t){0}),
+	zassert_equal(entelea_avq_pop(tiny, 0, &(uint32_t) { 0 }),
 		      ENTELEA_E_RANGE, "缓冲不足整帧拒");
 	uint32_t l2 = 0;
 
@@ -354,7 +367,7 @@ ZTEST(framework_net, test_avq_pubq_bounded_queues)
 	memset(long_topic, 'a', sizeof(long_topic) - 1);
 	long_topic[sizeof(long_topic) - 1] = '\0';
 	zassert_equal(entelea_pubq_post(long_topic, one0, 1), ENTELEA_E_PARAM);
-	uint8_t big[ENTELEA_PUBQ_PAYLOAD_MAX + 1] = {0};
+	uint8_t big[ENTELEA_PUBQ_PAYLOAD_MAX + 1] = { 0 };
 
 	zassert_equal(entelea_pubq_post("t", big, sizeof(big)),
 		      ENTELEA_E_PARAM);
@@ -364,11 +377,11 @@ ZTEST(framework_net, test_avq_pubq_bounded_queues)
 
 	/* pubq 拒新：满 8 后 E_BUSY；回调后弹，不等于网络送达。 */
 	for (uint8_t i = 0; i < ENTELEA_PUBQ_ENTRIES; i++) {
-		uint8_t pl[1] = {i};
+		uint8_t pl[1] = { i };
 
 		zassert_equal(entelea_pubq_post("evt", pl, 1), ENTELEA_OK);
 	}
-	uint8_t one[1] = {9};
+	uint8_t one[1] = { 9 };
 
 	zassert_equal(entelea_pubq_post("evt", one, 1), ENTELEA_E_BUSY,
 		      "满=拒新（不静默丢）");

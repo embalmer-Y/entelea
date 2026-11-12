@@ -27,13 +27,15 @@
 #define PHASE_APP 0x50484631U /* "PHF1" */
 
 /* 闸内检点打印（PASS/FAIL 逐条落串口——证据面；不中断执行）。 */
-#define CHK(cond, msg) printk("[hw-flash] %s: %s\n", (cond) ? "PASS" : "FAIL", msg)
+#define CHK(cond, msg) \
+	printk("[hw-flash] %s: %s\n", (cond) ? "PASS" : "FAIL", msg)
 
 static entelea_clock_t platform_clock;
 
 static const uint8_t META_PAT[30] = "ENTEA-P1-META-FLASH-PERSIST-OK";
 
-static uint32_t fnv1a(const uint8_t *p, size_t n)
+static uint32_t
+fnv1a(const uint8_t *p, size_t n)
 {
 	uint32_t h = 0x811C9DC5U;
 
@@ -44,7 +46,8 @@ static uint32_t fnv1a(const uint8_t *p, size_t n)
 	return h;
 }
 
-int main(void)
+int
+main(void)
 {
 	if (entelea_platform_clock_init(&platform_clock) != ENTELEA_OK ||
 	    entelea_evt_bind_clock(&platform_clock) != ENTELEA_OK ||
@@ -58,7 +61,7 @@ int main(void)
 				 ENTELEA_PLATFORM_BOOT_STEP_COUNT);
 	uint32_t cause = 0;
 
-	(void)hwinfo_get_reset_cause(&cause);
+	(void) hwinfo_get_reset_cause(&cause);
 	uint32_t reason = 0;
 	bool present = false;
 
@@ -87,9 +90,10 @@ int main(void)
 		int32_t n = entelea_storage_audit_read(ae, 4);
 
 		printk("[hw-flash] P2 %s: audit entries=%d (fnv=%08x)\n",
-		       n >= 1 ? "PASS" : "FAIL", (int)n,
-		       n >= 1 ? fnv1a((const uint8_t *)ae,
-				      (size_t)n * sizeof(ae[0])) : 0);
+		       n >= 1 ? "PASS" : "FAIL", (int) n,
+		       n >= 1 ? fnv1a((const uint8_t *) ae,
+				      (size_t) n * sizeof(ae[0])) :
+				0);
 		CHK(present && reason == ENTELEA_FAIL_BOOT(7),
 		    "P2 noinit reason survived SW reset (0x00010007)");
 		CHK(entelea_kv_save(PHASE_APP, "P2", 2) == ENTELEA_OK,
@@ -124,7 +128,8 @@ int main(void)
 
 		CHK(entelea_storage_audit_append(&e, 0) == ENTELEA_OK,
 		    "P1 audit append");
-		printk("[hw-flash] P1: kv/audit written; system_fail -> SW reset <=~5s\n");
+		printk("[hw-flash] P1: kv/audit written; system_fail -> SW "
+		       "reset <=~5s\n");
 		entelea_safety_system_fail(ENTELEA_FAIL_BOOT(7));
 	}
 	for (;;) {

@@ -20,7 +20,8 @@ static uint32_t avq_head; /* 弹出侧 */
 static uint32_t avq_count;
 static uint32_t avq_dropped;
 
-entelea_result_t entelea_avq_push(const uint8_t *frame, uint32_t len)
+entelea_result_t
+entelea_avq_push(const uint8_t *frame, uint32_t len)
 {
 	if (frame == NULL || len == 0) {
 		return ENTELEA_E_PARAM;
@@ -41,7 +42,8 @@ entelea_result_t entelea_avq_push(const uint8_t *frame, uint32_t len)
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_avq_pop(uint8_t *out, uint32_t max, uint32_t *len)
+entelea_result_t
+entelea_avq_pop(uint8_t *out, uint32_t max, uint32_t *len)
 {
 	if (out == NULL || len == NULL) {
 		return ENTELEA_E_PARAM;
@@ -59,7 +61,8 @@ entelea_result_t entelea_avq_pop(uint8_t *out, uint32_t max, uint32_t *len)
 	return ENTELEA_OK;
 }
 
-uint32_t entelea_avq_dropped(void)
+uint32_t
+entelea_avq_dropped(void)
 {
 	return avq_dropped;
 }
@@ -70,8 +73,8 @@ static entelea_pubq_entry_t pubq_ring[ENTELEA_PUBQ_ENTRIES];
 static uint32_t pubq_head;
 static uint32_t pubq_count;
 
-entelea_result_t entelea_pubq_post(const char *topic, const uint8_t *payload,
-				   uint8_t len)
+entelea_result_t
+entelea_pubq_post(const char *topic, const uint8_t *payload, uint8_t len)
 {
 	if (topic == NULL || payload == NULL || len == 0 ||
 	    strlen(topic) >= ENTELEA_PUBQ_TOPIC_MAX ||
@@ -91,7 +94,8 @@ entelea_result_t entelea_pubq_post(const char *topic, const uint8_t *payload,
 	return ENTELEA_OK;
 }
 
-bool entelea_pubq_peek(entelea_pubq_entry_t *out)
+bool
+entelea_pubq_peek(entelea_pubq_entry_t *out)
 {
 	if (pubq_count == 0) {
 		return false;
@@ -102,7 +106,8 @@ bool entelea_pubq_peek(entelea_pubq_entry_t *out)
 	return true;
 }
 
-entelea_result_t entelea_pubq_pop(void)
+entelea_result_t
+entelea_pubq_pop(void)
 {
 	if (pubq_count == 0) {
 		return ENTELEA_E_STATE;
@@ -112,7 +117,8 @@ entelea_result_t entelea_pubq_pop(void)
 	return ENTELEA_OK;
 }
 
-uint32_t entelea_pubq_depth(void)
+uint32_t
+entelea_pubq_depth(void)
 {
 	return pubq_count;
 }
@@ -125,13 +131,15 @@ static void *sink_user;
 static uint32_t av_delivered, pub_delivered;
 #endif
 
-void entelea_netqueue_bind_sink(entelea_netqueue_sink_t fn, void *user)
+void
+entelea_netqueue_bind_sink(entelea_netqueue_sink_t fn, void *user)
 {
 	sink = fn;
 	sink_user = user;
 }
 
-uint32_t entelea_netqueue_flush(void)
+uint32_t
+entelea_netqueue_flush(void)
 {
 	uint32_t n = 0;
 	uint8_t buf[ENTELEA_AVQ_FRAME_MAX];
@@ -150,7 +158,7 @@ uint32_t entelea_netqueue_flush(void)
 	while (sink != NULL && pubq_count > 0) {
 		entelea_pubq_entry_t e;
 
-		(void)entelea_pubq_peek(&e);
+		(void) entelea_pubq_peek(&e);
 		sink(sink_user, e.topic, e.payload, e.len);
 #ifdef ENTELEA_TEST
 		pub_delivered++;
@@ -164,7 +172,8 @@ uint32_t entelea_netqueue_flush(void)
 }
 
 #ifdef ENTELEA_TEST
-void entelea_netqueue_test_reset(void)
+void
+entelea_netqueue_test_reset(void)
 {
 	memset(avq_ring, 0, sizeof(avq_ring));
 	memset(pubq_ring, 0, sizeof(pubq_ring));
@@ -175,12 +184,14 @@ void entelea_netqueue_test_reset(void)
 	av_delivered = pub_delivered = 0;
 }
 
-uint32_t entelea_netqueue_test_av_delivered(void)
+uint32_t
+entelea_netqueue_test_av_delivered(void)
 {
 	return av_delivered;
 }
 
-uint32_t entelea_netqueue_test_pub_delivered(void)
+uint32_t
+entelea_netqueue_test_pub_delivered(void)
 {
 	return pub_delivered;
 }

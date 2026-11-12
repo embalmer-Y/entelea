@@ -32,13 +32,14 @@
 #include "wifi_observer.h"
 #include "../../../secure_zero.h"
 
-#define CHK(cond, msg) do { \
-	bool ok_ = (cond); \
-	printk("[hw-cloud] %s: %s\n", ok_ ? "PASS" : "FAIL", msg); \
-	if (!ok_) { \
-		goto fail; \
-	} \
-} while (0)
+#define CHK(cond, msg)                                                     \
+	do {                                                               \
+		bool ok_ = (cond);                                         \
+		printk("[hw-cloud] %s: %s\n", ok_ ? "PASS" : "FAIL", msg); \
+		if (!ok_) {                                                \
+			goto fail;                                         \
+		}                                                          \
+	} while (0)
 
 static entelea_clock_t platform_clock;
 
@@ -57,8 +58,9 @@ static bool connect_requested;
 
 static entelea_https_cfg_t cfg_live; /* P4C2 凭据运行时填 */
 
-static int uart_read_exact(const struct device *uart, uint8_t *buf,
-			   size_t size, k_timepoint_t end)
+static int
+uart_read_exact(const struct device *uart, uint8_t *buf, size_t size,
+		k_timepoint_t end)
 {
 	for (size_t i = 0; i < size;) {
 		if (sys_timepoint_expired(end)) {
@@ -78,14 +80,16 @@ struct credential_uart_reader {
 	k_timepoint_t end;
 };
 
-static int p4c2_uart_read(void *user, uint8_t *dst, size_t size)
+static int
+p4c2_uart_read(void *user, uint8_t *dst, size_t size)
 {
 	const struct credential_uart_reader *reader = user;
 
 	return uart_read_exact(reader->uart, dst, size, reader->end);
 }
 
-static int read_credentials(struct gate_credentials *c)
+static int
+read_credentials(struct gate_credentials *c)
 {
 	/* P4C2：magic + u8[5] 长度 + ssid/psk/host/key/model（60s 窗）。 */
 	struct credential_uart_reader reader = {
@@ -96,12 +100,14 @@ static int read_credentials(struct gate_credentials *c)
 	if (!device_is_ready(reader.uart)) {
 		return -ENODEV;
 	}
-	printk("[hw-cloud] CONFIG_WAIT (P4C2: ssid/psk/host/key/model over console)\n");
+	printk("[hw-cloud] CONFIG_WAIT (P4C2: ssid/psk/host/key/model over "
+	       "console)\n");
 	return entelea_p4c2_read(c, p4c2_uart_read, &reader);
 }
 
-static void network_event(struct net_mgmt_event_callback *cb, uint64_t event,
-			  struct net_if *iface)
+static void
+network_event(struct net_mgmt_event_callback *cb, uint64_t event,
+	      struct net_if *iface)
 {
 	const struct wifi_status *status;
 
@@ -109,41 +115,46 @@ static void network_event(struct net_mgmt_event_callback *cb, uint64_t event,
 		return;
 	}
 	if (event == NET_EVENT_IPV4_DHCP_BOUND) {
-		entelea_wifi_observer_event(&wifi_observer, ENTELEA_WIFI_DHCP_BOUND,
-					    (uint64_t)k_uptime_get());
+		entelea_wifi_observer_event(&wifi_observer,
+					    ENTELEA_WIFI_DHCP_BOUND,
+					    (uint64_t) k_uptime_get());
 		k_sem_give(&dhcp_bound);
 		return;
 	}
 	if (event == NET_EVENT_IPV4_DHCP_STOP ||
 	    event == NET_EVENT_IPV4_ADDR_DEL) {
-		entelea_wifi_observer_event(&wifi_observer, ENTELEA_WIFI_DHCP_LOST,
-					    (uint64_t)k_uptime_get());
+		entelea_wifi_observer_event(&wifi_observer,
+					    ENTELEA_WIFI_DHCP_LOST,
+					    (uint64_t) k_uptime_get());
 		return;
 	}
 	if (event == NET_EVENT_IF_DOWN) {
 		entelea_wifi_observer_event(&wifi_observer,
 					    ENTELEA_WIFI_DISCONNECTED,
-					    (uint64_t)k_uptime_get());
+					    (uint64_t) k_uptime_get());
 		return;
 	}
-	status = cb->info_length == sizeof(struct wifi_status) ? cb->info : NULL;
+	status =
+		cb->info_length == sizeof(struct wifi_status) ? cb->info : NULL;
 	if (event == NET_EVENT_WIFI_CONNECT_RESULT) {
 		atomic_set(&connect_status, status ? status->status : -EIO);
 		entelea_wifi_observer_event(&wifi_observer,
-			status && status->status == 0 ? ENTELEA_WIFI_ASSOCIATED :
-							ENTELEA_WIFI_DISCONNECTED,
-			(uint64_t)k_uptime_get());
+					    status && status->status == 0 ?
+						    ENTELEA_WIFI_ASSOCIATED :
+						    ENTELEA_WIFI_DISCONNECTED,
+					    (uint64_t) k_uptime_get());
 		k_sem_give(&connected);
 	} else if (event == NET_EVENT_WIFI_DISCONNECT_RESULT) {
 		atomic_set(&disconnect_status, status ? status->status : -EIO);
 		entelea_wifi_observer_event(&wifi_observer,
 					    ENTELEA_WIFI_DISCONNECTED,
-					    (uint64_t)k_uptime_get());
+					    (uint64_t) k_uptime_get());
 		k_sem_give(&disconnected);
 	}
 }
 
-static int connect_and_report(const struct gate_credentials *c, int attempt)
+static int
+connect_and_report(const struct gate_credentials *c, int attempt)
 {
 	char address[NET_IPV4_ADDR_LEN];
 	struct wifi_connect_req_params params = {
@@ -161,7 +172,7 @@ static int connect_and_report(const struct gate_credentials *c, int attempt)
 	k_sem_reset(&dhcp_bound);
 	atomic_set(&connect_status, -EINPROGRESS);
 	entelea_wifi_observer_event(&wifi_observer, ENTELEA_WIFI_DISCONNECTED,
-				    (uint64_t)k_uptime_get());
+				    (uint64_t) k_uptime_get());
 	printk("[hw-cloud] CONNECT_BEGIN attempt=%d\n", attempt);
 	connect_requested = true;
 	ret = net_mgmt(NET_REQUEST_WIFI_CONNECT, test_iface, &params,
@@ -182,8 +193,7 @@ static int connect_and_report(const struct gate_credentials *c, int attempt)
 	if (ret) {
 		return -ETIMEDOUT;
 	}
-	if (!net_addr_ntop(NET_AF_INET,
-			   &test_iface->config.dhcpv4.requested_ip,
+	if (!net_addr_ntop(NET_AF_INET, &test_iface->config.dhcpv4.requested_ip,
 			   address, sizeof(address))) {
 		return -EIO;
 	}
@@ -192,7 +202,7 @@ static int connect_and_report(const struct gate_credentials *c, int attempt)
 	for (int i = 0; i < 2; i++) {
 		if (!entelea_wifi_observer_sample(&wifi_observer,
 						  net_if_is_up(test_iface),
-						  (uint64_t)k_uptime_get())) {
+						  (uint64_t) k_uptime_get())) {
 			return -EIO;
 		}
 		if (i == 0) {
@@ -206,7 +216,8 @@ static int connect_and_report(const struct gate_credentials *c, int attempt)
 	return 0;
 }
 
-static int disconnect_quiet(void)
+static int
+disconnect_quiet(void)
 {
 	k_sem_reset(&disconnected);
 	atomic_set(&disconnect_status, -EINPROGRESS);
@@ -228,44 +239,48 @@ static int disconnect_quiet(void)
 	return 0;
 }
 
-static int chat_once(bool probe, char *out, size_t out_max,
-		     entelea_model_usage_t *usage)
+static int
+chat_once(bool probe, char *out, size_t out_max, entelea_model_usage_t *usage)
 {
 	const entelea_model_msg_t msgs[1] = {
 		{ .role = "user",
-		  .content = "Reply with exactly the word: ok. Output nothing else." },
+		  .content = "Reply with exactly the word: ok. Output nothing "
+			     "else." },
 	};
 
 	entelea_model_usage_t before = entelea_model_usage_total();
 	entelea_model_usage_t after = before;
 	int touched_before = chat_touched;
 	uint32_t calls_before = entelea_d12_model_calls();
-	entelea_result_t ret = probe
-		? entelea_model_probe(msgs, 1, out, out_max, 30000, &after)
-		: entelea_model_ask(msgs, 1, out, out_max, 30000, &after);
+	entelea_result_t ret =
+		probe ? entelea_model_probe(msgs, 1, out, out_max, 30000,
+					    &after) :
+			entelea_model_ask(msgs, 1, out, out_max, 30000, &after);
 
 	if (usage != NULL) {
-		usage->prompt_tokens = after.prompt_tokens - before.prompt_tokens;
+		usage->prompt_tokens =
+			after.prompt_tokens - before.prompt_tokens;
 		usage->completion_tokens =
 			after.completion_tokens - before.completion_tokens;
 	}
 	if (chat_touched - touched_before !=
-	    (int)(entelea_d12_model_calls() - calls_before)) {
+	    (int) (entelea_d12_model_calls() - calls_before)) {
 		return ENTELEA_E_STATE;
 	}
 	if (chat_touched > touched_before) {
-		(void)entelea_dep_report(ENTELEA_DEP_MODEL,
-					 ret == ENTELEA_OK && out[0] != '\0',
-					 (uint64_t)k_uptime_get());
+		(void) entelea_dep_report(ENTELEA_DEP_MODEL,
+					  ret == ENTELEA_OK && out[0] != '\0',
+					  (uint64_t) k_uptime_get());
 	}
 	return ret;
 }
 
-int main(void)
+int
+main(void)
 {
-	static struct gate_credentials credentials = {0};
+	static struct gate_credentials credentials = { 0 };
 	static char out[1024];
-	entelea_model_usage_t usage = {0};
+	entelea_model_usage_t usage = { 0 };
 	bool callbacks_registered = false;
 	int ret;
 
@@ -294,12 +309,13 @@ int main(void)
 	CHK(ret == 0, "credentials injected over console (P4C2)");
 	net_mgmt_init_event_callback(&wifi_cb, network_event,
 				     NET_EVENT_WIFI_CONNECT_RESULT |
-				     NET_EVENT_WIFI_DISCONNECT_RESULT);
+					     NET_EVENT_WIFI_DISCONNECT_RESULT);
 	net_mgmt_init_event_callback(&ipv4_cb, network_event,
 				     NET_EVENT_IPV4_DHCP_BOUND |
-				     NET_EVENT_IPV4_DHCP_STOP |
-				     NET_EVENT_IPV4_ADDR_DEL);
-	net_mgmt_init_event_callback(&iface_cb, network_event, NET_EVENT_IF_DOWN);
+					     NET_EVENT_IPV4_DHCP_STOP |
+					     NET_EVENT_IPV4_ADDR_DEL);
+	net_mgmt_init_event_callback(&iface_cb, network_event,
+				     NET_EVENT_IF_DOWN);
 	net_mgmt_add_event_callback(&wifi_cb);
 	net_mgmt_add_event_callback(&ipv4_cb);
 	net_mgmt_add_event_callback(&iface_cb);
@@ -311,13 +327,12 @@ int main(void)
 		char *slash = strchr(credentials.host, '/');
 
 		if (slash != NULL) {
-			size_t hlen = (size_t)(slash - credentials.host);
+			size_t hlen = (size_t) (slash - credentials.host);
 
 			memcpy(cfg_live.host, credentials.host, hlen);
 			cfg_live.host[hlen] = '\0';
 			snprintf(cfg_live.path_prefix,
-				 sizeof(cfg_live.path_prefix), "%s",
-				 slash);
+				 sizeof(cfg_live.path_prefix), "%s", slash);
 		} else {
 			strcpy(cfg_live.host, credentials.host);
 			strcpy(cfg_live.path_prefix, "/v1");
@@ -332,14 +347,15 @@ int main(void)
 	entelea_model_bind(&transport, &cfg_live);
 
 	/* 第一轮：一次真实探测仅产生一条 MODEL good 观测。 */
-	CHK(connect_and_report(&credentials, 1) == 0, "connect+dhcp+dep NET UP");
+	CHK(connect_and_report(&credentials, 1) == 0,
+	    "connect+dhcp+dep NET UP");
 	chat_touched = 0;
 	ret = chat_once(true, out, sizeof(out), &usage);
 	CHK(ret == ENTELEA_OK && out[0] != '\0' &&
-	    usage.completion_tokens > 0 && chat_touched >= 1,
+		    usage.completion_tokens > 0 && chat_touched >= 1,
 	    "first gated MODEL recovery probe");
-	printk("[hw-cloud] reply=%.60s usage=%u+%u\n", out,
-	       usage.prompt_tokens, usage.completion_tokens);
+	printk("[hw-cloud] reply=%.60s usage=%u+%u\n", out, usage.prompt_tokens,
+	       usage.completion_tokens);
 	CHK(entelea_dep_state(ENTELEA_DEP_MODEL) == ENTELEA_DEP_DEGRADED,
 	    "one successful probe leaves MODEL DEGRADED");
 
@@ -352,12 +368,13 @@ int main(void)
 	printk("[hw-cloud] rejected rc=%d (E_STATE expected)\n", ret);
 
 	/* 第二条真实成功观测后，普通调用才可进入。 */
-	CHK(connect_and_report(&credentials, 2) == 0, "reconnect+dhcp (attempt 2)");
+	CHK(connect_and_report(&credentials, 2) == 0,
+	    "reconnect+dhcp (attempt 2)");
 	chat_touched = 0;
 	memset(&usage, 0, sizeof(usage));
 	ret = chat_once(true, out, sizeof(out), &usage);
 	CHK(ret == ENTELEA_OK && out[0] != '\0' &&
-	    usage.completion_tokens > 0 && chat_touched >= 1,
+		    usage.completion_tokens > 0 && chat_touched >= 1,
 	    "second gated MODEL recovery probe");
 	CHK(entelea_dep_state(ENTELEA_DEP_MODEL) == ENTELEA_DEP_UP,
 	    "two successful probes restore MODEL UP");
@@ -367,7 +384,7 @@ int main(void)
 	memset(&usage, 0, sizeof(usage));
 	ret = chat_once(false, out, sizeof(out), &usage);
 	CHK(ret == ENTELEA_OK && out[0] != '\0' &&
-	    usage.completion_tokens > 0 && chat_touched >= 1,
+		    usage.completion_tokens > 0 && chat_touched >= 1,
 	    "ordinary model_ask after recovery");
 	CHK(disconnect_quiet() == 0, "disconnect after model call");
 
@@ -388,7 +405,8 @@ fail:
 
 		if (cleanup_ret != 0) {
 			net_dhcpv4_stop(test_iface);
-			printk("[hw-cloud] disconnect unconfirmed rc=%d\n", cleanup_ret);
+			printk("[hw-cloud] disconnect unconfirmed rc=%d\n",
+			       cleanup_ret);
 		}
 	}
 	if (callbacks_registered) {
@@ -396,13 +414,14 @@ fail:
 		net_mgmt_del_event_callback(&ipv4_cb);
 		net_mgmt_del_event_callback(&iface_cb);
 	}
-	(void)entelea_dep_mark_down(ENTELEA_DEP_NET);
-	(void)entelea_dep_mark_down(ENTELEA_DEP_MODEL);
+	(void) entelea_dep_mark_down(ENTELEA_DEP_NET);
+	(void) entelea_dep_mark_down(ENTELEA_DEP_MODEL);
 	entelea_model_bind(NULL, NULL);
 	entelea_secure_zero(&credentials, sizeof(credentials));
 	entelea_secure_zero(&cfg_live, sizeof(cfg_live));
 	entelea_secure_zero(out, sizeof(out));
-	printk("[hw-cloud] diagnostic stopped; network/model dependencies DOWN\n");
+	printk("[hw-cloud] diagnostic stopped; network/model dependencies "
+	       "DOWN\n");
 	k_sleep(K_FOREVER);
 	return 0;
 }

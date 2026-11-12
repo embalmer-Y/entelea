@@ -27,8 +27,7 @@ const char ca_digicert_g2[] =
 	"8rGOmaFvE7FBcf6IKshPECBV1/MUReXgRPTqh5Uykw7+U0b6LJ3/iyK5S9kJRaTe\n"
 	"pLiaWN0bfVKfjllDiIGknibVb63dDcY3fe0Dkhvld1927jyNxF1WW6LZZm6zNTfl\n"
 	"MrY=\n"
-	"-----END CERTIFICATE-----\n"
-	;
+	"-----END CERTIFICATE-----\n";
 
 const char ca_isrg_x1[] =
 	"-----BEGIN CERTIFICATE-----\n"
@@ -61,12 +60,11 @@ const char ca_isrg_x1[] =
 	"4RgqsahDYVvTH9w7jXbyLeiNdd8XM2w9U/t7y0Ff/9yi0GE44Za4rF2LN9d11TPA\n"
 	"mRGunUHBcnWEvgJBQl9nJEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57d\n"
 	"emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=\n"
-	"-----END CERTIFICATE-----\n"
-	;
-
+	"-----END CERTIFICATE-----\n";
 
 const char *const entelea_ca_roots[] = {
 	ca_digicert_g2,
 	ca_isrg_x1,
 };
-const size_t entelea_ca_root_count = sizeof(entelea_ca_roots) / sizeof(entelea_ca_roots[0]);
+const size_t entelea_ca_root_count =
+	sizeof(entelea_ca_roots) / sizeof(entelea_ca_roots[0]);

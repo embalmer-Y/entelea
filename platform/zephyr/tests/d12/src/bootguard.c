@@ -16,14 +16,16 @@ static bool fail_write;
 static bool fail_get_cause;
 static bool fail_clear_cause;
 
-static ssize_t retained_size(const struct device *dev)
+static ssize_t
+retained_size(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 	return sizeof(retained_data);
 }
 
-static int retained_read(const struct device *dev, off_t offset,
-			 uint8_t *buffer, size_t size)
+static int
+retained_read(const struct device *dev, off_t offset, uint8_t *buffer,
+	      size_t size)
 {
 	ARG_UNUSED(dev);
 	if (fail_read) {
@@ -33,8 +35,9 @@ static int retained_read(const struct device *dev, off_t offset,
 	return 0;
 }
 
-static int retained_write(const struct device *dev, off_t offset,
-			  const uint8_t *buffer, size_t size)
+static int
+retained_write(const struct device *dev, off_t offset, const uint8_t *buffer,
+	       size_t size)
 {
 	ARG_UNUSED(dev);
 	if (fail_write) {
@@ -44,7 +47,8 @@ static int retained_write(const struct device *dev, off_t offset,
 	return 0;
 }
 
-static int retained_clear(const struct device *dev)
+static int
+retained_clear(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 	memset(retained_data, 0, sizeof(retained_data));
@@ -58,10 +62,11 @@ static DEVICE_API(retained_mem, retained_api) = {
 	.clear = retained_clear,
 };
 
-DEVICE_DT_DEFINE(DT_NODELABEL(d12retained), NULL, NULL, NULL, NULL,
-		 POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &retained_api);
+DEVICE_DT_DEFINE(DT_NODELABEL(d12retained), NULL, NULL, NULL, NULL, POST_KERNEL,
+		 CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &retained_api);
 
-int __wrap_z_impl_hwinfo_get_reset_cause(uint32_t *cause)
+int
+__wrap_z_impl_hwinfo_get_reset_cause(uint32_t *cause)
 {
 	if (fail_get_cause) {
 		return -EIO;
@@ -70,14 +75,17 @@ int __wrap_z_impl_hwinfo_get_reset_cause(uint32_t *cause)
 	return 0;
 }
 
-int __wrap_z_impl_hwinfo_clear_reset_cause(void)
+int
+__wrap_z_impl_hwinfo_clear_reset_cause(void)
 {
 	return fail_clear_cause ? -EIO : 0;
 }
 
-bool __real_z_impl_device_is_ready(const struct device *dev);
+bool
+__real_z_impl_device_is_ready(const struct device *dev);
 
-bool __wrap_z_impl_device_is_ready(const struct device *dev)
+bool
+__wrap_z_impl_device_is_ready(const struct device *dev)
 {
 	if (dev == DEVICE_DT_GET(DT_NODELABEL(d12retained))) {
 		return retained_ready && __real_z_impl_device_is_ready(dev);
@@ -85,7 +93,8 @@ bool __wrap_z_impl_device_is_ready(const struct device *dev)
 	return __real_z_impl_device_is_ready(dev);
 }
 
-static void reset_fixture(void *fixture)
+static void
+reset_fixture(void *fixture)
 {
 	ARG_UNUSED(fixture);
 	memset(retained_data, 0, sizeof(retained_data));

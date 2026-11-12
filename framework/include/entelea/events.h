@@ -56,27 +56,32 @@ typedef struct {
 
 /* 绑定实例时钟（发布时间戳来源）。未绑定时发布 t_ms = 0，不伪造默认时基；
  * 订阅/发布其余语义不变。绑定 NULL 恢复未绑定。 */
-entelea_result_t entelea_evt_bind_clock(const entelea_clock_t *clock);
+entelea_result_t
+entelea_evt_bind_clock(const entelea_clock_t *clock);
 
 /** [thread] 仅 init 期注册；每事件容量 ENTELEA_EVT_MAX_SUBS，满 = ENTELEA_E_NOMEM。 */
-entelea_result_t entelea_evt_subscribe(entelea_event_id_t id,
-		entelea_event_cb_t fn, void *user);
+entelea_result_t
+entelea_evt_subscribe(entelea_event_id_t id, entelea_event_cb_t fn, void *user);
 
 /** [thread] 同步分发（注册表静态顺序）；[ISR] 投递到深度
  * ENTELEA_EVT_QUEUE_DEPTH 的队列由 sysworkq 分发；满 = 丢弃并计数（观测损失）。
  * ISR 投递的 data 必须指向静态存储。 */
-void entelea_evt_publish(const entelea_event_t *evt);
+void
+entelea_evt_publish(const entelea_event_t *evt);
 
 /** [any] 发布时复制至多 4 字节载荷；回调期间有效。队列满 = E_BUSY
  * 并计入丢弃数，载荷过大 = E_RANGE，参数非法 = E_PARAM。 */
-entelea_result_t entelea_evt_publish_copy(const entelea_event_t *evt);
+entelea_result_t
+entelea_evt_publish_copy(const entelea_event_t *evt);
 
 /** [any] 队列溢出累计丢弃数（观测，不清零）。 */
-uint32_t entelea_evt_queue_dropped(void);
+uint32_t
+entelea_evt_queue_dropped(void);
 
 /* 仅 ENTELEA_TEST 构建：同步排空 ISR 投递队列并分发（测试观测用）。 */
 #ifdef ENTELEA_TEST
-void entelea_evt_poll_drain(void);
+void
+entelea_evt_poll_drain(void);
 #endif
 
 /* 容量出处 DEC-27（旧 LLD-ts-core §4/§6），R02 为编译期常量；

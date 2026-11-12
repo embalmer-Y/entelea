@@ -28,7 +28,8 @@ K_MSGQ_DEFINE(evt_q, sizeof(struct queued_evt), ENTELEA_EVT_QUEUE_DEPTH, 8);
 static atomic_t dropped_count;
 static const entelea_clock_t *evt_clock;
 
-entelea_result_t entelea_evt_bind_clock(const entelea_clock_t *clock)
+entelea_result_t
+entelea_evt_bind_clock(const entelea_clock_t *clock)
 {
 	evt_clock = clock;
 	return ENTELEA_OK;
@@ -40,7 +41,8 @@ entelea_result_t entelea_evt_bind_clock(const entelea_clock_t *clock)
  * → 0（可观测的未配置）。
  * 并发（二轮 review 缺陷 5）：ISR 发布与线程分发并发访问 last_good，
  * 32 位目标 u64 可撕裂——比较/更新入 irq_lock 微临界区（ISR 可嵌套）。 */
-static uint64_t now_ms(void)
+static uint64_t
+now_ms(void)
 {
 	static uint64_t last_good;
 	uint64_t ms = 0;
@@ -60,7 +62,8 @@ static uint64_t now_ms(void)
 	return ms;
 }
 
-static void dispatch(const entelea_event_t *evt)
+static void
+dispatch(const entelea_event_t *evt)
 {
 	for (int i = 0; i < ENTELEA_EVT_MAX_SUBS; i++) {
 		const struct sub_slot *s = &subs[evt->id][i];
@@ -71,11 +74,11 @@ static void dispatch(const entelea_event_t *evt)
 	}
 }
 
-entelea_result_t entelea_evt_subscribe(entelea_event_id_t id,
-		entelea_event_cb_t fn, void *user)
+entelea_result_t
+entelea_evt_subscribe(entelea_event_id_t id, entelea_event_cb_t fn, void *user)
 {
 	__ASSERT(!k_is_in_isr(), "evt_subscribe is init/thread only");
-	if ((int)id < 0 || id >= ENTELEA_EVT_ID_COUNT || fn == NULL) {
+	if ((int) id < 0 || id >= ENTELEA_EVT_ID_COUNT || fn == NULL) {
 		return ENTELEA_E_PARAM;
 	}
 	for (int i = 0; i < ENTELEA_EVT_MAX_SUBS; i++) {
@@ -88,7 +91,8 @@ entelea_result_t entelea_evt_subscribe(entelea_event_id_t id,
 	return ENTELEA_E_NOMEM;
 }
 
-static void evt_drain_work(struct k_work *work)
+static void
+evt_drain_work(struct k_work *work)
 {
 	ARG_UNUSED(work);
 	struct queued_evt q;
@@ -103,9 +107,11 @@ static void evt_drain_work(struct k_work *work)
 
 static struct k_work drain_work = Z_WORK_INITIALIZER(evt_drain_work);
 
-static entelea_result_t publish_event(const entelea_event_t *evt, bool copy)
+static entelea_result_t
+publish_event(const entelea_event_t *evt, bool copy)
 {
-	if (evt == NULL || (int)evt->id < 0 || evt->id >= ENTELEA_EVT_ID_COUNT) {
+	if (evt == NULL || (int) evt->id < 0 ||
+	    evt->id >= ENTELEA_EVT_ID_COUNT) {
 		return ENTELEA_E_PARAM;
 	}
 	if (copy && evt->len > sizeof(uint32_t)) {
@@ -114,7 +120,7 @@ static entelea_result_t publish_event(const entelea_event_t *evt, bool copy)
 	if (copy && evt->len != 0 && evt->data == NULL) {
 		return ENTELEA_E_PARAM;
 	}
-	struct queued_evt q = {.evt = *evt};
+	struct queued_evt q = { .evt = *evt };
 
 	if (copy && evt->len != 0) {
 		memcpy(&q.copied_payload, evt->data, evt->len);
@@ -138,23 +144,27 @@ static entelea_result_t publish_event(const entelea_event_t *evt, bool copy)
 	return ENTELEA_OK;
 }
 
-void entelea_evt_publish(const entelea_event_t *evt)
+void
+entelea_evt_publish(const entelea_event_t *evt)
 {
-	(void)publish_event(evt, false);
+	(void) publish_event(evt, false);
 }
 
-entelea_result_t entelea_evt_publish_copy(const entelea_event_t *evt)
+entelea_result_t
+entelea_evt_publish_copy(const entelea_event_t *evt)
 {
 	return publish_event(evt, true);
 }
 
-uint32_t entelea_evt_queue_dropped(void)
+uint32_t
+entelea_evt_queue_dropped(void)
 {
-	return (uint32_t)atomic_get(&dropped_count);
+	return (uint32_t) atomic_get(&dropped_count);
 }
 
 #ifdef ENTELEA_TEST
-void entelea_evt_poll_drain(void)
+void
+entelea_evt_poll_drain(void)
 {
 	evt_drain_work(NULL);
 }

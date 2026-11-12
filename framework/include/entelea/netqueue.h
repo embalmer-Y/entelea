@@ -28,13 +28,16 @@ extern "C" {
 
 /** [thread] 入帧（拷贝入静态池；环满=丢最旧并计 dropped）。帧超限=
  * E_RANGE 整笔拒（不截断——媒体语义整帧交付）。 */
-entelea_result_t entelea_avq_push(const uint8_t *frame, uint32_t len);
+entelea_result_t
+entelea_avq_push(const uint8_t *frame, uint32_t len);
 
 /** [thread] 出帧到调用方缓冲；空=E_BUSY（非失败——重试面）。 */
-entelea_result_t entelea_avq_pop(uint8_t *out, uint32_t max, uint32_t *len);
+entelea_result_t
+entelea_avq_pop(uint8_t *out, uint32_t max, uint32_t *len);
 
 /** [any] 溢出丢帧计数（观测）。 */
-uint32_t entelea_avq_dropped(void);
+uint32_t
+entelea_avq_dropped(void);
 
 /* ---- pubq：拒新发布环 ---- */
 
@@ -46,18 +49,21 @@ typedef struct {
 
 /** [thread] 入发布（拷贝；满=E_BUSY 显式拒；topic/payload 超限=
  * E_PARAM）。 */
-entelea_result_t entelea_pubq_post(const char *topic, const uint8_t *payload,
-				   uint8_t len);
+entelea_result_t
+entelea_pubq_post(const char *topic, const uint8_t *payload, uint8_t len);
 
 /** [thread] 取队头（不弹出）；空返回 false。 */
-bool entelea_pubq_peek(entelea_pubq_entry_t *out);
+bool
+entelea_pubq_peek(entelea_pubq_entry_t *out);
 
 /** [thread] 弹出队头（空=E_STATE）。sink 无确认返回值，无法据此
  * 判断网络送达。 */
-entelea_result_t entelea_pubq_pop(void);
+entelea_result_t
+entelea_pubq_pop(void);
 
 /** [any] 深度（观测）。 */
-uint32_t entelea_pubq_depth(void);
+uint32_t
+entelea_pubq_depth(void);
 
 /* ---- 传输面（假传输闭环；真传输随真网批） ---- */
 
@@ -66,17 +72,22 @@ typedef void (*entelea_netqueue_sink_t)(void *user, const char *topic,
 
 /** [boot] 注册传输 sink（NULL=注销——flush 不消费任何侧：avq 停
  *  排、pubq 保持待传输不弹不丢）。 */
-void entelea_netqueue_bind_sink(entelea_netqueue_sink_t sink, void *user);
+void
+entelea_netqueue_bind_sink(entelea_netqueue_sink_t sink, void *user);
 
 /** [thread] 排空：avq 逐帧经 sink（topic="av"）→pubq 队头经 sink
  * 回调后弹出。返回回调次数，不代表传输或远端送达成功。 */
-uint32_t entelea_netqueue_flush(void);
+uint32_t
+entelea_netqueue_flush(void);
 
 #ifdef ENTELEA_TEST
-void entelea_netqueue_test_reset(void);
+void
+entelea_netqueue_test_reset(void);
 /* 历史 delivered 命名只计回调次数，不代表实际送达。 */
-uint32_t entelea_netqueue_test_av_delivered(void);
-uint32_t entelea_netqueue_test_pub_delivered(void);
+uint32_t
+entelea_netqueue_test_av_delivered(void);
+uint32_t
+entelea_netqueue_test_pub_delivered(void);
 #endif
 
 #ifdef __cplusplus

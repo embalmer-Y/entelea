@@ -15,8 +15,8 @@
 
 _Static_assert(ENTELEA_AFFECT_LEVELS == 4, "update initial affect levels");
 static entelea_affect_state_t affect = {
-	.level = {AFFECT_MIDPOINT, AFFECT_MIDPOINT,
-		  AFFECT_MIDPOINT, AFFECT_MIDPOINT},
+	.level = { AFFECT_MIDPOINT, AFFECT_MIDPOINT, AFFECT_MIDPOINT,
+		   AFFECT_MIDPOINT },
 };
 static entelea_adapt_params_t adapt_history[ENTELEA_ADAPT_HISTORY];
 static uint32_t adapt_len;
@@ -24,8 +24,9 @@ static uint32_t adapt_version;
 
 /* 确定性演进（建议值规则）：stimulus>0 升、<0 降、0 回中位（50）。
  * 步长 = |stimulus| 与 dt/1000 的饱和积（上限 10/步——变化有界）。 */
-entelea_result_t entelea_affect_tick(uint32_t dt_ms,
-				     const int8_t stimulus[ENTELEA_AFFECT_LEVELS])
+entelea_result_t
+entelea_affect_tick(uint32_t dt_ms,
+		    const int8_t stimulus[ENTELEA_AFFECT_LEVELS])
 {
 	if (stimulus == NULL || dt_ms == 0) {
 		return ENTELEA_E_PARAM;
@@ -43,35 +44,36 @@ entelea_result_t entelea_affect_tick(uint32_t dt_ms,
 		int s = stimulus[i];
 
 		if (s > 0) {
-			v += (int)scale;
+			v += (int) scale;
 			if (v > 100) {
 				v = 100;
 			}
 		} else if (s < 0) {
-			v -= (int)scale;
+			v -= (int) scale;
 			if (v < 0) {
 				v = 0;
 			}
 		} else {
 			/* 回中位（确定性衰减）。 */
 			if (v > AFFECT_MIDPOINT) {
-				v -= (int)scale;
+				v -= (int) scale;
 				if (v < AFFECT_MIDPOINT) {
 					v = AFFECT_MIDPOINT;
 				}
 			} else if (v < AFFECT_MIDPOINT) {
-				v += (int)scale;
+				v += (int) scale;
 				if (v > AFFECT_MIDPOINT) {
 					v = AFFECT_MIDPOINT;
 				}
 			}
 		}
-		affect.level[i] = (uint8_t)v;
+		affect.level[i] = (uint8_t) v;
 	}
 	return ENTELEA_OK;
 }
 
-void entelea_affect_get(entelea_affect_state_t *out)
+void
+entelea_affect_get(entelea_affect_state_t *out)
 {
 	if (out != NULL) {
 		*out = affect;
@@ -80,9 +82,9 @@ void entelea_affect_get(entelea_affect_state_t *out)
 
 /* ---- 适应版本环 ---- */
 
-entelea_result_t entelea_adapt_commit(
-	const uint8_t weight[ENTELEA_AFFECT_LEVELS],
-	entelea_adapt_params_t *out)
+entelea_result_t
+entelea_adapt_commit(const uint8_t weight[ENTELEA_AFFECT_LEVELS],
+		     entelea_adapt_params_t *out)
 {
 	if (weight == NULL) {
 		return ENTELEA_E_PARAM;
@@ -94,8 +96,7 @@ entelea_result_t entelea_adapt_commit(
 	}
 	adapt_version++;
 	adapt_history[adapt_len].version = adapt_version;
-	memcpy(adapt_history[adapt_len].weight, weight,
-	       ENTELEA_AFFECT_LEVELS);
+	memcpy(adapt_history[adapt_len].weight, weight, ENTELEA_AFFECT_LEVELS);
 	adapt_len++;
 	if (out != NULL) {
 		*out = adapt_history[adapt_len - 1];
@@ -103,7 +104,8 @@ entelea_result_t entelea_adapt_commit(
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_adapt_rollback(entelea_adapt_params_t *out)
+entelea_result_t
+entelea_adapt_rollback(entelea_adapt_params_t *out)
 {
 	if (adapt_len <= 1) {
 		return ENTELEA_E_STATE; /* 无历史可回（不静默成功） */
@@ -115,7 +117,8 @@ entelea_result_t entelea_adapt_rollback(entelea_adapt_params_t *out)
 	return ENTELEA_OK;
 }
 
-void entelea_adapt_current(entelea_adapt_params_t *out)
+void
+entelea_adapt_current(entelea_adapt_params_t *out)
 {
 	if (out != NULL && adapt_len > 0) {
 		*out = adapt_history[adapt_len - 1];
@@ -125,7 +128,8 @@ void entelea_adapt_current(entelea_adapt_params_t *out)
 }
 
 #ifdef ENTELEA_TEST
-void entelea_affect_test_reset(void)
+void
+entelea_affect_test_reset(void)
 {
 	memset(&affect, 0, sizeof(affect));
 	/* 初始情感=中位（确定性基线）。 */

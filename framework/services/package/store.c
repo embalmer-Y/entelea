@@ -27,40 +27,43 @@ static uint32_t staged_until[ENTELEA_APP_SLOT_COUNT];
 
 /* ENTELEA_PART_SLOT_A/B 在存储端口（part.c）——本层经公共端口访问。 */
 
-entelea_result_t entelea_pkg_slot_read(uint8_t slot, uint32_t off, void *buf,
-				       uint32_t len)
+entelea_result_t
+entelea_pkg_slot_read(uint8_t slot, uint32_t off, void *buf, uint32_t len)
 {
 	if (slot >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_PARAM;
 	}
-	return entelea_storage_read((entelea_store_part_t)(
-					    ENTELEA_PART_SLOT_A + slot),
-				    off, buf, len);
+	return entelea_storage_read(
+		(entelea_store_part_t) (ENTELEA_PART_SLOT_A + slot), off, buf,
+		len);
 }
 
-entelea_result_t entelea_pkg_slot_write(uint8_t slot, uint32_t off,
-					const void *buf, uint32_t len)
+entelea_result_t
+entelea_pkg_slot_write(uint8_t slot, uint32_t off, const void *buf,
+		       uint32_t len)
 {
 	if (slot >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_PARAM;
 	}
-	return entelea_storage_write((entelea_store_part_t)(
-					     ENTELEA_PART_SLOT_A + slot),
-				     off, buf, len);
+	return entelea_storage_write(
+		(entelea_store_part_t) (ENTELEA_PART_SLOT_A + slot), off, buf,
+		len);
 }
 
-entelea_result_t entelea_pkg_stage_begin(uint8_t slot)
+entelea_result_t
+entelea_pkg_stage_begin(uint8_t slot)
 {
 	if (slot >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_PARAM;
 	}
 	staged_until[slot] = 0; /* 游标复位 */
-	return entelea_storage_erase((entelea_store_part_t)(
-		ENTELEA_PART_SLOT_A + slot));
+	return entelea_storage_erase(
+		(entelea_store_part_t) (ENTELEA_PART_SLOT_A + slot));
 }
 
-entelea_result_t entelea_pkg_stage_chunk(uint8_t slot, uint32_t off,
-					 const void *buf, uint32_t len)
+entelea_result_t
+entelea_pkg_stage_chunk(uint8_t slot, uint32_t off, const void *buf,
+			uint32_t len)
 {
 	if (buf == NULL || off > SLOT_SZ || len > SLOT_SZ - off) {
 		return ENTELEA_E_RANGE;
@@ -80,8 +83,9 @@ entelea_result_t entelea_pkg_stage_chunk(uint8_t slot, uint32_t off,
 		if (n > sizeof(back)) {
 			n = sizeof(back);
 		}
-		if (entelea_pkg_slot_read(slot, off + done, back, n) != ENTELEA_OK ||
-		    memcmp(back, (const uint8_t *)buf + done, n) != 0) {
+		if (entelea_pkg_slot_read(slot, off + done, back, n) !=
+			    ENTELEA_OK ||
+		    memcmp(back, (const uint8_t *) buf + done, n) != 0) {
 			return ENTELEA_E_IO; /* 回读校验（RAM 后端不触发；flash 语义） */
 		}
 	}
@@ -92,13 +96,14 @@ entelea_result_t entelea_pkg_stage_chunk(uint8_t slot, uint32_t off,
 /* 固定测试根（旧 Q-29④ 公开材料；私钥在旧 Forge fixtures——测试信任
  * ≠生产信任）。 */
 const uint8_t entelea_pkg_test_root_pub[32] = {
-	0xf0, 0x84, 0xa4, 0xe5, 0x6f, 0x68, 0xb6, 0xab, 0x5c, 0xbe, 0xe8, 0x60,
-	0x3c, 0x59, 0xa4, 0x2a, 0xc2, 0xef, 0x26, 0x51, 0xc4, 0x93, 0x94, 0xa7,
-	0x03, 0x5c, 0xd5, 0xdb, 0x52, 0xdb, 0x47, 0x7a,
+	0xf0, 0x84, 0xa4, 0xe5, 0x6f, 0x68, 0xb6, 0xab, 0x5c, 0xbe, 0xe8,
+	0x60, 0x3c, 0x59, 0xa4, 0x2a, 0xc2, 0xef, 0x26, 0x51, 0xc4, 0x93,
+	0x94, 0xa7, 0x03, 0x5c, 0xd5, 0xdb, 0x52, 0xdb, 0x47, 0x7a,
 };
 
 /* 有效信任集：工厂根（TEST=固定测试根/生产=prov 双钥）∪ 信任表。 */
-static uint8_t trust_effective(const uint8_t *keys_out[ENTELEA_TRUST_SET_MAX])
+static uint8_t
+trust_effective(const uint8_t *keys_out[ENTELEA_TRUST_SET_MAX])
 {
 	uint8_t n = 0;
 
@@ -127,8 +132,9 @@ static uint8_t trust_effective(const uint8_t *keys_out[ENTELEA_TRUST_SET_MAX])
 }
 
 /* definite 头元素（bstr/map）；短头/1B/2B/4B 扩展；不定长拒。 */
-static entelea_result_t read_head(uint8_t slot, uint32_t off, uint8_t want_maj,
-				  uint32_t *data_len, uint8_t *hdr_len)
+static entelea_result_t
+read_head(uint8_t slot, uint32_t off, uint8_t want_maj, uint32_t *data_len,
+	  uint8_t *hdr_len)
 {
 	uint8_t b;
 
@@ -151,7 +157,7 @@ static entelea_result_t read_head(uint8_t slot, uint32_t off, uint8_t want_maj,
 	if (nb == 0) {
 		return ENTELEA_E_INVALID_SIG; /* 8B 扩展超 u32 容器域 */
 	}
-	uint8_t lb[4] = {0, 0, 0, 0};
+	uint8_t lb[4] = { 0, 0, 0, 0 };
 
 	if (entelea_pkg_slot_read(slot, off + 1, lb, nb) != ENTELEA_OK) {
 		return ENTELEA_E_IO;
@@ -162,13 +168,14 @@ static entelea_result_t read_head(uint8_t slot, uint32_t off, uint8_t want_maj,
 		v = (v << 8) | lb[i];
 	}
 	*data_len = v;
-	*hdr_len = (uint8_t)(1 + nb);
+	*hdr_len = (uint8_t) (1 + nb);
 	return ENTELEA_OK;
 }
 
 /* boot 快校验：头 v2 + 摘要重哈希（不含 ed25519——安装已全量验签，
  * boot 只防持久化位腐）。 */
-static entelea_result_t check_digest(uint8_t slot, entelea_tsap_view_t *v)
+static entelea_result_t
+check_digest(uint8_t slot, entelea_tsap_view_t *v)
 {
 	uint8_t hdr[ENTELEA_TSAP_HEADER_SIZE];
 
@@ -178,7 +185,7 @@ static entelea_result_t check_digest(uint8_t slot, entelea_tsap_view_t *v)
 	if (!entelea_tsap_parse_fields(hdr, v)) {
 		return ENTELEA_E_INVALID_SIG;
 	}
-	if ((uint64_t)v->cose_off + 2 > (uint64_t)SLOT_SZ) {
+	if ((uint64_t) v->cose_off + 2 > (uint64_t) SLOT_SZ) {
 		return ENTELEA_E_PARAM; /* 段布局越出 slot 物理面 */
 	}
 	uint8_t digest[ENTELEA_TSAP_DIGEST_SIZE];
@@ -218,7 +225,8 @@ static entelea_result_t check_digest(uint8_t slot, entelea_tsap_view_t *v)
 #define SIG_STRUCTURE_PREFIX_MAX 22
 #define VERIFY_SCRATCH (2 * (64 + SIG_STRUCTURE_PREFIX_MAX + 4096))
 
-static size_t sig_structure_prefix(uint8_t *p, uint32_t payload_len)
+static size_t
+sig_structure_prefix(uint8_t *p, uint32_t payload_len)
 {
 	size_t pos = 0;
 
@@ -232,26 +240,27 @@ static size_t sig_structure_prefix(uint8_t *p, uint32_t payload_len)
 	p[pos++] = 0x27;
 	p[pos++] = 0x40;
 	if (payload_len < 24) {
-		p[pos++] = (uint8_t)(0x40 | payload_len);
+		p[pos++] = (uint8_t) (0x40 | payload_len);
 	} else if (payload_len < 256) {
 		p[pos++] = 0x58;
-		p[pos++] = (uint8_t)payload_len;
+		p[pos++] = (uint8_t) payload_len;
 	} else if (payload_len < 65536) {
 		p[pos++] = 0x59;
-		p[pos++] = (uint8_t)(payload_len >> 8);
-		p[pos++] = (uint8_t)payload_len;
+		p[pos++] = (uint8_t) (payload_len >> 8);
+		p[pos++] = (uint8_t) payload_len;
 	} else {
 		p[pos++] = 0x5A;
-		p[pos++] = (uint8_t)(payload_len >> 24);
-		p[pos++] = (uint8_t)(payload_len >> 16);
-		p[pos++] = (uint8_t)(payload_len >> 8);
-		p[pos++] = (uint8_t)payload_len;
+		p[pos++] = (uint8_t) (payload_len >> 24);
+		p[pos++] = (uint8_t) (payload_len >> 16);
+		p[pos++] = (uint8_t) (payload_len >> 8);
+		p[pos++] = (uint8_t) payload_len;
 	}
 	return pos;
 }
 
-entelea_result_t entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
-				    entelea_tsap_view_t *v, uint8_t digest_out[32])
+entelea_result_t
+entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
+		   entelea_tsap_view_t *v, uint8_t digest_out[32])
 {
 	entelea_result_t r = check_digest(slot, v);
 
@@ -301,7 +310,7 @@ entelea_result_t entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
 	if (entelea_pkg_slot_read(slot, pos + hl, phdr, el) != ENTELEA_OK) {
 		return ENTELEA_E_IO;
 	}
-	static const uint8_t want_phdr[COSE_PHDR_LEN] = {0xa1, 0x01, 0x27};
+	static const uint8_t want_phdr[COSE_PHDR_LEN] = { 0xa1, 0x01, 0x27 };
 
 	if (memcmp(phdr, want_phdr, COSE_PHDR_LEN) != 0) {
 		return ENTELEA_E_INVALID_SIG;
@@ -357,10 +366,12 @@ entelea_result_t entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
 	uint8_t raw[512];
 
 	while (remain > 0) {
-		uint32_t n = remain > sizeof(raw) ? (uint32_t)sizeof(raw) : remain;
+		uint32_t n =
+			remain > sizeof(raw) ? (uint32_t) sizeof(raw) : remain;
 
 		if (entelea_pkg_slot_read(slot, coff, raw, n) != ENTELEA_OK ||
-		    entelea_pkg_slot_read(slot, roff, sm + tail, n) != ENTELEA_OK) {
+		    entelea_pkg_slot_read(slot, roff, sm + tail, n) !=
+			    ENTELEA_OK) {
 			return ENTELEA_E_IO;
 		}
 		if (memcmp(raw, sm + tail, n) != 0) {
@@ -376,7 +387,8 @@ entelea_result_t entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
 	bool verified = false;
 
 	for (uint8_t i = 0; i < n_roots; i++) {
-		if (crypto_sign_open(mbuf, &mlen, sm, (unsigned long long)smlen,
+		if (crypto_sign_open(mbuf, &mlen, sm,
+				     (unsigned long long) smlen,
 				     set_buf[i]) == 0) {
 			verified = true;
 			break;
@@ -387,22 +399,23 @@ entelea_result_t entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
 	}
 	/* 规范包长 = 签名 bstr 末尾（COSE_Sign1 末元素；Forge package_digest
 	 * 的输入域）。签名读已受 slot 界约束，此处显式再界。 */
-	if ((uint64_t)sig_off + 64U > (uint64_t)SLOT_SZ) {
+	if ((uint64_t) sig_off + 64U > (uint64_t) SLOT_SZ) {
 		return ENTELEA_E_INVALID_SIG;
 	}
 	v->pkg_len = sig_off + 64U;
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_pkg_file_digest(uint8_t slot, uint32_t len,
-					 uint8_t out[32])
+entelea_result_t
+entelea_pkg_file_digest(uint8_t slot, uint32_t len, uint8_t out[32])
 {
 	return entelea_pkg_file_digest_capture(slot, len, out, 0, 0, NULL);
 }
 
-entelea_result_t entelea_pkg_file_digest_capture(uint8_t slot, uint32_t len,
-						 uint8_t out[32], uint32_t cap_off,
-						 uint32_t cap_len, uint8_t *cap_buf)
+entelea_result_t
+entelea_pkg_file_digest_capture(uint8_t slot, uint32_t len, uint8_t out[32],
+				uint32_t cap_off, uint32_t cap_len,
+				uint8_t *cap_buf)
 {
 	if (slot >= ENTELEA_APP_SLOT_COUNT || out == NULL || len == 0 ||
 	    len > SLOT_SZ || cap_len > len || cap_off > len - cap_len ||
@@ -415,8 +428,9 @@ entelea_result_t entelea_pkg_file_digest_capture(uint8_t slot, uint32_t len,
 
 	entelea_sha256_stream_init(st);
 	while (off < len) {
-		const uint32_t n = len - off > sizeof(buf) ? (uint32_t)sizeof(buf)
-							   : len - off;
+		const uint32_t n = len - off > sizeof(buf) ?
+					   (uint32_t) sizeof(buf) :
+					   len - off;
 
 		if (entelea_pkg_slot_read(slot, off, buf, n) != ENTELEA_OK) {
 			return ENTELEA_E_IO;
@@ -425,12 +439,13 @@ entelea_result_t entelea_pkg_file_digest_capture(uint8_t slot, uint32_t len,
 		if (cap_len != 0) {
 			const uint32_t lo = off > cap_off ? off : cap_off;
 			const uint32_t end = off + n;
-			const uint32_t hi =
-				end < cap_off + cap_len ? end : cap_off + cap_len;
+			const uint32_t hi = end < cap_off + cap_len ?
+						    end :
+						    cap_off + cap_len;
 
 			if (lo < hi) {
-				memcpy(cap_buf + (lo - cap_off), buf + (lo - off),
-				       hi - lo);
+				memcpy(cap_buf + (lo - cap_off),
+				       buf + (lo - off), hi - lo);
 			}
 		}
 		off += n;
@@ -445,7 +460,8 @@ entelea_result_t entelea_pkg_file_digest_capture(uint8_t slot, uint32_t len,
  * KV=R03 多消费者面（键空间=app_hash）；meta 单槽归 R12 trial 独占。 */
 #define PKG_ACTIVE_KV_TAG 0x50414741U /* "PAGA" */
 
-entelea_result_t entelea_pkg_activate(uint8_t slot)
+entelea_result_t
+entelea_pkg_activate(uint8_t slot)
 {
 	if (slot >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_PARAM;
@@ -455,7 +471,8 @@ entelea_result_t entelea_pkg_activate(uint8_t slot)
 	return entelea_kv_save(PKG_ACTIVE_KV_TAG, &rec, 1);
 }
 
-entelea_result_t entelea_pkg_active(uint8_t *slot)
+entelea_result_t
+entelea_pkg_active(uint8_t *slot)
 {
 	if (slot == NULL) {
 		return ENTELEA_E_PARAM;
@@ -463,8 +480,8 @@ entelea_result_t entelea_pkg_active(uint8_t *slot)
 	uint8_t rec = 0;
 	int32_t n = entelea_kv_load(PKG_ACTIVE_KV_TAG, &rec, 1);
 
-	if (n < 0 && n != (int32_t)ENTELEA_E_NOTFOUND) {
-		return (entelea_result_t)n; /* 介质错误≠无 active（RF1） */
+	if (n < 0 && n != (int32_t) ENTELEA_E_NOTFOUND) {
+		return (entelea_result_t) n; /* 介质错误≠无 active（RF1） */
 	}
 	if (n != 1 || rec >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_UNINIT;
@@ -474,12 +491,13 @@ entelea_result_t entelea_pkg_active(uint8_t *slot)
 }
 
 #ifdef ENTELEA_TEST
-entelea_result_t entelea_pkg_test_reset(void)
+entelea_result_t
+entelea_pkg_test_reset(void)
 {
 	entelea_kv_test_reset(); /* review P1-1：active 事实迁 KV——重置连键空间态 */
 	for (uint8_t s = 0; s < ENTELEA_APP_SLOT_COUNT; s++) {
 		entelea_result_t r = entelea_storage_erase(
-			(entelea_store_part_t)(ENTELEA_PART_SLOT_A + s));
+			(entelea_store_part_t) (ENTELEA_PART_SLOT_A + s));
 
 		if (r != ENTELEA_OK) {
 			return r;

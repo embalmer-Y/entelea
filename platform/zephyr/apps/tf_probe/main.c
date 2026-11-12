@@ -15,10 +15,10 @@
 #include <zephyr/sd/sd_spec.h>
 #include <zephyr/sys/printk.h>
 
-int main(void)
+int
+main(void)
 {
-	const struct device *sdhc =
-		DEVICE_DT_GET(DT_NODELABEL(sdhc0));
+	const struct device *sdhc = DEVICE_DT_GET(DT_NODELABEL(sdhc0));
 	static const struct gpio_dt_spec det =
 		GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), sd_det_gpios);
 	struct sd_card card;
@@ -39,7 +39,7 @@ int main(void)
 	rc = sd_init(sdhc, &card);
 	if (rc == 0) {
 		printk("[hw-tf] PASS: sd_init ok type=%d ver=%d blocks=%u\n",
-		       (int)card.type, (int)card.sd_version,
+		       (int) card.type, (int) card.sd_version,
 		       card.block_count);
 	} else {
 		printk("[hw-tf] INIT_FAIL rc=%d\n", rc);

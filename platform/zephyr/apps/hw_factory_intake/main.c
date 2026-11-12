@@ -25,17 +25,19 @@
 #include "clock.h"
 #include "factory_pkg.h"
 
-#define CHK(cond, msg) do { \
-	bool ok_ = (cond); \
-	printk("[hw-fact] %s: %s\n", ok_ ? "PASS" : "FAIL", msg); \
-	if (!ok_) { \
-		goto fail; \
-	} \
-} while (0)
+#define CHK(cond, msg)                                                    \
+	do {                                                              \
+		bool ok_ = (cond);                                        \
+		printk("[hw-fact] %s: %s\n", ok_ ? "PASS" : "FAIL", msg); \
+		if (!ok_) {                                               \
+			goto fail;                                        \
+		}                                                         \
+	} while (0)
 
 static entelea_clock_t platform_clock;
 
-int main(void)
+int
+main(void)
 {
 	if (entelea_platform_clock_init(&platform_clock) != ENTELEA_OK ||
 	    entelea_evt_bind_clock(&platform_clock) != ENTELEA_OK ||
@@ -45,7 +47,7 @@ int main(void)
 		return 0;
 	}
 	printk("[hw-fact] factory loop gate begins (tsap %uB)\n",
-	       (uint32_t)FACTORY_TSAP_LEN);
+	       (uint32_t) FACTORY_TSAP_LEN);
 	entelea_supervision_boot(entelea_platform_boot_steps,
 				 ENTELEA_PLATFORM_BOOT_STEP_COUNT);
 	if (entelea_platform_d12_safe_halt()) {
@@ -81,25 +83,52 @@ int main(void)
 		uint32_t n = 0;
 
 		pcb[n++] = 0xA9; /* map(9)——prov CBOR v1 最小集 */
-		#define PUT(lit) do { \
-			if (n + sizeof(lit) - 1 <= sizeof(pcb)) { \
-				memcpy(pcb + n, lit, sizeof(lit) - 1); \
-			} \
-			n += sizeof(lit) - 1; \
-		} while (0)  /* 溢出跳写+n 继续增长——末尾统一护栏拒 */
-		PUT("\x61" "v");      pcb[n++] = 0x01;          /* v:1 */
-		PUT("\x67" "node_id"); PUT("\x65" "node1");
-		PUT("\x67" "cube_id"); PUT("\x65" "cube1");
-		PUT("\x67" "routers"); PUT("\x81"); PUT("\x6a" "tcp/f:7447");
-		PUT("\x63" "pk0");    pcb[n++] = 0x58; pcb[n++] = 32;
-		memcpy(pcb + n, FACTORY_ROOT_PUB, 32); n += 32;
-		PUT("\x63" "pk1");    pcb[n++] = 0x58; pcb[n++] = 32;
+#define PUT(lit)                                               \
+	do {                                                   \
+		if (n + sizeof(lit) - 1 <= sizeof(pcb)) {      \
+			memcpy(pcb + n, lit, sizeof(lit) - 1); \
+		}                                              \
+		n += sizeof(lit) - 1;                          \
+	} while (0) /* 溢出跳写+n 继续增长——末尾统一护栏拒 */
+		PUT("\x61"
+		    "v");
+		pcb[n++] = 0x01; /* v:1 */
+		PUT("\x67"
+		    "node_id");
+		PUT("\x65"
+		    "node1");
+		PUT("\x67"
+		    "cube_id");
+		PUT("\x65"
+		    "cube1");
+		PUT("\x67"
+		    "routers");
+		PUT("\x81");
+		PUT("\x6a"
+		    "tcp/f:7447");
+		PUT("\x63"
+		    "pk0");
+		pcb[n++] = 0x58;
+		pcb[n++] = 32;
+		memcpy(pcb + n, FACTORY_ROOT_PUB, 32);
+		n += 32;
+		PUT("\x63"
+		    "pk1");
+		pcb[n++] = 0x58;
+		pcb[n++] = 32;
 		n += 32; /* pcb 零初始化——pk1=零根（不可伪造） */
-		PUT("\x64" "cred");   PUT("\x62" "ok");
-		PUT("\x66" "pwr_ma"); PUT("\x19\x01\xf4");   /* 500mA */
-		PUT("\x65" "estop");    pcb[n++] = 0x01;
-		#undef PUT
-		CHK(n <= sizeof(pcb) &&  /* 组装护栏（review P3-3） */
+		PUT("\x64"
+		    "cred");
+		PUT("\x62"
+		    "ok");
+		PUT("\x66"
+		    "pwr_ma");
+		PUT("\x19\x01\xf4"); /* 500mA */
+		PUT("\x65"
+		    "estop");
+		pcb[n++] = 0x01;
+#undef PUT
+		CHK(n <= sizeof(pcb) && /* 组装护栏（review P3-3） */
 			    entelea_prov_write_maint(pcb, n) == ENTELEA_OK &&
 			    entelea_prov_load() == ENTELEA_OK &&
 			    memcmp(entelea_prov()->root_pubkeys[0],
@@ -150,7 +179,8 @@ int main(void)
 			if (n > sizeof(rd)) {
 				n = sizeof(rd);
 			}
-			if (entelea_pkg_slot_read(0, got, rd, n) != ENTELEA_OK) {
+			if (entelea_pkg_slot_read(0, got, rd, n) !=
+			    ENTELEA_OK) {
 				ok = false;
 				break;
 			}
@@ -159,7 +189,8 @@ int main(void)
 		}
 		entelea_sha256_stream_final(st, dg);
 		if (memcmp(dg, FACTORY_DIGEST, 32) != 0) {
-			printk("[hw-fact] dev=%02x%02x%02x%02x forge=%02x%02x%02x%02x\n",
+			printk("[hw-fact] dev=%02x%02x%02x%02x "
+			       "forge=%02x%02x%02x%02x\n",
 			       dg[0], dg[1], dg[2], dg[3], FACTORY_DIGEST[0],
 			       FACTORY_DIGEST[1], FACTORY_DIGEST[2],
 			       FACTORY_DIGEST[3]);
@@ -204,13 +235,13 @@ int main(void)
 
 	/* 5) 确认前不可执行：试用门拒装载且零副作用。owner=未绑定（无导入
 	 *    模块——natives 不触发）。 */
-	entelea_principal_t ctx = {0};
+	entelea_principal_t ctx = { 0 };
 	uint32_t app = 0;
-	entelea_result_t wl = entelea_wasm_init() == ENTELEA_OK
-				     ? entelea_wasm_load(0, ctx, &app)
-				     : ENTELEA_E_IO;
+	entelea_result_t wl = entelea_wasm_init() == ENTELEA_OK ?
+				      entelea_wasm_load(0, ctx, &app) :
+				      ENTELEA_E_IO;
 
-	printk("[hw-fact] pre-confirm wasm load rc=%d\n", (int)wl);
+	printk("[hw-fact] pre-confirm wasm load rc=%d\n", (int) wl);
 	CHK(wl == ENTELEA_E_PERM && app == 0 &&
 		    entelea_wasm_instance_count() == 0,
 	    "load before user confirm -> E_PERM (trial gate)");
@@ -221,7 +252,8 @@ int main(void)
 		    entelea_trial_flush() == ENTELEA_OK &&
 		    entelea_wasm_load(0, ctx, &app) == ENTELEA_E_PERM,
 	    "no confirm -> TIMEOUT persisted, slot stays gated");
-	printk("[hw-fact] PASS: confirmation timed out; candidate remains gated "
+	printk("[hw-fact] PASS: confirmation timed out; candidate remains "
+	       "gated "
 	       "(no auto-confirm in product build)\n");
 	return 0;
 #else
@@ -236,7 +268,7 @@ int main(void)
 		    "dev confirm shown candidate -> ACTIVE");
 	}
 	wl = entelea_wasm_load(0, ctx, &app);
-	printk("[hw-fact] wasm load rc=%d app=%u\n", (int)wl, app);
+	printk("[hw-fact] wasm load rc=%d app=%u\n", (int) wl, app);
 	CHK(wl == ENTELEA_OK && app == 1, "wasm load (confirmed bytes, app=1)");
 	int32_t ret = -1;
 
@@ -247,17 +279,17 @@ int main(void)
 	{
 		/* spin(3)：3 次空转后返回 0（run003 的 spin(N>=1) 死循环缺陷
 		 * 在此暴露为 E_TIMEOUT——RF1 #10）。 */
-		entelea_result_t sr = entelea_wasm_call(app, ctx, "spin", 3,
-						       2000, &ret);
+		entelea_result_t sr =
+			entelea_wasm_call(app, ctx, "spin", 3, 2000, &ret);
 
-		printk("[hw-fact] spin(3) rc=%d ret=%d\n", (int)sr, ret);
+		printk("[hw-fact] spin(3) rc=%d ret=%d\n", (int) sr, ret);
 		CHK(sr == ENTELEA_OK && ret == 0, "call spin(3) -> 0");
 	}
 
 	/* 7) 真死循环有界停止（R-V1 夹具：hang 无条件循环，步预算到期 →
 	 *    E_TIMEOUT + 实例销毁——替代 wasm 测试"预算 0"技巧证据）。 */
 	CHK(entelea_wasm_call(app, ctx, "hang", 0, 50, &ret) ==
-		    ENTELEA_E_TIMEOUT &&
+			    ENTELEA_E_TIMEOUT &&
 		    entelea_wasm_instance_count() == 0,
 	    "call hang (real infinite loop) -> E_TIMEOUT bounded stop");
 

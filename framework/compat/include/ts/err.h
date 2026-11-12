@@ -24,8 +24,8 @@ typedef entelea_result_t ts_res_t;
 #define TS_FAIL_SRC_WDT 0x0002U
 #define TS_FAIL_SRC_SAFETY 0x0003U
 #define TS_FAIL_SRC_STORE 0x0004U
-#define TS_FAIL_BOOT(idx) ((uint32_t)TS_FAIL_SRC_BOOT << 16 | (uint32_t)(idx))
-#define TS_FAIL_WDT(src) ((uint32_t)TS_FAIL_SRC_WDT << 16 | (uint32_t)(src))
+#define TS_FAIL_BOOT(idx) ((uint32_t) TS_FAIL_SRC_BOOT << 16 | (uint32_t) (idx))
+#define TS_FAIL_WDT(src) ((uint32_t) TS_FAIL_SRC_WDT << 16 | (uint32_t) (src))
 
 struct ts_ctx_opaque;
 typedef struct ts_ctx_opaque ts_ctx_t;

@@ -7,23 +7,26 @@
 
 static K_MUTEX_DEFINE(d12_mutex);
 
-static entelea_result_t d12_lock_take(void *user)
+static entelea_result_t
+d12_lock_take(void *user)
 {
-	(void)user;
+	(void) user;
 	if (k_is_in_isr()) {
 		return ENTELEA_E_STATE;
 	}
-	return k_mutex_lock(&d12_mutex, K_FOREVER) == 0 ? ENTELEA_OK
-							 : ENTELEA_E_STATE;
+	return k_mutex_lock(&d12_mutex, K_FOREVER) == 0 ? ENTELEA_OK :
+							  ENTELEA_E_STATE;
 }
 
-static void d12_lock_give(void *user)
+static void
+d12_lock_give(void *user)
 {
-	(void)user;
-	(void)k_mutex_unlock(&d12_mutex);
+	(void) user;
+	(void) k_mutex_unlock(&d12_mutex);
 }
 
-entelea_result_t entelea_platform_d12_lock_init(entelea_lock_t *lock)
+entelea_result_t
+entelea_platform_d12_lock_init(entelea_lock_t *lock)
 {
 	if (lock == NULL) {
 		return ENTELEA_E_PARAM;
@@ -34,14 +37,16 @@ entelea_result_t entelea_platform_d12_lock_init(entelea_lock_t *lock)
 	return ENTELEA_OK;
 }
 
-static entelea_result_t d12_wall_read(void *user, uint64_t *out)
+static entelea_result_t
+d12_wall_read(void *user, uint64_t *out)
 {
-	(void)user;
-	(void)out;
+	(void) user;
+	(void) out;
 	return ENTELEA_E_STATE;
 }
 
-entelea_result_t entelea_platform_d12_wallclock_init(entelea_wallclock_t *wall)
+entelea_result_t
+entelea_platform_d12_wallclock_init(entelea_wallclock_t *wall)
 {
 	if (wall == NULL) {
 		return ENTELEA_E_PARAM;

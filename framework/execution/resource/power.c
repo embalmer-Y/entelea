@@ -18,7 +18,8 @@ static uint32_t peak_ma;
 static uint32_t test_budget_ma; /* prod 不编译——prov 是唯一预算源 */
 #endif
 
-uint32_t entelea_power_budget_ma(void)
+uint32_t
+entelea_power_budget_ma(void)
 {
 #ifdef ENTELEA_TEST
 	if (test_budget_ma != 0) {
@@ -28,7 +29,8 @@ uint32_t entelea_power_budget_ma(void)
 	return entelea_prov()->power_budget_ma;
 }
 
-uint32_t entelea_power_used_ma(void)
+uint32_t
+entelea_power_used_ma(void)
 {
 	uint32_t sum = 0;
 
@@ -48,7 +50,8 @@ uint32_t entelea_power_used_ma(void)
 	return sum;
 }
 
-void entelea_power_snapshot(entelea_power_snapshot_t *out)
+void
+entelea_power_snapshot(entelea_power_snapshot_t *out)
 {
 	if (out == NULL) {
 		return;
@@ -66,14 +69,16 @@ void entelea_power_snapshot(entelea_power_snapshot_t *out)
 }
 
 /* SET 门：R04 受控供电要求 power:write 声明（实例 0——单预算面）。 */
-static entelea_result_t power_gate(entelea_principal_t ctx)
+static entelea_result_t
+power_gate(entelea_principal_t ctx)
 {
-	return entelea_perm_check(ctx, ENTELEA_PERM_POWER, ENTELEA_PERM_WRITE, 0);
+	return entelea_perm_check(ctx, ENTELEA_PERM_POWER, ENTELEA_PERM_WRITE,
+				  0);
 }
 
-entelea_result_t entelea_power_request(entelea_principal_t ctx,
-				       const char *safety_uid,
-				       entelea_out_value_t v)
+entelea_result_t
+entelea_power_request(entelea_principal_t ctx, const char *safety_uid,
+		      entelea_out_value_t v)
 {
 	if (safety_uid == NULL) {
 		return ENTELEA_E_PARAM;
@@ -107,12 +112,14 @@ entelea_result_t entelea_power_request(entelea_principal_t ctx,
 }
 
 #ifdef ENTELEA_TEST
-void entelea_power_test_set_budget(uint32_t budget_ma)
+void
+entelea_power_test_set_budget(uint32_t budget_ma)
 {
 	test_budget_ma = budget_ma;
 }
 
-void entelea_power_test_reset(void)
+void
+entelea_power_test_reset(void)
 {
 	test_budget_ma = 0;
 	peak_ma = 0;

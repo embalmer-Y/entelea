@@ -25,7 +25,8 @@ static uint32_t part_len[ENTELEA_PART_COUNT]; /* 物理占用（扇区取整） 
 static uint32_t logical_size[ENTELEA_PART_COUNT]; /* 挂载期冻结 */
 static uint32_t write_blk = 1;
 
-static uint32_t round_up(uint32_t v, uint32_t align)
+static uint32_t
+round_up(uint32_t v, uint32_t align)
 {
 	return (v + align - 1) / align * align;
 }
@@ -34,22 +35,23 @@ static uint32_t round_up(uint32_t v, uint32_t align)
  * ENTELEA_STORAGE_META_REC（512B）；物理上各占一个擦除扇区——
  * 否则超集擦除（副本 ping-pong 各自 erase_off）会波及同扇区另一
  * 副本（计划符合性板级批发现：两副本共扇区=一次擦除双杀）。 */
-static uint32_t phys_off(entelea_store_part_t part, uint32_t off)
+static uint32_t
+phys_off(entelea_store_part_t part, uint32_t off)
 {
-	if (part == ENTELEA_PART_META &&
-	    off >= ENTELEA_STORAGE_META_REC) {
+	if (part == ENTELEA_PART_META && off >= ENTELEA_STORAGE_META_REC) {
 		return SECTOR + (off - ENTELEA_STORAGE_META_REC);
 	}
 	return off;
 }
 
-static uint32_t f_size(entelea_store_part_t part)
+static uint32_t
+f_size(entelea_store_part_t part)
 {
 	return (part >= ENTELEA_PART_COUNT) ? 0 : logical_size[part];
 }
 
-static entelea_result_t bounds(entelea_store_part_t part, uint32_t off,
-			       uint32_t len)
+static entelea_result_t
+bounds(entelea_store_part_t part, uint32_t off, uint32_t len)
 {
 	uint32_t size = f_size(part);
 
@@ -59,14 +61,14 @@ static entelea_result_t bounds(entelea_store_part_t part, uint32_t off,
 	return ENTELEA_OK;
 }
 
-static entelea_result_t f_read(entelea_store_part_t part, uint32_t off,
-			       void *buf, uint32_t len);
+static entelea_result_t
+f_read(entelea_store_part_t part, uint32_t off, void *buf, uint32_t len);
 
 /* META 跨逻辑副本边界（review P2-1）：拆两段各自翻译——原实现只重
  * 映射起始偏移，跨 512 边界的读写会把 copy1 头落进物理垫片（读得
  * 0xFF/写静默丢）。 */
-static entelea_result_t f_read(entelea_store_part_t part, uint32_t off,
-			       void *buf, uint32_t len)
+static entelea_result_t
+f_read(entelea_store_part_t part, uint32_t off, void *buf, uint32_t len)
 {
 	entelea_result_t r = bounds(part, off, len);
 
@@ -82,7 +84,7 @@ static entelea_result_t f_read(entelea_store_part_t part, uint32_t off,
 			return r;
 		}
 		return f_read(part, ENTELEA_STORAGE_META_REC,
-			      (uint8_t *)buf + head, len - head);
+			      (uint8_t *) buf + head, len - head);
 	}
 	int rc = flash_area_read(fa, part_off[part] + phys_off(part, off), buf,
 				 len);
@@ -91,8 +93,8 @@ static entelea_result_t f_read(entelea_store_part_t part, uint32_t off,
 }
 
 /* 写块对齐垫片：头/尾不足一块的部分读-改-写（bounce）；主体直写。 */
-static entelea_result_t aligned_write(uint32_t addr, const uint8_t *src,
-				      uint32_t len)
+static entelea_result_t
+aligned_write(uint32_t addr, const uint8_t *src, uint32_t len)
 {
 	uint8_t bounce[BOUNCE_MAX];
 
@@ -106,11 +108,13 @@ static entelea_result_t aligned_write(uint32_t addr, const uint8_t *src,
 			if (span > len) {
 				span = len;
 			}
-			if (flash_area_read(fa, start, bounce, write_blk) != 0) {
+			if (flash_area_read(fa, start, bounce, write_blk) !=
+			    0) {
 				return ENTELEA_E_IO;
 			}
 			memcpy(bounce + head, src, span);
-			if (flash_area_write(fa, start, bounce, write_blk) != 0) {
+			if (flash_area_write(fa, start, bounce, write_blk) !=
+			    0) {
 				return ENTELEA_E_IO;
 			}
 			addr = start + write_blk;
@@ -130,11 +134,11 @@ static entelea_result_t aligned_write(uint32_t addr, const uint8_t *src,
 	return ENTELEA_OK;
 }
 
-static entelea_result_t f_write(entelea_store_part_t part, uint32_t off,
-				const void *buf, uint32_t len);
+static entelea_result_t
+f_write(entelea_store_part_t part, uint32_t off, const void *buf, uint32_t len);
 
-static entelea_result_t f_write(entelea_store_part_t part, uint32_t off,
-				const void *buf, uint32_t len)
+static entelea_result_t
+f_write(entelea_store_part_t part, uint32_t off, const void *buf, uint32_t len)
 {
 	entelea_result_t r = bounds(part, off, len);
 
@@ -153,12 +157,13 @@ static entelea_result_t f_write(entelea_store_part_t part, uint32_t off,
 			return r;
 		}
 		return f_write(part, ENTELEA_STORAGE_META_REC,
-			       (const uint8_t *)buf + head, len - head);
+			       (const uint8_t *) buf + head, len - head);
 	}
 	return aligned_write(part_off[part] + phys_off(part, off), buf, len);
 }
 
-static entelea_result_t f_erase(entelea_store_part_t part)
+static entelea_result_t
+f_erase(entelea_store_part_t part)
 {
 	if (part >= ENTELEA_PART_COUNT) {
 		return ENTELEA_E_PARAM;
@@ -169,8 +174,8 @@ static entelea_result_t f_erase(entelea_store_part_t part)
 	return rc == 0 ? ENTELEA_OK : ENTELEA_E_IO;
 }
 
-static entelea_result_t f_erase_off(entelea_store_part_t part, uint32_t off,
-				    uint32_t len)
+static entelea_result_t
+f_erase_off(entelea_store_part_t part, uint32_t off, uint32_t len)
 {
 	entelea_result_t r = bounds(part, off, len);
 
@@ -200,7 +205,8 @@ static const entelea_store_ops_t flash_ops = {
 	.size = f_size,
 };
 
-entelea_result_t entelea_platform_storage_mount_flash(void)
+entelea_result_t
+entelea_platform_storage_mount_flash(void)
 {
 	if (fa != NULL) {
 		return ENTELEA_OK; /* 幂等 */
@@ -224,8 +230,8 @@ entelea_result_t entelea_platform_storage_mount_flash(void)
 	uint32_t cursor = 0;
 
 	for (int p = 0; p < ENTELEA_PART_COUNT; p++) {
-		uint32_t logical = entelea_storage_part_size(
-			(entelea_store_part_t)p);
+		uint32_t logical =
+			entelea_storage_part_size((entelea_store_part_t) p);
 
 		if (logical == 0) {
 			flash_area_close(fa);

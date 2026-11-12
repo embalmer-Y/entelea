@@ -15,20 +15,24 @@
 
 static struct k_mutex commit_lock = Z_MUTEX_INITIALIZER(commit_lock);
 
-void entelea_safety_write_lock(void)
+void
+entelea_safety_write_lock(void)
 {
 	__ASSERT(!k_is_in_isr(), "write lock is thread-only");
-	(void)k_mutex_lock(&commit_lock, K_FOREVER);
+	(void) k_mutex_lock(&commit_lock, K_FOREVER);
 }
 
-void entelea_safety_write_unlock(void)
+void
+entelea_safety_write_unlock(void)
 {
-	(void)k_mutex_unlock(&commit_lock);
+	(void) k_mutex_unlock(&commit_lock);
 }
 
-static entelea_result_t commit_impl(const char *uid, entelea_out_value_t v);
+static entelea_result_t
+commit_impl(const char *uid, entelea_out_value_t v);
 
-entelea_result_t entelea_safety_commit(const char *uid, entelea_out_value_t v)
+entelea_result_t
+entelea_safety_commit(const char *uid, entelea_out_value_t v)
 {
 	if (k_is_in_isr()) {
 		return ENTELEA_E_PERM; /* [thread] API（ISR 禁入） */
@@ -39,8 +43,9 @@ entelea_result_t entelea_safety_commit(const char *uid, entelea_out_value_t v)
 	return r;
 }
 
-entelea_result_t entelea_safety_commit_locked(const char *uid,
-		entelea_out_value_t v, struct entelea_safety_pend *pend)
+entelea_result_t
+entelea_safety_commit_locked(const char *uid, entelea_out_value_t v,
+			     struct entelea_safety_pend *pend)
 {
 	/* 调用方已持 write_lock（R04 预算检查-提交原子化路径）；
 	 * R02 无持久化载荷，pend 仅保持合同形状。 */
@@ -49,23 +54,26 @@ entelea_result_t entelea_safety_commit_locked(const char *uid,
 }
 
 /* 内核：一切早退路径经外层统一落审计（异常类）。 */
-static entelea_result_t commit_impl(const char *uid, entelea_out_value_t v);
+static entelea_result_t
+commit_impl(const char *uid, entelea_out_value_t v);
 
 /* 压制门控（R04）：本地席位激活期拒绝远程编排写（身份级拒绝，
  * 先于通道态语义；审计留痕）。 */
-static entelea_result_t commit_src_gate(entelea_commit_src_t src)
+static entelea_result_t
+commit_src_gate(entelea_commit_src_t src)
 {
 	if (src == ENTELEA_SRC_REMOTE &&
-	    (entelea_arb_owner_t)atomic_get(&entelea_arb_owner) == ENTELEA_ARB_LOCAL) {
+	    (entelea_arb_owner_t) atomic_get(&entelea_arb_owner) ==
+		    ENTELEA_ARB_LOCAL) {
 		return ENTELEA_E_STATE;
 	}
 	return ENTELEA_OK;
 }
 
-static entelea_result_t commit_run(int i, entelea_ch_kind_t kind,
-				   entelea_out_value_t v)
+static entelea_result_t
+commit_run(int i, entelea_ch_kind_t kind, entelea_out_value_t v)
 {
-	(void)kind; /* 审计面裁剪（R03）；R04 commit_src 经 wrapper 传参 */
+	(void) kind; /* 审计面裁剪（R03）；R04 commit_src 经 wrapper 传参 */
 	struct entelea_ch_slot *s = &entelea_ch_table[i];
 	const entelea_out_channel_t *ch = s->desc;
 
@@ -111,16 +119,21 @@ static entelea_result_t commit_run(int i, entelea_ch_kind_t kind,
 				return ENTELEA_E_STATE; /* 时基异常：不伪造界 */
 			}
 			uint64_t dt = now - s->last_t;
-			uint64_t bound64 = (uint64_t)ch->limits.slew_per_ms * dt;
-			uint32_t bound = bound64 > 0xFFFFFFFFU ? 0xFFFFFFFFU
-							       : (uint32_t)bound64;
-			uint32_t last_u = entelea_value_encode(ch->kind, s->shadow);
+			uint64_t bound64 =
+				(uint64_t) ch->limits.slew_per_ms * dt;
+			uint32_t bound = bound64 > 0xFFFFFFFFU ?
+						 0xFFFFFFFFU :
+						 (uint32_t) bound64;
+			uint32_t last_u =
+				entelea_value_encode(ch->kind, s->shadow);
 			uint32_t req_u = entelea_value_encode(ch->kind, v);
 
-			if (req_u > last_u && (uint64_t)(req_u - last_u) > bound) {
+			if (req_u > last_u &&
+			    (uint64_t) (req_u - last_u) > bound) {
 				v.u = last_u + bound;
 				res = ENTELEA_E_RANGE;
-			} else if (req_u < last_u && (uint64_t)(last_u - req_u) > bound) {
+			} else if (req_u < last_u &&
+				   (uint64_t) (last_u - req_u) > bound) {
 				v.u = last_u - bound;
 				res = ENTELEA_E_RANGE;
 			}
@@ -154,18 +167,18 @@ static entelea_result_t commit_run(int i, entelea_ch_kind_t kind,
 	irq_unlock(key);
 	if (!written) {
 		entelea_safety_count_write_failure();
-		res = (atomic_get(&entelea_forced) != 0) ? ENTELEA_E_STATE
-							 : ENTELEA_E_IO;
+		res = (atomic_get(&entelea_forced) != 0) ? ENTELEA_E_STATE :
+							   ENTELEA_E_IO;
 	}
 	return res;
 }
 
 /* 外层：查表 + 异常审计（含 E_NOTFOUND/安全态/时钟门等全部早退）。 */
-entelea_result_t entelea_safety_commit_src(const char *uid,
-					   entelea_out_value_t v,
-					   entelea_commit_src_t src)
+entelea_result_t
+entelea_safety_commit_src(const char *uid, entelea_out_value_t v,
+			  entelea_commit_src_t src)
 {
-	if ((int)src < 0 || src > ENTELEA_SRC_LOCAL) {
+	if ((int) src < 0 || src > ENTELEA_SRC_LOCAL) {
 		return ENTELEA_E_PARAM;
 	}
 	if (k_is_in_isr()) {
@@ -178,8 +191,9 @@ entelea_result_t entelea_safety_commit_src(const char *uid,
 		if (i >= 0) {
 			const entelea_storage_audit_entry_t e = {
 				.t_ms = entelea_safety_now_ms(),
-				.ch_idx = (uint16_t)i,
-				.kind = (uint8_t)entelea_ch_table[i].desc->kind,
+				.ch_idx = (uint16_t) i,
+				.kind = (uint8_t) entelea_ch_table[i]
+						.desc->kind,
 				.res = ENTELEA_E_STATE,
 				.value_u = entelea_value_encode(
 					entelea_ch_table[i].desc->kind, v),
@@ -198,7 +212,8 @@ entelea_result_t entelea_safety_commit_src(const char *uid,
 	return r;
 }
 
-static entelea_result_t commit_impl(const char *uid, entelea_out_value_t v)
+static entelea_result_t
+commit_impl(const char *uid, entelea_out_value_t v)
 {
 	int i = entelea_ch_find(uid);
 
@@ -211,8 +226,8 @@ static entelea_result_t commit_impl(const char *uid, entelea_out_value_t v)
 	if (res != ENTELEA_OK) {
 		const entelea_storage_audit_entry_t e = {
 			.t_ms = entelea_safety_now_ms(),
-			.ch_idx = (uint16_t)i,
-			.kind = (uint8_t)kind,
+			.ch_idx = (uint16_t) i,
+			.kind = (uint8_t) kind,
 			.res = res,
 			.value_u = entelea_value_encode(kind, v),
 		};
@@ -222,7 +237,8 @@ static entelea_result_t commit_impl(const char *uid, entelea_out_value_t v)
 	return res;
 }
 
-entelea_result_t entelea_safety_readback(const char *uid, entelea_out_value_t *out)
+entelea_result_t
+entelea_safety_readback(const char *uid, entelea_out_value_t *out)
 {
 	if (out == NULL) {
 		return ENTELEA_E_PARAM;

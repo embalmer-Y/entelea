@@ -17,13 +17,15 @@ static entelea_perm_table_t privileged;
 static entelea_result_t reader_result, bind_result;
 static bool check_msg;
 
-entelea_result_t entelea_evt_publish_copy(const entelea_event_t *evt)
+entelea_result_t
+entelea_evt_publish_copy(const entelea_event_t *evt)
 {
-	(void)evt;
+	(void) evt;
 	return ENTELEA_OK;
 }
 
-static void require(bool condition, const char *message)
+static void
+require(bool condition, const char *message)
 {
 	if (!condition) {
 		fprintf(stderr, "FAIL: %s\n", message);
@@ -31,7 +33,8 @@ static void require(bool condition, const char *message)
 	}
 }
 
-static void wait_for(sem_t *sem)
+static void
+wait_for(sem_t *sem)
 {
 	int r;
 
@@ -41,15 +44,17 @@ static void wait_for(sem_t *sem)
 	require(r == 0, "sem_wait");
 }
 
-static void after_resolve(void)
+static void
+after_resolve(void)
 {
 	require(sem_post(&resolved) == 0, "signal resolved");
 	wait_for(&release_reader);
 }
 
-static void *reader(void *unused)
+static void *
+reader(void *unused)
 {
-	(void)unused;
+	(void) unused;
 	if (check_msg) {
 		reader_result = entelea_perm_check_msg(original, "target.one");
 	} else {
@@ -59,9 +64,10 @@ static void *reader(void *unused)
 	return NULL;
 }
 
-static void *writer(void *unused)
+static void *
+writer(void *unused)
 {
-	(void)unused;
+	(void) unused;
 	require(sem_post(&writer_started) == 0, "signal writer started");
 	entelea_principal_unbind(&live);
 	bind_result = entelea_principal_bind(&replacement, 11, &privileged);
@@ -69,7 +75,8 @@ static void *writer(void *unused)
 	return NULL;
 }
 
-static void run_interleaving(bool msg)
+static void
+run_interleaving(bool msg)
 {
 	pthread_t reader_thread, writer_thread;
 	entelea_perm_table_t empty;
@@ -82,21 +89,26 @@ static void run_interleaving(bool msg)
 	entelea_perm_table_init(&privileged);
 	require(entelea_perm_parse("power:write:0", &privileged) == ENTELEA_OK,
 		"parse power grant");
-	require(entelea_perm_parse("msg:send:target.one", &privileged) == ENTELEA_OK,
+	require(entelea_perm_parse("msg:send:target.one", &privileged) ==
+			ENTELEA_OK,
 		"parse message grant");
 	require(entelea_principal_bind(&live, 11, &empty) == ENTELEA_OK,
 		"bind original principal");
 	original = live;
 	require(sem_init(&resolved, 0, 0) == 0 &&
-		sem_init(&release_reader, 0, 0) == 0 &&
-		sem_init(&writer_started, 0, 0) == 0 &&
-		sem_init(&writer_done, 0, 0) == 0, "init semaphores");
+			sem_init(&release_reader, 0, 0) == 0 &&
+			sem_init(&writer_started, 0, 0) == 0 &&
+			sem_init(&writer_done, 0, 0) == 0,
+		"init semaphores");
 	entelea_perm_test_after_resolve(after_resolve);
-	require(pthread_create(&reader_thread, NULL, reader, NULL) == 0, "start reader");
+	require(pthread_create(&reader_thread, NULL, reader, NULL) == 0,
+		"start reader");
 	wait_for(&resolved);
-	require(pthread_create(&writer_thread, NULL, writer, NULL) == 0, "start writer");
+	require(pthread_create(&writer_thread, NULL, writer, NULL) == 0,
+		"start writer");
 	wait_for(&writer_started);
-	require(clock_gettime(CLOCK_REALTIME, &deadline) == 0, "read deadline clock");
+	require(clock_gettime(CLOCK_REALTIME, &deadline) == 0,
+		"read deadline clock");
 	deadline.tv_sec++;
 	do {
 		wait_result = sem_timedwait(&writer_done, &deadline);
@@ -107,7 +119,8 @@ static void run_interleaving(bool msg)
 		"wait for writer");
 	require(sem_post(&release_reader) == 0, "release reader");
 	require(pthread_join(reader_thread, NULL) == 0 &&
-		pthread_join(writer_thread, NULL) == 0, "join workers");
+			pthread_join(writer_thread, NULL) == 0,
+		"join workers");
 	entelea_perm_test_after_resolve(NULL);
 	require(bind_result == ENTELEA_OK, "bind replacement principal");
 	require(reader_result == ENTELEA_E_PERM,
@@ -122,29 +135,33 @@ static void run_interleaving(bool msg)
 				   ENTELEA_PERM_WRITE, 0) == ENTELEA_OK,
 		"replacement principal remains valid");
 	entelea_principal_unbind(&replacement);
-	require(sem_destroy(&resolved) == 0 && sem_destroy(&release_reader) == 0 &&
-		sem_destroy(&writer_started) == 0 && sem_destroy(&writer_done) == 0,
+	require(sem_destroy(&resolved) == 0 &&
+			sem_destroy(&release_reader) == 0 &&
+			sem_destroy(&writer_started) == 0 &&
+			sem_destroy(&writer_done) == 0,
 		"destroy semaphores");
 }
 
-static int run_native_guess_probe(void)
+static int
+run_native_guess_probe(void)
 {
 	entelea_perm_table_t table;
 	entelea_principal_t actual;
-	const entelea_principal_t guessed = {
-		._handle = 1, ._gen = 1, .app_id = 42
-	};
+	const entelea_principal_t guessed = { ._handle = 1,
+					      ._gen = 1,
+					      .app_id = 42 };
 
 	entelea_perm_table_init(&table);
 	require(entelea_perm_parse("gpio:read:0", &table) == ENTELEA_OK,
 		"parse test grant");
 	require(entelea_principal_bind(&actual, 42, &table) == ENTELEA_OK,
 		"bind test principal");
-	entelea_result_t result = entelea_perm_check(
-		guessed, ENTELEA_PERM_GPIO, ENTELEA_PERM_READ, 0);
+	entelea_result_t result = entelea_perm_check(guessed, ENTELEA_PERM_GPIO,
+						     ENTELEA_PERM_READ, 0);
 
 	if (result == ENTELEA_OK) {
-		fprintf(stderr, "FAIL: guessed same-address native principal accepted\n");
+		fprintf(stderr, "FAIL: guessed same-address native principal "
+				"accepted\n");
 		return 1;
 	}
 	require(result == ENTELEA_E_PERM, "unexpected native guess result");
@@ -152,7 +169,8 @@ static int run_native_guess_probe(void)
 	return 0;
 }
 
-int main(int argc, char **argv)
+int
+main(int argc, char **argv)
 {
 	if (argc == 1) {
 		run_interleaving(false);
@@ -162,7 +180,8 @@ int main(int argc, char **argv)
 	} else if (argc == 2 && strcmp(argv[1], "native-guess") == 0) {
 		return run_native_guess_probe();
 	} else {
-		fprintf(stderr, "usage: principal-concurrency [msg|native-guess]\n");
+		fprintf(stderr,
+			"usage: principal-concurrency [msg|native-guess]\n");
 		return 2;
 	}
 	puts("principal concurrency: PASS");

@@ -5,7 +5,8 @@
 #include <entelea/media.h>
 #include <entelea/principal.h>
 
-static void *media_setup(void)
+static void *
+media_setup(void)
 {
 	entelea_media_test_reset();
 	entelea_perm_test_reset();
@@ -13,10 +14,11 @@ static void *media_setup(void)
 }
 
 /* 假后端按类绑定：user=类号（fake 内部按类独立状态）。 */
-static entelea_result_t bind_fake(entelea_media_class_t cls)
+static entelea_result_t
+bind_fake(entelea_media_class_t cls)
 {
 	return entelea_media_bind(cls, entelea_media_fake_backend,
-				  (void *)(uintptr_t)cls);
+				  (void *) (uintptr_t) cls);
 }
 
 ZTEST(framework_media, test_lifecycle_and_permission_gate)
@@ -28,9 +30,9 @@ ZTEST(framework_media, test_lifecycle_and_permission_gate)
 
 	/* 未绑定=UNINIT；未绑定类状态=IDLE（不伪装可用）。 */
 	zassert_equal(
-		entelea_media_capture_start(ENTELEA_MEDIA_PCM,
-					    (entelea_principal_t){._handle = 0,
-								  .app_id = 0}),
+		entelea_media_capture_start(
+			ENTELEA_MEDIA_PCM,
+			(entelea_principal_t) { ._handle = 0, .app_id = 0 }),
 		ENTELEA_E_UNINIT);
 	zassert_equal(entelea_media_poll(ENTELEA_MEDIA_PCM, &f),
 		      ENTELEA_E_UNINIT);
@@ -58,7 +60,7 @@ ZTEST(framework_media, test_lifecycle_and_permission_gate)
 	entelea_principal_t ok_ctx;
 
 	zassert_equal(entelea_principal_bind(&ok_ctx, 1, &t), ENTELEA_OK);
-	static const uint8_t pat[4] = {0xDE, 0xAD, 0xBE, 0xEF};
+	static const uint8_t pat[4] = { 0xDE, 0xAD, 0xBE, 0xEF };
 
 	entelea_media_fake_set_frames(ENTELEA_MEDIA_PCM, pat, 4, 2);
 	zassert_equal(entelea_media_capture_start(ENTELEA_MEDIA_PCM, ok_ctx),
@@ -96,7 +98,7 @@ ZTEST(framework_media, test_backend_failure_explicit)
 {
 	entelea_media_test_reset();
 	entelea_perm_test_reset();
-	static const uint8_t pat[2] = {1, 2};
+	static const uint8_t pat[2] = { 1, 2 };
 
 	zassert_equal(bind_fake(ENTELEA_MEDIA_PCM), ENTELEA_OK);
 	entelea_perm_table_t t;
@@ -141,9 +143,8 @@ ZTEST(framework_media, test_backend_failure_explicit)
 	broken.poll = NULL;
 	zassert_equal(entelea_media_bind(ENTELEA_MEDIA_PCM, broken, NULL),
 		      ENTELEA_E_PARAM);
-	zassert_not_equal(
-		entelea_media_capture_start(ENTELEA_MEDIA_PCM, ctx),
-		ENTELEA_E_UNINIT, "坏绑定不改既有绑定");
+	zassert_not_equal(entelea_media_capture_start(ENTELEA_MEDIA_PCM, ctx),
+			  ENTELEA_E_UNINIT, "坏绑定不改既有绑定");
 	zassert_equal(entelea_media_bind(ENTELEA_MEDIA_CLASS_COUNT,
 					 entelea_media_fake_backend, NULL),
 		      ENTELEA_E_PARAM, "类外拒");
@@ -155,8 +156,8 @@ ZTEST(framework_media, test_class_independence)
 {
 	entelea_media_test_reset();
 	entelea_perm_test_reset();
-	static const uint8_t img[2] = {0xAA, 0x01};
-	static const uint8_t pcm[2] = {0xBB, 0x02};
+	static const uint8_t img[2] = { 0xAA, 0x01 };
+	static const uint8_t pcm[2] = { 0xBB, 0x02 };
 
 	zassert_equal(bind_fake(ENTELEA_MEDIA_IMAGE), ENTELEA_OK);
 	zassert_equal(bind_fake(ENTELEA_MEDIA_PCM), ENTELEA_OK);
@@ -193,7 +194,7 @@ ZTEST(framework_media, test_class_independence)
 		      "IMAGE 计数未被 PCM 启动改变");
 
 	/* 重绑 IMAGE（替换）不影响进行中的 PCM。 */
-	static const uint8_t img2[2] = {0xCC, 0x03};
+	static const uint8_t img2[2] = { 0xCC, 0x03 };
 
 	zassert_equal(bind_fake(ENTELEA_MEDIA_IMAGE), ENTELEA_OK);
 	zassert_equal(entelea_media_state(ENTELEA_MEDIA_PCM),
@@ -225,22 +226,22 @@ ZTEST(framework_media, test_rebind_rejected_until_capture_stopped)
 	zassert_equal(bind_fake(ENTELEA_MEDIA_IMAGE), ENTELEA_OK);
 	zassert_equal(entelea_media_capture_start(ENTELEA_MEDIA_PCM, ctx),
 		      ENTELEA_OK);
-	zassert_equal(
-		entelea_media_bind(ENTELEA_MEDIA_PCM, entelea_media_fake_backend,
-				   (void *)(uintptr_t)ENTELEA_MEDIA_IMAGE),
-		ENTELEA_E_BUSY, "采集中的原后端不能被替换");
+	zassert_equal(entelea_media_bind(
+			      ENTELEA_MEDIA_PCM, entelea_media_fake_backend,
+			      (void *) (uintptr_t) ENTELEA_MEDIA_IMAGE),
+		      ENTELEA_E_BUSY, "采集中的原后端不能被替换");
 	zassert_equal(entelea_media_state(ENTELEA_MEDIA_PCM),
 		      ENTELEA_MEDIA_CAPTURING);
 	zassert_equal(bind_fake(ENTELEA_MEDIA_IMAGE), ENTELEA_OK,
 		      "其他类别不受影响");
 	entelea_media_capture_stop(ENTELEA_MEDIA_PCM);
 	zassert_equal(entelea_media_fake_backend.state(
-			      (void *)(uintptr_t)ENTELEA_MEDIA_PCM),
+			      (void *) (uintptr_t) ENTELEA_MEDIA_PCM),
 		      ENTELEA_MEDIA_IDLE, "原后端仍可停止");
-	zassert_equal(
-		entelea_media_bind(ENTELEA_MEDIA_PCM, entelea_media_fake_backend,
-				   (void *)(uintptr_t)ENTELEA_MEDIA_IMAGE),
-		ENTELEA_OK, "停止后可重绑");
+	zassert_equal(entelea_media_bind(
+			      ENTELEA_MEDIA_PCM, entelea_media_fake_backend,
+			      (void *) (uintptr_t) ENTELEA_MEDIA_IMAGE),
+		      ENTELEA_OK, "停止后可重绑");
 
 	zassert_equal(bind_fake(ENTELEA_MEDIA_PCM), ENTELEA_OK);
 	zassert_equal(entelea_media_capture_start(ENTELEA_MEDIA_PCM, ctx),
@@ -248,16 +249,17 @@ ZTEST(framework_media, test_rebind_rejected_until_capture_stopped)
 	entelea_media_fake_fail_next(ENTELEA_MEDIA_PCM);
 	entelea_media_frame_t frame;
 
-	zassert_equal(entelea_media_poll(ENTELEA_MEDIA_PCM, &frame), ENTELEA_E_IO);
-	zassert_equal(
-		entelea_media_bind(ENTELEA_MEDIA_PCM, entelea_media_fake_backend,
-				   (void *)(uintptr_t)ENTELEA_MEDIA_IMAGE),
-		ENTELEA_E_BUSY, "失败态的后端须先显式停止");
+	zassert_equal(entelea_media_poll(ENTELEA_MEDIA_PCM, &frame),
+		      ENTELEA_E_IO);
+	zassert_equal(entelea_media_bind(
+			      ENTELEA_MEDIA_PCM, entelea_media_fake_backend,
+			      (void *) (uintptr_t) ENTELEA_MEDIA_IMAGE),
+		      ENTELEA_E_BUSY, "失败态的后端须先显式停止");
 	entelea_media_capture_stop(ENTELEA_MEDIA_PCM);
-	zassert_equal(
-		entelea_media_bind(ENTELEA_MEDIA_PCM, entelea_media_fake_backend,
-				   (void *)(uintptr_t)ENTELEA_MEDIA_IMAGE),
-		ENTELEA_OK);
+	zassert_equal(entelea_media_bind(
+			      ENTELEA_MEDIA_PCM, entelea_media_fake_backend,
+			      (void *) (uintptr_t) ENTELEA_MEDIA_IMAGE),
+		      ENTELEA_OK);
 }
 
 ZTEST_SUITE(framework_media, NULL, media_setup, NULL, NULL, NULL);

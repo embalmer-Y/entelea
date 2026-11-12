@@ -5,7 +5,8 @@
 #include <string.h>
 #include <entelea/config_matrix.h>
 
-bool entelea_config_valid(const entelea_config_t *c)
+bool
+entelea_config_valid(const entelea_config_t *c)
 {
 	if (c == NULL) {
 		return false;
@@ -21,7 +22,8 @@ bool entelea_config_valid(const entelea_config_t *c)
 	return true;
 }
 
-const char *entelea_config_name(const entelea_config_t *c)
+const char *
+entelea_config_name(const entelea_config_t *c)
 {
 	if (c == NULL) {
 		return "?";

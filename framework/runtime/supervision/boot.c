@@ -13,13 +13,14 @@
 #include <entelea/supervision.h>
 #include <zephyr/kernel.h>
 
-void entelea_supervision_boot(const entelea_boot_step_t *steps, size_t count)
+void
+entelea_supervision_boot(const entelea_boot_step_t *steps, size_t count)
 {
 	for (size_t i = 0; i < count; i++) {
 		entelea_result_t res = steps[i].fn();
 		/* 每步完成后发布 BOOT_STEP（含失败步的 result）——重放观测点。 */
 		const entelea_boot_step_evt_t payload = {
-			.idx = (uint8_t)i,
+			.idx = (uint8_t) i,
 			.result = res,
 			.name = steps[i].name,
 		};
@@ -33,7 +34,8 @@ void entelea_supervision_boot(const entelea_boot_step_t *steps, size_t count)
 		if (res != ENTELEA_OK) {
 			/* 任一步失败 → 全系统 fail-safe，不得半启动。
 			 * 受控停机：停喂硬 WDT → 兜底复位（noinit 留痕归 R03）。 */
-			entelea_safety_system_fail(ENTELEA_FAIL_BOOT((uint32_t)i));
+			entelea_safety_system_fail(
+				ENTELEA_FAIL_BOOT((uint32_t) i));
 			for (;;) {
 				k_sleep(K_FOREVER);
 			}

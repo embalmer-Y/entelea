@@ -18,11 +18,13 @@
 #include <entelea/storage.h>
 #include "internal.h"
 
-struct entelea_ch_slot entelea_ch_table[ENTELEA_SAFETY_MAX_CHANNELS]; /* 容量 32（DEC-27） */
+struct entelea_ch_slot
+	entelea_ch_table[ENTELEA_SAFETY_MAX_CHANNELS]; /* 容量 32（DEC-27） */
 size_t entelea_ch_count;
 
 atomic_t entelea_link_up = ATOMIC_INIT(0); /* 初值 down：boot 后链路未确立 */
-atomic_t entelea_arb_owner = ATOMIC_INIT(ENTELEA_ARB_REMOTE); /* 缺省远程（本地席位空缺） */
+atomic_t entelea_arb_owner =
+	ATOMIC_INIT(ENTELEA_ARB_REMOTE); /* 缺省远程（本地席位空缺） */
 atomic_t entelea_forced = ATOMIC_INIT(0);
 atomic_t entelea_forced_at = ATOMIC_INIT(0);
 const entelea_clock_t *entelea_safety_clock;
@@ -41,7 +43,8 @@ static uint32_t driver_write_failures;
  * 并发（二轮 review 缺陷 5）：commit/迁移（线程）与
  * force_all_fault/estop 补发（ISR）并发访问簿记；32 位目标 u64 可撕裂，
  * 比较/更新/计数入 irq_lock 微临界区（ISR 可嵌套）。 */
-bool entelea_safety_now_ms_checked(uint64_t *out)
+bool
+entelea_safety_now_ms_checked(uint64_t *out)
 {
 	uint64_t ms = 0;
 	unsigned int key = irq_lock();
@@ -51,7 +54,8 @@ bool entelea_safety_now_ms_checked(uint64_t *out)
 	 * 计故障并保守沿用最后有效值（slew 门据此拒绝）。 */
 	bool ok = entelea_safety_clock != NULL &&
 		  entelea_safety_clock->read_ms != NULL &&
-		  entelea_safety_clock->read_ms(entelea_safety_clock->user, &ms) == ENTELEA_OK;
+		  entelea_safety_clock->read_ms(entelea_safety_clock->user,
+						&ms) == ENTELEA_OK;
 
 	if (!ok || ms < clock_last_good) {
 		clock_fault_count++;
@@ -65,20 +69,23 @@ bool entelea_safety_now_ms_checked(uint64_t *out)
 	return ok;
 }
 
-uint64_t entelea_safety_now_ms(void)
+uint64_t
+entelea_safety_now_ms(void)
 {
 	uint64_t v;
 
-	(void)entelea_safety_now_ms_checked(&v);
+	(void) entelea_safety_now_ms_checked(&v);
 	return v;
 }
 
-uint32_t entelea_safety_clock_faults(void)
+uint32_t
+entelea_safety_clock_faults(void)
 {
 	return clock_fault_count;
 }
 
-uint32_t entelea_safety_force_write_failures(void)
+uint32_t
+entelea_safety_force_write_failures(void)
 {
 	return driver_write_failures;
 }
@@ -89,34 +96,38 @@ uint32_t entelea_safety_force_write_failures(void)
 static uint32_t audit_last_persist_ms;
 static uint32_t audit_throttled_count;
 
-uint32_t entelea_safety_audit_throttled(void)
+uint32_t
+entelea_safety_audit_throttled(void)
 {
 	return audit_throttled_count;
 }
 
-void entelea_safety_audit_persist(const void *entry, uint16_t evt)
+void
+entelea_safety_audit_persist(const void *entry, uint16_t evt)
 {
 	const entelea_storage_audit_entry_t *e = entry;
-	uint32_t now = (uint32_t)entelea_safety_now_ms();
+	uint32_t now = (uint32_t) entelea_safety_now_ms();
 
 	if (audit_last_persist_ms != 0 &&
-	    (uint32_t)(now - audit_last_persist_ms) < ENTELEA_SAFETY_AUDIT_MIN_MS) {
+	    (uint32_t) (now - audit_last_persist_ms) <
+		    ENTELEA_SAFETY_AUDIT_MIN_MS) {
 		audit_throttled_count++;
 		return;
 	}
 	audit_last_persist_ms = now;
 	/* 失败不反噬提交路径（观测面降级——内存/读面另行可观）。 */
-	(void)entelea_storage_audit_append(e, evt);
+	(void) entelea_storage_audit_append(e, evt);
 }
 
 /** 模块内调用点（commit/force 路径）登记驱动写失败。 */
-void entelea_safety_count_write_failure(void)
+void
+entelea_safety_count_write_failure(void)
 {
 	driver_write_failures++;
 }
 
-static bool value_within_limits(const entelea_out_channel_t *ch,
-		entelea_out_value_t v)
+static bool
+value_within_limits(const entelea_out_channel_t *ch, entelea_out_value_t v)
 {
 	switch (ch->kind) {
 	case ENTELEA_CH_GPIO:
@@ -133,10 +144,11 @@ static bool value_within_limits(const entelea_out_channel_t *ch,
 	}
 }
 
-entelea_result_t entelea_safety_register_channel(const entelea_out_channel_t *ch)
+entelea_result_t
+entelea_safety_register_channel(const entelea_out_channel_t *ch)
 {
 	if (ch == NULL || ch->uid == NULL || ch->uid[0] == '\0' ||
-	    (int)ch->kind < 0 || ch->kind >= ENTELEA_CH_KIND_COUNT) {
+	    (int) ch->kind < 0 || ch->kind >= ENTELEA_CH_KIND_COUNT) {
 		return ENTELEA_E_PARAM;
 	}
 	if (entelea_ch_find(ch->uid) >= 0) {
@@ -164,7 +176,8 @@ entelea_result_t entelea_safety_register_channel(const entelea_out_channel_t *ch
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_safety_bind_clock(const entelea_clock_t *clock)
+entelea_result_t
+entelea_safety_bind_clock(const entelea_clock_t *clock)
 {
 	if (clock == NULL) {
 		entelea_safety_clock = NULL; /* 测试隔离恢复 */
@@ -179,12 +192,13 @@ entelea_result_t entelea_safety_bind_clock(const entelea_clock_t *clock)
 
 /* 发布运行订阅者回调：只能在临界区外、且复查未 forced 时调用
  * （forced 窗口内不发布过期迁移事件）。 */
-static void publish_state_change(size_t i, entelea_ch_state_t next)
+static void
+publish_state_change(size_t i, entelea_ch_state_t next)
 {
 	const struct entelea_ch_slot *s = &entelea_ch_table[i];
 	const entelea_safe_state_evt_t payload = {
 		.uid = s->desc->uid,
-		.new_state = (int32_t)next,
+		.new_state = (int32_t) next,
 	};
 	const entelea_event_t evt = {
 		.id = ENTELEA_EVT_SAFE_STATE_CHANGED,
@@ -200,8 +214,9 @@ static void publish_state_change(size_t i, entelea_ch_state_t next)
  * A2（owner 2026-11-08 定案）：安全态写失败 = 物理效果未知 → 通道进
  * SAFE_FAULT（撤销输出资格，后续 commit 拒绝；recover 显式恢复）。
  * 影子保留最后确认值（不伪称安全值已落驱）；恢复须 recover 重新写。 */
-static int write_transition_locked(struct entelea_ch_slot *s,
-		entelea_out_value_t value, entelea_ch_state_t next)
+static int
+write_transition_locked(struct entelea_ch_slot *s, entelea_out_value_t value,
+			entelea_ch_state_t next)
 {
 	if (atomic_get(&entelea_forced) != 0) {
 		return 1;
@@ -209,7 +224,8 @@ static int write_transition_locked(struct entelea_ch_slot *s,
 	if (entelea_drivers[s->desc->kind].write(s->desc, &value) != 0) {
 		driver_write_failures++;
 		s->state = ENTELEA_ST_SAFE_FAULT;
-		s->fault_by_write_failure = true; /* 仅 channel_recover 可恢复 */
+		s->fault_by_write_failure =
+			true; /* 仅 channel_recover 可恢复 */
 		/* 基线保留：失败=无确认写，锚点仍是最后一次确认值+时刻。 */
 		return -1;
 	}
@@ -226,7 +242,8 @@ static int write_transition_locked(struct entelea_ch_slot *s,
 
 /** 仅状态迁移（激活面：不落驱动——恢复不回写，DR-04），须持 irq_lock。
  * 基线不动（激活无物理写，最后确认值仍有效）。返回 0=完成；1=forced。 */
-static int activate_locked(struct entelea_ch_slot *s)
+static int
+activate_locked(struct entelea_ch_slot *s)
 {
 	if (atomic_get(&entelea_forced) != 0) {
 		return 1;
@@ -235,7 +252,8 @@ static int activate_locked(struct entelea_ch_slot *s)
 	return 0;
 }
 
-entelea_result_t entelea_safety_poweron_init(void)
+entelea_result_t
+entelea_safety_poweron_init(void)
 {
 	bool any_fail = false;
 
@@ -258,7 +276,8 @@ entelea_result_t entelea_safety_poweron_init(void)
 	return any_fail ? ENTELEA_E_IO : ENTELEA_OK;
 }
 
-entelea_result_t entelea_safety_set_link(bool up)
+entelea_result_t
+entelea_safety_set_link(bool up)
 {
 	bool any_fail = false;
 
@@ -281,14 +300,16 @@ entelea_result_t entelea_safety_set_link(bool up)
 		} else if (!up && s->state == ENTELEA_ST_ACTIVE) {
 			/* 断链：声明值落驱动 + 迁移，全部在临界区内（缺陷 3）。 */
 			unsigned int key = irq_lock();
-			int rc = write_transition_locked(s, s->desc->linkloss,
-							 ENTELEA_ST_SAFE_LINKLOSS);
+			int rc = write_transition_locked(
+				s, s->desc->linkloss, ENTELEA_ST_SAFE_LINKLOSS);
 
 			irq_unlock(key);
 			if (rc < 0) {
 				any_fail = true;
-			} else if (rc == 0 && atomic_get(&entelea_forced) == 0) {
-				publish_state_change(i, ENTELEA_ST_SAFE_LINKLOSS);
+			} else if (rc == 0 &&
+				   atomic_get(&entelea_forced) == 0) {
+				publish_state_change(i,
+						     ENTELEA_ST_SAFE_LINKLOSS);
 			}
 		}
 	}
@@ -296,7 +317,8 @@ entelea_result_t entelea_safety_set_link(bool up)
 	return any_fail ? ENTELEA_E_IO : ENTELEA_OK;
 }
 
-entelea_result_t entelea_safety_set_arb(entelea_arb_owner_t owner)
+entelea_result_t
+entelea_safety_set_arb(entelea_arb_owner_t owner)
 {
 	if (owner != ENTELEA_ARB_REMOTE && owner != ENTELEA_ARB_LOCAL) {
 		return ENTELEA_E_PARAM;
@@ -304,7 +326,8 @@ entelea_result_t entelea_safety_set_arb(entelea_arb_owner_t owner)
 	if (k_is_in_isr()) {
 		return ENTELEA_E_PERM; /* [thread] API（事件发布经总线） */
 	}
-	entelea_arb_owner_t old = (entelea_arb_owner_t)atomic_get(&entelea_arb_owner);
+	entelea_arb_owner_t old =
+		(entelea_arb_owner_t) atomic_get(&entelea_arb_owner);
 
 	if (old == owner) {
 		return ENTELEA_OK; /* 幂等：零事件零输出 */
@@ -312,8 +335,8 @@ entelea_result_t entelea_safety_set_arb(entelea_arb_owner_t owner)
 	atomic_set(&entelea_arb_owner, owner);
 	/* 切换零输出（输出连续性由 APP 逻辑承载）；仅门控位+留痕事件。 */
 	const entelea_arb_evt_t payload = {
-		.owner = (uint8_t)owner,
-		.old = (uint8_t)old,
+		.owner = (uint8_t) owner,
+		.old = (uint8_t) old,
 	};
 	const entelea_event_t evt = {
 		.id = ENTELEA_EVT_ARB_CHANGED,
@@ -324,13 +347,15 @@ entelea_result_t entelea_safety_set_arb(entelea_arb_owner_t owner)
 	return ENTELEA_OK;
 }
 
-entelea_arb_owner_t entelea_safety_arb_owner(void)
+entelea_arb_owner_t
+entelea_safety_arb_owner(void)
 {
-	return (entelea_arb_owner_t)atomic_get(&entelea_arb_owner);
+	return (entelea_arb_owner_t) atomic_get(&entelea_arb_owner);
 }
 
 #ifdef ENTELEA_TEST
-void entelea_safety_test_reset(void)
+void
+entelea_safety_test_reset(void)
 {
 	memset(entelea_ch_table, 0, sizeof(entelea_ch_table));
 	entelea_ch_count = 0;
@@ -349,7 +374,8 @@ void entelea_safety_test_reset(void)
 }
 #endif
 
-entelea_result_t entelea_safety_force_channel_fault(const char *uid)
+entelea_result_t
+entelea_safety_force_channel_fault(const char *uid)
 {
 	int i = entelea_ch_find(uid);
 
@@ -361,7 +387,8 @@ entelea_result_t entelea_safety_force_channel_fault(const char *uid)
 	struct entelea_ch_slot *s = &entelea_ch_table[i];
 	entelea_ch_state_t prev = s->state;
 	unsigned int key = irq_lock();
-	int rc = write_transition_locked(s, s->desc->fault, ENTELEA_ST_SAFE_FAULT);
+	int rc = write_transition_locked(s, s->desc->fault,
+					 ENTELEA_ST_SAFE_FAULT);
 
 	irq_unlock(key);
 	entelea_safety_write_unlock();
@@ -375,7 +402,8 @@ entelea_result_t entelea_safety_force_channel_fault(const char *uid)
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_safety_channel_recover(const char *uid)
+entelea_result_t
+entelea_safety_channel_recover(const char *uid)
 {
 	int i = entelea_ch_find(uid);
 
@@ -392,8 +420,9 @@ entelea_result_t entelea_safety_channel_recover(const char *uid)
 		return ENTELEA_E_STATE; /* 双检：持锁后复核 */
 	}
 	struct entelea_ch_slot *s = &entelea_ch_table[i];
-	entelea_ch_state_t next =
-		atomic_get(&entelea_link_up) ? ENTELEA_ST_ACTIVE : ENTELEA_ST_SAFE_POWERON;
+	entelea_ch_state_t next = atomic_get(&entelea_link_up) ?
+					  ENTELEA_ST_ACTIVE :
+					  ENTELEA_ST_SAFE_POWERON;
 
 	/* 物理重附 = 重新上电语义：回 poweron 值（写+迁移在临界区内，缺陷 3）。 */
 	unsigned int key = irq_lock();
@@ -410,7 +439,8 @@ entelea_result_t entelea_safety_channel_recover(const char *uid)
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_safety_clear_fault(void)
+entelea_result_t
+entelea_safety_clear_fault(void)
 {
 	/* estop 锁存的唯一释放路径（运行期可达性归后续命令面；R02 直调仅供
 	 * 测试）。释放语义：状态条件恢复（link up → ACTIVE，否则
@@ -430,12 +460,13 @@ entelea_result_t entelea_safety_clear_fault(void)
 	for (size_t i = 0; i < entelea_ch_count; i++) {
 		struct entelea_ch_slot *s = &entelea_ch_table[i];
 
-		if (s->state != ENTELEA_ST_SAFE_FAULT || s->fault_by_write_failure) {
+		if (s->state != ENTELEA_ST_SAFE_FAULT ||
+		    s->fault_by_write_failure) {
 			continue; /* 写失败通道仅 recover 可恢复 */
 		}
-		entelea_ch_state_t next = atomic_get(&entelea_link_up)
-						  ? ENTELEA_ST_ACTIVE
-						  : ENTELEA_ST_SAFE_LINKLOSS;
+		entelea_ch_state_t next = atomic_get(&entelea_link_up) ?
+						  ENTELEA_ST_ACTIVE :
+						  ENTELEA_ST_SAFE_LINKLOSS;
 		unsigned int key = irq_lock();
 
 		if (atomic_get(&entelea_forced) == 0) {
@@ -450,8 +481,8 @@ entelea_result_t entelea_safety_clear_fault(void)
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_safety_channel_state(const char *uid,
-		entelea_ch_state_t *out)
+entelea_result_t
+entelea_safety_channel_state(const char *uid, entelea_ch_state_t *out)
 {
 	if (out == NULL) {
 		return ENTELEA_E_PARAM;
@@ -465,18 +496,19 @@ entelea_result_t entelea_safety_channel_state(const char *uid,
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_safety_summary(entelea_safety_summary_t *out)
+entelea_result_t
+entelea_safety_summary(entelea_safety_summary_t *out)
 {
 	if (out == NULL) {
 		return ENTELEA_E_PARAM;
 	}
 	memset(out, 0, sizeof(*out));
 	for (size_t i = 0; i < entelea_ch_count; i++) {
-		if ((int)entelea_ch_table[i].state >= 0 &&
+		if ((int) entelea_ch_table[i].state >= 0 &&
 		    entelea_ch_table[i].state < ENTELEA_CH_STATE_COUNT) {
 			out->by_state[entelea_ch_table[i].state]++;
 		}
 	}
-	out->channels = (uint16_t)entelea_ch_count;
+	out->channels = (uint16_t) entelea_ch_count;
 	return ENTELEA_OK;
 }

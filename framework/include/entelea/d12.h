@@ -54,15 +54,20 @@ typedef struct {
 } entelea_d12_store_t;
 
 /** 绑定时钟（判定依赖）。 */
-entelea_result_t entelea_d12_bind_clock(const entelea_clock_t *clock);
+entelea_result_t
+entelea_d12_bind_clock(const entelea_clock_t *clock);
 /** 绑定墙钟、互斥与持久端口（启动期调用；未绑定的端口使判定拒绝）。 */
-entelea_result_t entelea_d12_bind_wallclock(const entelea_wallclock_t *wall);
-entelea_result_t entelea_d12_bind_lock(const entelea_lock_t *lock);
-entelea_result_t entelea_d12_bind_store(const entelea_d12_store_t *store);
+entelea_result_t
+entelea_d12_bind_wallclock(const entelea_wallclock_t *wall);
+entelea_result_t
+entelea_d12_bind_lock(const entelea_lock_t *lock);
+entelea_result_t
+entelea_d12_bind_store(const entelea_d12_store_t *store);
 
 /** 平台启动上报：本次复位是否异常类（WDT/panic——决定冷却窗）。
  * 由平台启动防护调用；跨复位计数留存归平台（判定见 reset_guard）。 */
-void entelea_d12_boot_note(bool abnormal_reset);
+void
+entelea_d12_boot_note(bool abnormal_reset);
 
 /** 异常复位风暴阈值：连续 ≥3 次异常复位 → 当次启动 SAFE-HALT
  * （POR 起算即"第 4 次启动"——D12 v1 §9）。 */
@@ -73,30 +78,38 @@ void entelea_d12_boot_note(bool abnormal_reset);
  * 返回 true=SAFE-HALT。异常且历史不可知 → fail-closed；纯 POR 清零；
  * 计数饱和不回绕；count 为 NULL 时亦须 SAFE-HALT。平台复位原因不可知、
  * 留存设备不可用或读写失败时，无论复位类型均须 SAFE-HALT。 */
-bool entelea_d12_reset_guard(bool abnormal, bool history_ok,
-			     uint32_t *count);
+bool
+entelea_d12_reset_guard(bool abnormal, bool history_ok, uint32_t *count);
 
 /** 模型调用前置判定（冷却/频度/日额/风暴；依赖面归 model_ask）。
  * OK=允许；E_BUSY=冷却/频度/日额用尽；E_STATE=风暴闩、未绑定端口、
  * 墙钟未知、持久读写失败或记录损坏。 */
-entelea_result_t entelea_d12_model_allow(void);
+entelea_result_t
+entelea_d12_model_allow(void);
 
 /** 模型调用结果上报（成功清风暴计数；E_BUSY 触发冷却；失败累加风暴）。 */
-void entelea_d12_model_note(entelea_result_t r);
+void
+entelea_d12_model_note(entelea_result_t r);
 
 /** 风暴闩状态与外部释放（命令面/到场）；未绑时钟或锁报闭锁。 */
-bool entelea_d12_storm_latched(void);
-void entelea_d12_storm_clear(void);
+bool
+entelea_d12_storm_latched(void);
+void
+entelea_d12_storm_clear(void);
 
 /** wasm 执行前置判定（冷却窗内拒——E_BUSY；风暴不影响 wasm）。 */
-entelea_result_t entelea_d12_wasm_allow(void);
+entelea_result_t
+entelea_d12_wasm_allow(void);
 
 /** 观测面：自启动调用次数 / 被闸拒绝次数。 */
-uint32_t entelea_d12_model_calls(void);
-uint32_t entelea_d12_model_blocked(void);
+uint32_t
+entelea_d12_model_calls(void);
+uint32_t
+entelea_d12_model_blocked(void);
 
 #ifdef ENTELEA_TEST
-void entelea_d12_test_reset(void);
+void
+entelea_d12_test_reset(void);
 #endif
 
 #ifdef __cplusplus

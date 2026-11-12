@@ -15,8 +15,9 @@ struct gate_credentials {
 	char model[48];
 };
 
-static inline int entelea_p4c2_read(struct gate_credentials *c,
-				    entelea_credential_read_fn read, void *user)
+static inline int
+entelea_p4c2_read(struct gate_credentials *c, entelea_credential_read_fn read,
+		  void *user)
 {
 	uint8_t header[9];
 	int ret;
@@ -34,21 +35,22 @@ static inline int entelea_p4c2_read(struct gate_credentials *c,
 	    header[7] < 20 || header[7] > 127 || !header[8] || header[8] > 47) {
 		return -EINVAL;
 	}
-	ret = entelea_wifi_read_fields(&c->wifi, header[4], header[5], read, user);
+	ret = entelea_wifi_read_fields(&c->wifi, header[4], header[5], read,
+				       user);
 	if (ret != 0) {
 		return ret;
 	}
-	ret = entelea_credential_read_text(read, user, (uint8_t *)c->host,
+	ret = entelea_credential_read_text(read, user, (uint8_t *) c->host,
 					   sizeof(c->host), header[6]);
 	if (ret != 0) {
 		return ret;
 	}
-	ret = entelea_credential_read_text(read, user, (uint8_t *)c->api_key,
+	ret = entelea_credential_read_text(read, user, (uint8_t *) c->api_key,
 					   sizeof(c->api_key), header[7]);
 	if (ret != 0) {
 		return ret;
 	}
-	return entelea_credential_read_text(read, user, (uint8_t *)c->model,
+	return entelea_credential_read_text(read, user, (uint8_t *) c->model,
 					    sizeof(c->model), header[8]);
 }
 

@@ -15,19 +15,18 @@
 #define ENTELEA_HTTPS_BODY_MAX 8192 /* 板上面（max_tokens 256 响应界） */
 
 typedef struct {
-	char host[64];       /* API 主机名（DNS 解析+SNI） */
+	char host[64]; /* API 主机名（DNS 解析+SNI） */
 	char path_prefix[64];
 	char api_key[128];
 	char model[48];
-	int *touched;        /* 调用计数（闸判据） */
+	int *touched; /* 调用计数（闸判据） */
 } entelea_https_cfg_t;
 
 /** POST {path_prefix}/chat/completions，TLS1.3，值感知提取 content。
  * 合同与 host 版一致：401/403→E_PERM、429→E_BUSY、截断显式 E_RANGE。 */
-entelea_result_t entelea_https_chat(void *user,
-				    const entelea_model_msg_t *msgs, uint8_t n,
-				    char *out, size_t out_max,
-				    uint32_t timeout_ms,
-				    entelea_model_usage_t *usage);
+entelea_result_t
+entelea_https_chat(void *user, const entelea_model_msg_t *msgs, uint8_t n,
+		   char *out, size_t out_max, uint32_t timeout_ms,
+		   entelea_model_usage_t *usage);
 
 #endif /* ENTELEA_HTTPS_CHAT_ZEPHYR_H */

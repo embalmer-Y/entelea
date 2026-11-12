@@ -10,14 +10,16 @@
 
 #define ENTELEA_PLATFORM_CLOCK_ID 1U
 
-static entelea_result_t uptime_read_ms(void *user, uint64_t *out)
+static entelea_result_t
+uptime_read_ms(void *user, uint64_t *out)
 {
 	ARG_UNUSED(user);
 	*out = k_uptime_get();
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_platform_clock_init(entelea_clock_t *clock)
+entelea_result_t
+entelea_platform_clock_init(entelea_clock_t *clock)
 {
 	return entelea_clock_init(clock, uptime_read_ms, NULL,
 				  ENTELEA_PLATFORM_CLOCK_ID);

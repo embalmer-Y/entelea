@@ -21,51 +21,74 @@ static int mock_model_calls;
 static bool mock_unbound;
 static entelea_https_cfg_t *mock_cfg;
 
-void mbedtls_net_init(mbedtls_net_context *net) { net->fd = -1; }
-void mbedtls_net_free(mbedtls_net_context *net) { net->fd = -1; }
-int mbedtls_net_connect(mbedtls_net_context *net, const char *host,
-			const char *port, int proto)
+void
+mbedtls_net_init(mbedtls_net_context *net)
 {
-	(void)net; (void)host; (void)port; (void)proto;
+	net->fd = -1;
+}
+void
+mbedtls_net_free(mbedtls_net_context *net)
+{
+	net->fd = -1;
+}
+int
+mbedtls_net_connect(mbedtls_net_context *net, const char *host,
+		    const char *port, int proto)
+{
+	(void) net;
+	(void) host;
+	(void) port;
+	(void) proto;
 	mock_network_calls++;
 	return MBEDTLS_ERR_NET_CONNECT_FAILED;
 }
 
-entelea_result_t entelea_platform_clock_init(entelea_clock_t *clock)
+entelea_result_t
+entelea_platform_clock_init(entelea_clock_t *clock)
 {
-	(void)clock;
+	(void) clock;
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_clock_now(entelea_clock_t *clock, entelea_instant_t *out)
+entelea_result_t
+entelea_clock_now(entelea_clock_t *clock, entelea_instant_t *out)
 {
-	(void)clock;
-	*out = (entelea_instant_t){.ms = 1, .valid = true};
+	(void) clock;
+	*out = (entelea_instant_t) { .ms = 1, .valid = true };
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_d12_bind_clock(const entelea_clock_t *clock)
+entelea_result_t
+entelea_d12_bind_clock(const entelea_clock_t *clock)
 {
-	(void)clock;
+	(void) clock;
 	return ENTELEA_OK;
 }
 
-uint32_t entelea_d12_model_calls(void) { return 0; }
-
-entelea_result_t entelea_dep_report(entelea_dep_kind_t kind, bool good,
-				    uint64_t now_ms)
+uint32_t
+entelea_d12_model_calls(void)
 {
-	(void)kind; (void)good; (void)now_ms;
+	return 0;
+}
+
+entelea_result_t
+entelea_dep_report(entelea_dep_kind_t kind, bool good, uint64_t now_ms)
+{
+	(void) kind;
+	(void) good;
+	(void) now_ms;
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_dep_mark_down(entelea_dep_kind_t kind)
+entelea_result_t
+entelea_dep_mark_down(entelea_dep_kind_t kind)
 {
-	(void)kind;
+	(void) kind;
 	return ENTELEA_OK;
 }
 
-void entelea_model_bind(const entelea_model_transport_t *ops, void *user)
+void
+entelea_model_bind(const entelea_model_transport_t *ops, void *user)
 {
 	if (ops != NULL) {
 		mock_cfg = user;
@@ -74,33 +97,46 @@ void entelea_model_bind(const entelea_model_transport_t *ops, void *user)
 	}
 }
 
-bool entelea_model_ready(void) { return false; }
-
-entelea_result_t entelea_model_ask(const entelea_model_msg_t *msgs, uint8_t n,
-				   char *out, size_t out_max, uint32_t timeout,
-				   entelea_model_usage_t *usage)
+bool
+entelea_model_ready(void)
 {
-	(void)msgs; (void)n; (void)out; (void)out_max; (void)timeout; (void)usage;
+	return false;
+}
+
+entelea_result_t
+entelea_model_ask(const entelea_model_msg_t *msgs, uint8_t n, char *out,
+		  size_t out_max, uint32_t timeout,
+		  entelea_model_usage_t *usage)
+{
+	(void) msgs;
+	(void) n;
+	(void) out;
+	(void) out_max;
+	(void) timeout;
+	(void) usage;
 	mock_model_calls++;
 	return ENTELEA_E_STATE;
 }
 
-entelea_result_t entelea_model_probe(const entelea_model_msg_t *msgs, uint8_t n,
-				     char *out, size_t out_max, uint32_t timeout,
-				     entelea_model_usage_t *usage)
+entelea_result_t
+entelea_model_probe(const entelea_model_msg_t *msgs, uint8_t n, char *out,
+		    size_t out_max, uint32_t timeout,
+		    entelea_model_usage_t *usage)
 {
 	return entelea_model_ask(msgs, n, out, out_max, timeout, usage);
 }
 
-entelea_result_t entelea_https_chat(void *user, const entelea_model_msg_t *msgs,
-				    uint8_t n, char *out, size_t out_max,
-				    uint32_t timeout, entelea_model_usage_t *usage)
+entelea_result_t
+entelea_https_chat(void *user, const entelea_model_msg_t *msgs, uint8_t n,
+		   char *out, size_t out_max, uint32_t timeout,
+		   entelea_model_usage_t *usage)
 {
-	(void)user;
+	(void) user;
 	return entelea_model_ask(msgs, n, out, out_max, timeout, usage);
 }
 
-static bool run_case(const char *doc, size_t size, bool valid)
+static bool
+run_case(const char *doc, size_t size, bool valid)
 {
 	char path[] = "/tmp/entelea-cloud-probe-XXXXXX";
 	char output[8192];
@@ -129,16 +165,19 @@ static bool run_case(const char *doc, size_t size, bool valid)
 	saved_err = dup(STDERR_FILENO);
 	if (capture == NULL || saved_out < 0 || saved_err < 0) {
 		unlink(path);
-		if (capture != NULL) fclose(capture);
-		if (saved_out >= 0) close(saved_out);
-		if (saved_err >= 0) close(saved_err);
+		if (capture != NULL)
+			fclose(capture);
+		if (saved_out >= 0)
+			close(saved_out);
+		if (saved_err >= 0)
+			close(saved_err);
 		return false;
 	}
 	fflush(NULL);
 	if (dup2(fileno(capture), STDOUT_FILENO) < 0 ||
 	    dup2(fileno(capture), STDERR_FILENO) < 0) {
-		(void)dup2(saved_out, STDOUT_FILENO);
-		(void)dup2(saved_err, STDERR_FILENO);
+		(void) dup2(saved_out, STDOUT_FILENO);
+		(void) dup2(saved_err, STDERR_FILENO);
 		close(saved_out);
 		close(saved_err);
 		fclose(capture);
@@ -150,12 +189,12 @@ static bool run_case(const char *doc, size_t size, bool valid)
 	mock_model_calls = 0;
 	mock_unbound = false;
 	mock_cfg = NULL;
-	char *argv[] = {"cloud", path, NULL};
+	char *argv[] = { "cloud", path, NULL };
 
 	rc = entelea_cloud_main_under_test(2, argv);
 	fflush(NULL);
-	(void)dup2(saved_out, STDOUT_FILENO);
-	(void)dup2(saved_err, STDERR_FILENO);
+	(void) dup2(saved_out, STDOUT_FILENO);
+	(void) dup2(saved_err, STDERR_FILENO);
 	close(saved_out);
 	close(saved_err);
 	rewind(capture);
@@ -174,16 +213,18 @@ static bool run_case(const char *doc, size_t size, bool valid)
 		return false;
 	}
 	if (valid) {
-		const unsigned char *p = (const unsigned char *)mock_cfg;
+		const unsigned char *p = (const unsigned char *) mock_cfg;
 
 		for (size_t i = 0; i < sizeof(*mock_cfg); i++) {
-			if (p[i] != 0) return false;
+			if (p[i] != 0)
+				return false;
 		}
 	}
 	return true;
 }
 
-int main(void)
+int
+main(void)
 {
 	static const char valid[] =
 		"{\"llm_api_key\":\"synthetic-secret\","
@@ -198,7 +239,8 @@ int main(void)
 		"\"llm_base_url\":\"https://synthetic.example/private-path\","
 		"\"allowed_models\":[42,\"synthetic-model\"]}";
 	static const char duplicate[] =
-		"{\"llm_api_key\":\"synthetic-secret\",\"llm_api_key\":\"other\","
+		"{\"llm_api_key\":\"synthetic-secret\",\"llm_api_key\":"
+		"\"other\","
 		"\"llm_base_url\":\"https://synthetic.example/private-path\","
 		"\"allowed_models\":[\"synthetic-model\"]}";
 	static const char embedded_nul[] =
@@ -210,17 +252,19 @@ int main(void)
 	memset(long_key, 'x', sizeof(long_key) - 1);
 	long_key[sizeof(long_key) - 1] = '\0';
 	int amount = snprintf(oversized, sizeof(oversized),
-		"{\"llm_api_key\":\"%s\",\"llm_base_url\":"
-		"\"https://synthetic.example/private-path\","
-		"\"allowed_models\":[\"synthetic-model\"]}", long_key);
-	if (amount < 0 || (size_t)amount >= sizeof(oversized) ||
+			      "{\"llm_api_key\":\"%s\",\"llm_base_url\":"
+			      "\"https://synthetic.example/private-path\","
+			      "\"allowed_models\":[\"synthetic-model\"]}",
+			      long_key);
+	if (amount < 0 || (size_t) amount >= sizeof(oversized) ||
 	    !run_case(valid, sizeof(valid) - 1, true) ||
 	    !run_case(malformed, sizeof(malformed) - 1, false) ||
 	    !run_case(wrong_array, sizeof(wrong_array) - 1, false) ||
 	    !run_case(duplicate, sizeof(duplicate) - 1, false) ||
 	    !run_case(embedded_nul, sizeof(embedded_nul) - 1, false) ||
-	    !run_case(oversized, (size_t)amount, false)) {
-		fprintf(stderr, "FAIL: offline cloud diagnostic input/cleanup\n");
+	    !run_case(oversized, (size_t) amount, false)) {
+		fprintf(stderr,
+			"FAIL: offline cloud diagnostic input/cleanup\n");
 		return 1;
 	}
 	puts("PASS: offline cloud diagnostic input/cleanup (6 cases)");

@@ -23,7 +23,8 @@
 
 static entelea_clock_t platform_clock;
 
-int main(void)
+int
+main(void)
 {
 	if (entelea_platform_clock_init(&platform_clock) != ENTELEA_OK ||
 	    entelea_evt_bind_clock(&platform_clock) != ENTELEA_OK ||
@@ -41,28 +42,35 @@ int main(void)
 	uint32_t cause = 0;
 	int rc = hwinfo_get_reset_cause(&cause);
 
-	printk("[hw-gate] boot ok (patrol=%ums channel=%ums); hwinfo rc=%d cause=0x%x\n",
-	       entelea_wdt_patrol_period_ms(), ENTELEA_WDT_CHANNEL_MS, rc, cause);
+	printk("[hw-gate] boot ok (patrol=%ums channel=%ums); hwinfo rc=%d "
+	       "cause=0x%x\n",
+	       entelea_wdt_patrol_period_ms(), ENTELEA_WDT_CHANNEL_MS, rc,
+	       cause);
 
 	if (rc == 0 && cause == RESET_WATCHDOG) {
 		printk("[hw-gate] P2 VERIFIED: hardware MWDT reset the SoC\n");
-		printk("[hw-gate] gate complete: parking resident (patrol feeding)\n");
+		printk("[hw-gate] gate complete: parking resident (patrol "
+		       "feeding)\n");
 	} else if (rc == 0 && cause == RESET_SOFTWARE) {
-		printk("[hw-gate] P1 VERIFIED: system_fail -> channel expiry -> reset\n");
-		printk("[hw-gate] P2: wedging kernel now; MWDT reset expected <=~8s\n");
-		(void)irq_lock();
+		printk("[hw-gate] P1 VERIFIED: system_fail -> channel expiry "
+		       "-> reset\n");
+		printk("[hw-gate] P2: wedging kernel now; MWDT reset expected "
+		       "<=~8s\n");
+		(void) irq_lock();
 		volatile unsigned spin = 0;
 
 		for (;;) {
 			spin++;
 		}
 	} else {
-		printk("[hw-gate] P1: healthy 6s window (alive = patrol+MWDT fed)\n");
+		printk("[hw-gate] P1: healthy 6s window (alive = patrol+MWDT "
+		       "fed)\n");
 		for (int i = 1; i <= 6; i++) {
 			k_sleep(K_SECONDS(1));
 			printk("[hw-gate] alive %ds\n", i);
 		}
-		printk("[hw-gate] P1: system_fail(FAIL_WDT 0xff); reset expected <=~5s\n");
+		printk("[hw-gate] P1: system_fail(FAIL_WDT 0xff); reset "
+		       "expected <=~5s\n");
 		entelea_safety_system_fail(ENTELEA_FAIL_WDT(0xFFu));
 	}
 	for (;;) {

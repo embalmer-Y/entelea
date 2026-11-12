@@ -18,12 +18,12 @@ extern "C" {
 
 /* 分区命名空间（编号只追加不改既有值；未实现面按子闭环逐批加入）。 */
 typedef enum {
-	ENTELEA_PART_META,   /* 掉电安全小状态（双副本） */
+	ENTELEA_PART_META, /* 掉电安全小状态（双副本） */
 	ENTELEA_PART_NOINIT, /* 复位留痕（一次性） */
-	ENTELEA_PART_AUDIT,  /* 审计两页乒乓环（子闭环 2） */
-	ENTELEA_PART_PROV,   /* 配置 provisioning（子闭环 3，只读装载） */
-	ENTELEA_PART_TRUST,  /* 信任根表双副本（子闭环 4） */
-	ENTELEA_PART_KV,     /* App 业务状态两页追加（子闭环 4） */
+	ENTELEA_PART_AUDIT, /* 审计两页乒乓环（子闭环 2） */
+	ENTELEA_PART_PROV, /* 配置 provisioning（子闭环 3，只读装载） */
+	ENTELEA_PART_TRUST, /* 信任根表双副本（子闭环 4） */
+	ENTELEA_PART_KV, /* App 业务状态两页追加（子闭环 4） */
 	ENTELEA_PART_SLOT_A, /* APP 包槽 A（R05） */
 	ENTELEA_PART_SLOT_B, /* APP 包槽 B（R05） */
 	ENTELEA_PART_COUNT,
@@ -31,17 +31,18 @@ typedef enum {
 /* ---- 后端端口（板级批：flash 后端经此挂载；上层不感知后端） ---- */
 
 typedef struct {
-	entelea_result_t (*read)(entelea_store_part_t part, uint32_t off, void *buf,
-				 uint32_t len);
+	entelea_result_t (*read)(entelea_store_part_t part, uint32_t off,
+				 void *buf, uint32_t len);
 	entelea_result_t (*write)(entelea_store_part_t part, uint32_t off,
 				  const void *buf, uint32_t len);
 	entelea_result_t (*erase)(entelea_store_part_t part);
 	entelea_result_t (*erase_off)(entelea_store_part_t part, uint32_t off,
-				       uint32_t len);
+				      uint32_t len);
 	uint32_t (*size)(entelea_store_part_t part);
 } entelea_store_ops_t;
 
-#define ENTELEA_STORAGE_META_REC 512U /* meta 双副本步长（副本各自
+#define ENTELEA_STORAGE_META_REC \
+	512U /* meta 双副本步长（副本各自
 * 完整记录；flash 后端按此把两副本排进各自擦除扇区） */
 
 /* 当前后端（默认=进程内 RAM 后端；非 const——挂载点可换）。 */
@@ -51,51 +52,60 @@ extern entelea_store_ops_t entelea_store_backend;
  * 挂载点=storage_init 前（boot 步骤内）；换后端后各分逻辑尺寸不变
  * （尺寸由 RAM 模板给定=权威），物理布局（擦块对齐/垫片）归后端。
  * 返回 E_PARAM=ops 残缺。 */
-entelea_result_t entelea_storage_mount(const entelea_store_ops_t *ops);
-
+entelea_result_t
+entelea_storage_mount(const entelea_store_ops_t *ops);
 
 /** [boot] 存储初始化（后端就绪 + noinit 消费 + 审计游标）。失败显式
  * 返回；上层按 fail-safe 处置。 */
-entelea_result_t entelea_storage_init(void);
+entelea_result_t
+entelea_storage_init(void);
 
 /* ---- 共享存储端口（跨模块消费面；namespace 越界拒绝同内部约束） ---- */
 
-entelea_result_t entelea_storage_read(entelea_store_part_t part, uint32_t off,
-				      void *buf, uint32_t len);
-entelea_result_t entelea_storage_write(entelea_store_part_t part, uint32_t off,
-				       const void *buf, uint32_t len);
-entelea_result_t entelea_storage_erase(entelea_store_part_t part);
-uint32_t entelea_storage_part_size(entelea_store_part_t part);
+entelea_result_t
+entelea_storage_read(entelea_store_part_t part, uint32_t off, void *buf,
+		     uint32_t len);
+entelea_result_t
+entelea_storage_write(entelea_store_part_t part, uint32_t off, const void *buf,
+		      uint32_t len);
+entelea_result_t
+entelea_storage_erase(entelea_store_part_t part);
+uint32_t
+entelea_storage_part_size(entelea_store_part_t part);
 
 /** [boot] 上次异常复位留痕（init 消费后可查；present=false = 无/损坏）。 */
-void entelea_storage_last_reset(uint32_t *reason, bool *present);
+void
+entelea_storage_last_reset(uint32_t *reason, bool *present);
 
 /* ---- 掉电安全 meta：双副本 + 单调序号 + CRC16-CCITT ---- */
 
 /** [thread] 写非活动副本 → 回读校验 → 成为新活动（seq 单调递增；
  * 撕裂时旧副本仍完整）。len ≤ ENTELEA_STORAGE_META_MAX。 */
-entelea_result_t entelea_storage_meta_write(const void *buf, uint16_t len);
+entelea_result_t
+entelea_storage_meta_write(const void *buf, uint16_t len);
 
 /** [thread] 活动 = 序号较大且 CRC 通过者；单副本损毁可恢复；
  * 双副本皆损 = ENTELEA_E_IO（调用方按缺省安全态/fail-safe，不伪造）。
  * cap = buf 容量：活动记录长于 cap = ENTELEA_E_RANGE 且 buf/len 不写
  * （RF1：原按记录长写出，越界写调用方缓冲）。 */
-entelea_result_t entelea_storage_meta_read(void *buf, uint16_t cap,
-					   uint16_t *len);
+entelea_result_t
+entelea_storage_meta_read(void *buf, uint16_t cap, uint16_t *len);
 
 /** [thread] 两副本必须均可读、CRC 有效且内容一致；否则 E_IO。
  * 供不能接受回退到旧记录的调用方使用；cap 不足返回 E_RANGE。 */
-entelea_result_t entelea_storage_meta_read_mirrored(void *buf, uint16_t cap,
-						    uint16_t *len);
+entelea_result_t
+entelea_storage_meta_read_mirrored(void *buf, uint16_t cap, uint16_t *len);
 
 /* ---- noinit 留痕（一次性） ---- */
 
 /** [any] 留痕（覆盖式；失败不可返回——静默丢弃，读取面如实呈现无留痕）。 */
-void entelea_storage_noinit_put(const void *rec, uint16_t len);
+void
+entelea_storage_noinit_put(const void *rec, uint16_t len);
 
 /** [thread] 读留痕：fresh=true = 无/损坏（按无留痕处理）；读到有效记录
  * = fresh=false 且**读后抹除**（one-shot：防陈旧留痕跨复位误报）。 */
-entelea_result_t entelea_storage_noinit_get(void *rec, uint16_t *len, bool *fresh);
+entelea_result_t
+entelea_storage_noinit_get(void *rec, uint16_t *len, bool *fresh);
 
 /* ---- 审计两页乒乓环（安全异常掉电留存；子闭环 2） ---- */
 
@@ -105,35 +115,40 @@ typedef struct {
 	uint16_t ch_idx; /* 0xFFFF = 系统事件（estop 等） */
 	uint16_t actor;
 	uint8_t kind;
-	int32_t res;   /* entelea_result_t（负值错误码） */
-	uint16_t evt;  /* 0 = commit 审计；1 = estop 沿触发 */
+	int32_t res; /* entelea_result_t（负值错误码） */
+	uint16_t evt; /* 0 = commit 审计；1 = estop 沿触发 */
 	uint32_t value_u;
 } entelea_storage_audit_entry_t;
 
 /** [boot] 扫描两页恢复游标（半写/坏槽不可见、不断尾）；读错误 = E_IO
  * 且不就绪（读失败≠空环）。未就绪 append 拒绝（E_STATE）。 */
-entelea_result_t entelea_storage_audit_init(void);
+entelea_result_t
+entelea_storage_audit_init(void);
 
 /** [thread] 追加一条（体与 CRC、magic、独立提交标记依次写并回读；
  * 写满 64 槽翻页）。写失败 = E_IO，效果可能已落盘；该槽不重写。
  * 低频异常类事件。 */
-entelea_result_t entelea_storage_audit_append(
-	const entelea_storage_audit_entry_t *e, uint16_t evt);
+entelea_result_t
+entelea_storage_audit_append(const entelea_storage_audit_entry_t *e,
+			     uint16_t evt);
 
 /** [thread] 按 seq 升序读最近 max 条（两页过渡态 ≤128）；返回条数，
  * 或负错误码（out 空 = E_PARAM；未就绪 = E_STATE；
  * 读错误或受保护记录损坏 = E_IO）。 */
-int32_t entelea_storage_audit_read(entelea_storage_audit_entry_t *out,
-				   size_t max);
+int32_t
+entelea_storage_audit_read(entelea_storage_audit_entry_t *out, size_t max);
 
 #include <entelea/kv.h>
 #include <entelea/trust.h>
 
 /* ---- SHA-256 流式（包验签用；与 R01 一次性接口同算法） ---- */
-void entelea_sha256_stream_init(uint32_t state[8]);
-void entelea_sha256_stream_update(uint32_t state[8], const uint8_t *data,
-				  uint32_t len);
-void entelea_sha256_stream_final(const uint32_t state[8], uint8_t out[32]);
+void
+entelea_sha256_stream_init(uint32_t state[8]);
+void
+entelea_sha256_stream_update(uint32_t state[8], const uint8_t *data,
+			     uint32_t len);
+void
+entelea_sha256_stream_final(const uint32_t state[8], uint8_t out[32]);
 
 /* 尺寸出处 DEC-23/27 语义（基线结构性数值；板级按 DT 调整）。 */
 /* 单条 meta 记录上限：副本步长 512 减头 8；试用与稳定集共用一条记录（v4 为 409B）。 */
@@ -142,15 +157,17 @@ void entelea_sha256_stream_final(const uint32_t state[8], uint8_t out[32]);
 
 /* 仅 ENTELEA_TEST 构建：抹除全部分区（测试隔离）；撕裂注入。 */
 #ifdef ENTELEA_TEST
-entelea_result_t entelea_storage_test_reset(void);
-entelea_result_t entelea_storage_meta_corrupt_test(uint8_t copy_idx);
+entelea_result_t
+entelea_storage_test_reset(void);
+entelea_result_t
+entelea_storage_meta_corrupt_test(uint8_t copy_idx);
 /* 端口边界负测/撕裂注入探针：直通后端 read/write。 */
-entelea_result_t entelea_storage_test_backend_read(entelea_store_part_t part,
-						   uint32_t off, void *buf,
-						   uint32_t len);
-entelea_result_t entelea_storage_test_backend_write(entelea_store_part_t part,
-						    uint32_t off, const void *buf,
-						    uint32_t len);
+entelea_result_t
+entelea_storage_test_backend_read(entelea_store_part_t part, uint32_t off,
+				  void *buf, uint32_t len);
+entelea_result_t
+entelea_storage_test_backend_write(entelea_store_part_t part, uint32_t off,
+				   const void *buf, uint32_t len);
 #endif
 
 #ifdef __cplusplus

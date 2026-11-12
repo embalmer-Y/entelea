@@ -36,18 +36,21 @@ static const struct device *const retained =
 static bool safe_halt;
 
 #ifdef ENTELEA_TEST
-void entelea_platform_d12_test_reset(void)
+void
+entelea_platform_d12_test_reset(void)
 {
 	safe_halt = false;
 }
 #endif
 
-bool entelea_platform_d12_safe_halt(void)
+bool
+entelea_platform_d12_safe_halt(void)
 {
 	return safe_halt;
 }
 
-static bool reset_is_abnormal(uint32_t *cause, bool *known)
+static bool
+reset_is_abnormal(uint32_t *cause, bool *known)
 {
 	int rc = hwinfo_get_reset_cause(cause);
 
@@ -66,17 +69,17 @@ static bool reset_is_abnormal(uint32_t *cause, bool *known)
 	return *cause != RESET_POR;
 }
 
-bool entelea_platform_d12_bootguard(void)
+bool
+entelea_platform_d12_bootguard(void)
 {
-	struct d12_rec guard = {0};
+	struct d12_rec guard = { 0 };
 	uint32_t cause = 0;
 	bool cause_known;
 	bool abnormal = reset_is_abnormal(&cause, &cause_known);
 	bool ready = device_is_ready(retained);
-	int read_rc = ready
-			      ? retained_mem_read(retained, 0, (uint8_t *)&guard,
-						  sizeof(guard))
-			      : -ENODEV;
+	int read_rc = ready ? retained_mem_read(retained, 0, (uint8_t *) &guard,
+						sizeof(guard)) :
+			      -ENODEV;
 	bool history_ok = read_rc == 0 && guard.magic == D12_MAGIC;
 	bool halt;
 
@@ -97,10 +100,10 @@ bool entelea_platform_d12_bootguard(void)
 		printk("[d12] abnormal reset #%u cause=0x%x history=%s\n",
 		       guard.count, cause, history_ok ? "ok" : "lost");
 	}
-	int write_rc = ready
-			       ? retained_mem_write(retained, 0, (const uint8_t *)&guard,
-						    sizeof(guard))
-			       : -ENODEV;
+	int write_rc = ready ? retained_mem_write(retained, 0,
+						  (const uint8_t *) &guard,
+						  sizeof(guard)) :
+			       -ENODEV;
 
 	if (write_rc != 0) {
 		printk("[d12] retained write failed: %d\n", write_rc);
@@ -109,7 +112,8 @@ bool entelea_platform_d12_bootguard(void)
 	if (halt) {
 		safe_halt = true;
 		printk("[d12] RESET-STORM SAFE-HALT: >=%u consecutive abnormal "
-		       "resets or reset/retained state unknown; outputs at safe "
+		       "resets or reset/retained state unknown; outputs at "
+		       "safe "
 		       "poweron, business halted (power-cycle to exit)\n",
 		       ENTELEA_D12_RESET_STORM_MAX);
 	}

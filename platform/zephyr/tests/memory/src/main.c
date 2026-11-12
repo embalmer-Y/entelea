@@ -4,13 +4,15 @@
 #include <zephyr/ztest.h>
 #include <entelea/memory.h>
 
-static void *mem_setup(void)
+static void *
+mem_setup(void)
 {
 	entelea_mem_test_reset();
 	return NULL;
 }
 
-static entelea_mem_entry_t mk(uint64_t t, uint8_t b)
+static entelea_mem_entry_t
+mk(uint64_t t, uint8_t b)
 {
 	entelea_mem_entry_t e;
 
@@ -51,7 +53,7 @@ ZTEST(framework_mem, test_bounded_chain_eviction)
 {
 	entelea_mem_test_reset(); /* 用例序不保证：自含净基线 */
 	for (uint64_t t = 1; t <= ENTELEA_MEM_CHAIN_MAX + 5; t++) {
-		entelea_mem_entry_t e = mk(t, (uint8_t)t);
+		entelea_mem_entry_t e = mk(t, (uint8_t) t);
 
 		zassert_equal(entelea_mem_write(true, &e), ENTELEA_OK);
 	}
@@ -73,7 +75,7 @@ ZTEST(framework_mem, test_delete_tombstone_no_revival)
 {
 	entelea_mem_test_reset(); /* 用例序不保证：自含净基线 */
 	for (uint64_t t = 10; t <= 30; t += 10) {
-		entelea_mem_entry_t e = mk(t, (uint8_t)(t / 10));
+		entelea_mem_entry_t e = mk(t, (uint8_t) (t / 10));
 
 		zassert_equal(entelea_mem_write(true, &e), ENTELEA_OK);
 	}
@@ -96,12 +98,11 @@ ZTEST(framework_mem, test_delete_tombstone_no_revival)
 	zassert_equal(entelea_mem_write(true, &later), ENTELEA_OK);
 	n = entelea_mem_read(out, 8);
 	zassert_equal(out[n - 1].t_ms, 50, "墓碑外新条目正常");
-	zassert_equal(entelea_mem_delete(100, 1), ENTELEA_E_PARAM,
-		      "逆区间拒");
+	zassert_equal(entelea_mem_delete(100, 1), ENTELEA_E_PARAM, "逆区间拒");
 	/* review P1 负测：第二次 delete 不复活第一次删除的区间。 */
 	entelea_mem_test_reset();
 	for (uint64_t t = 10; t <= 30; t += 10) {
-		entelea_mem_entry_t e2 = mk(t, (uint8_t)(t / 10));
+		entelea_mem_entry_t e2 = mk(t, (uint8_t) (t / 10));
 
 		zassert_equal(entelea_mem_write(true, &e2), ENTELEA_OK);
 	}
@@ -123,7 +124,7 @@ ZTEST(framework_mem, test_tombstone_capacity_no_revival)
 	entelea_mem_test_reset(); /* 用例序不保证：自含净基线 */
 	/* 9 条不同时间戳经历：t=10..90（步进 10）。 */
 	for (uint64_t t = 10; t <= 90; t += 10) {
-		entelea_mem_entry_t e = {.t_ms = t, .len = 1};
+		entelea_mem_entry_t e = { .t_ms = t, .len = 1 };
 
 		zassert_equal(entelea_mem_write(true, &e), ENTELEA_OK);
 	}
@@ -202,7 +203,8 @@ ZTEST(framework_mem, test_write_sequence_exhaustion_is_atomic)
 	entelea_mem_entry_t entry = mk(10, 1);
 	entelea_mem_health_t health;
 
-	zassert_equal(entelea_mem_test_set_write_seq(UINT64_MAX - 1), ENTELEA_OK);
+	zassert_equal(entelea_mem_test_set_write_seq(UINT64_MAX - 1),
+		      ENTELEA_OK);
 	zassert_equal(entelea_mem_write(true, &entry), ENTELEA_OK);
 	zassert_equal(entelea_mem_test_set_write_seq(0), ENTELEA_E_STATE);
 	zassert_equal(entelea_mem_write(true, &entry), ENTELEA_E_RANGE);

@@ -16,18 +16,21 @@ static const entelea_model_transport_t *transport;
 static void *transport_user;
 static entelea_model_usage_t total_usage;
 
-static uint32_t usage_add(uint32_t total, uint32_t value)
+static uint32_t
+usage_add(uint32_t total, uint32_t value)
 {
 	return value > UINT32_MAX - total ? UINT32_MAX : total + value;
 }
 
-void entelea_model_bind(const entelea_model_transport_t *t, void *user)
+void
+entelea_model_bind(const entelea_model_transport_t *t, void *user)
 {
 	transport = t;
 	transport_user = user;
 }
 
-bool entelea_model_ready(void)
+bool
+entelea_model_ready(void)
 {
 	return transport != NULL && transport->chat != NULL &&
 	       entelea_dep_state(ENTELEA_DEP_MODEL) == ENTELEA_DEP_UP &&
@@ -35,11 +38,10 @@ bool entelea_model_ready(void)
 	       !entelea_d12_storm_latched();
 }
 
-static entelea_result_t model_call(const entelea_model_msg_t *msgs, uint8_t n,
-				    char *out, size_t out_max,
-				    uint32_t timeout_ms,
-				    entelea_model_usage_t *usage_out,
-				    bool probe)
+static entelea_result_t
+model_call(const entelea_model_msg_t *msgs, uint8_t n, char *out,
+	   size_t out_max, uint32_t timeout_ms,
+	   entelea_model_usage_t *usage_out, bool probe)
 {
 	if (msgs == NULL || n == 0 || out == NULL) {
 		return ENTELEA_E_PARAM;
@@ -57,8 +59,9 @@ static entelea_result_t model_call(const entelea_model_msg_t *msgs, uint8_t n,
 	}
 	entelea_result_t r = ENTELEA_E_IO;
 
-	for (uint32_t attempt = 0; attempt <= ENTELEA_MODEL_RETRIES; attempt++) {
-		entelea_model_usage_t u = {0};
+	for (uint32_t attempt = 0; attempt <= ENTELEA_MODEL_RETRIES;
+	     attempt++) {
+		entelea_model_usage_t u = { 0 };
 		entelea_result_t gate;
 
 		if (attempt > 0 &&
@@ -78,13 +81,13 @@ static entelea_result_t model_call(const entelea_model_msg_t *msgs, uint8_t n,
 		}
 		r = transport->chat(transport_user, msgs, n, out, out_max,
 				    timeout_ms, &u);
-		total_usage.prompt_tokens = usage_add(total_usage.prompt_tokens,
-						     u.prompt_tokens);
-		total_usage.completion_tokens = usage_add(total_usage.completion_tokens,
-							 u.completion_tokens);
+		total_usage.prompt_tokens =
+			usage_add(total_usage.prompt_tokens, u.prompt_tokens);
+		total_usage.completion_tokens = usage_add(
+			total_usage.completion_tokens, u.completion_tokens);
 		entelea_d12_model_note(r); /* 逐尝试上报（风暴/E_BUSY 冷却） */
 		if (r == ENTELEA_E_PERM || entelea_d12_storm_latched()) {
-			(void)entelea_dep_mark_down(ENTELEA_DEP_MODEL);
+			(void) entelea_dep_mark_down(ENTELEA_DEP_MODEL);
 		}
 		if (r != ENTELEA_OK) {
 			out[0] = '\0';
@@ -99,29 +102,31 @@ static entelea_result_t model_call(const entelea_model_msg_t *msgs, uint8_t n,
 	return r;
 }
 
-entelea_result_t entelea_model_ask(const entelea_model_msg_t *msgs, uint8_t n,
-				   char *out, size_t out_max,
-				   uint32_t timeout_ms,
-				   entelea_model_usage_t *usage_out)
+entelea_result_t
+entelea_model_ask(const entelea_model_msg_t *msgs, uint8_t n, char *out,
+		  size_t out_max, uint32_t timeout_ms,
+		  entelea_model_usage_t *usage_out)
 {
 	return model_call(msgs, n, out, out_max, timeout_ms, usage_out, false);
 }
 
-entelea_result_t entelea_model_probe(const entelea_model_msg_t *msgs, uint8_t n,
-				     char *out, size_t out_max,
-				     uint32_t timeout_ms,
-				     entelea_model_usage_t *usage_out)
+entelea_result_t
+entelea_model_probe(const entelea_model_msg_t *msgs, uint8_t n, char *out,
+		    size_t out_max, uint32_t timeout_ms,
+		    entelea_model_usage_t *usage_out)
 {
 	return model_call(msgs, n, out, out_max, timeout_ms, usage_out, true);
 }
 
-entelea_model_usage_t entelea_model_usage_total(void)
+entelea_model_usage_t
+entelea_model_usage_total(void)
 {
 	return total_usage;
 }
 
 #ifdef ENTELEA_TEST
-void entelea_model_test_reset(void)
+void
+entelea_model_test_reset(void)
 {
 	transport = NULL;
 	transport_user = NULL;

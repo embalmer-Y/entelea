@@ -11,7 +11,8 @@
 extern "C" {
 #endif
 
-entelea_result_t entelea_platform_storage_mount_flash(void);
+entelea_result_t
+entelea_platform_storage_mount_flash(void);
 
 #ifdef __cplusplus
 }

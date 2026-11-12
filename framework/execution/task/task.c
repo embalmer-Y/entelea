@@ -20,7 +20,8 @@ static const entelea_clock_t *task_clock;
 static uint64_t task_last_ms;
 static bool task_has_last;
 
-entelea_result_t entelea_task_bind_clock(const entelea_clock_t *clock)
+entelea_result_t
+entelea_task_bind_clock(const entelea_clock_t *clock)
 {
 	if (clock == NULL || clock->read_ms == NULL || clock->clock_id == 0) {
 		return ENTELEA_E_PARAM;
@@ -43,7 +44,8 @@ entelea_result_t entelea_task_bind_clock(const entelea_clock_t *clock)
 }
 
 /* 调用方持 task_lock；回退不是可信的截止时间依据。 */
-static bool task_now_ms(uint64_t *out)
+static bool
+task_now_ms(uint64_t *out)
 {
 	uint64_t now;
 
@@ -60,10 +62,10 @@ static bool task_now_ms(uint64_t *out)
 
 /* 惰性过期（须持 task_lock）：ACCEPTED 且 deadline 已过 → CANCELLED
  * +效果 NONE（未开始无副作用）。RUNNING 不迁移（效果未知不代决）。 */
-static bool expire_locked(entelea_task_t *t)
+static bool
+expire_locked(entelea_task_t *t)
 {
-	if (t->deadline_ms == 0 ||
-	    t->state != ENTELEA_TASK_ACCEPTED) {
+	if (t->deadline_ms == 0 || t->state != ENTELEA_TASK_ACCEPTED) {
 		return true;
 	}
 	uint64_t now;
@@ -79,23 +81,25 @@ static bool expire_locked(entelea_task_t *t)
 	return true;
 }
 
-static int find_id(entelea_task_id_t id)
+static int
+find_id(entelea_task_id_t id)
 {
 	if (id == 0 || id > ENTELEA_TASK_MAX) {
 		return -1;
 	}
-	return tb.used[id - 1] ? (int)(id - 1) : -1;
+	return tb.used[id - 1] ? (int) (id - 1) : -1;
 }
 
-static bool same_principal(entelea_principal_t a, entelea_principal_t b)
+static bool
+same_principal(entelea_principal_t a, entelea_principal_t b)
 {
 	return a._handle == b._handle && a._gen == b._gen &&
 	       a.app_id == b.app_id;
 }
 
-entelea_result_t entelea_task_submit(entelea_principal_t ctx, const char *name,
-				     uint16_t seq, uint64_t deadline_ms,
-				     entelea_task_id_t *out)
+entelea_result_t
+entelea_task_submit(entelea_principal_t ctx, const char *name, uint16_t seq,
+		    uint64_t deadline_ms, entelea_task_id_t *out)
 {
 	if (name == NULL) {
 		return ENTELEA_E_PARAM;
@@ -133,13 +137,14 @@ entelea_result_t entelea_task_submit(entelea_principal_t ctx, const char *name,
 	for (int i = 0; i < ENTELEA_TASK_MAX; i++) {
 		if (!tb.used[i]) {
 			tb.used[i] = true;
-			tb.tasks[i].id = (entelea_task_id_t)(i + 1);
+			tb.tasks[i].id = (entelea_task_id_t) (i + 1);
 			tb.tasks[i].state = ENTELEA_TASK_ACCEPTED;
 			tb.tasks[i].effect = ENTELEA_EFFECT_NONE;
 			tb.tasks[i].owner = ctx;
 			tb.tasks[i].seq = seq;
 			tb.tasks[i].deadline_ms = deadline_ms;
-			strncpy(tb.tasks[i].name, name, ENTELEA_TASK_NAME_MAX - 1);
+			strncpy(tb.tasks[i].name, name,
+				ENTELEA_TASK_NAME_MAX - 1);
 			tb.tasks[i].name[ENTELEA_TASK_NAME_MAX - 1] = '\0';
 			if (out != NULL) {
 				*out = tb.tasks[i].id;
@@ -152,11 +157,10 @@ entelea_result_t entelea_task_submit(entelea_principal_t ctx, const char *name,
 	return ENTELEA_E_NOMEM; /* 槽满（有界——不排队） */
 }
 
-static entelea_result_t transition_effect(entelea_principal_t ctx,
-					  entelea_task_id_t id,
-					  entelea_task_state_t expect_from,
-					  entelea_task_state_t next,
-					  bool flag)
+static entelea_result_t
+transition_effect(entelea_principal_t ctx, entelea_task_id_t id,
+		  entelea_task_state_t expect_from, entelea_task_state_t next,
+		  bool flag)
 {
 	k_mutex_lock(&task_lock, K_FOREVER);
 	int i = find_id(id);
@@ -180,19 +184,18 @@ static entelea_result_t transition_effect(entelea_principal_t ctx,
 	/* 效果域在锁内写入（review P1 修复：解锁后写可能被 release+重用
 	 * 竞态覆盖到新任务——不再可能伪造确认）。 */
 	if (next == ENTELEA_TASK_SUCCEEDED) {
-		t->effect = flag ? ENTELEA_EFFECT_CONFIRMED
-				 : ENTELEA_EFFECT_NONE;
+		t->effect =
+			flag ? ENTELEA_EFFECT_CONFIRMED : ENTELEA_EFFECT_NONE;
 	} else {
-		t->effect = flag ? ENTELEA_EFFECT_UNKNOWN
-				 : ENTELEA_EFFECT_NONE;
+		t->effect = flag ? ENTELEA_EFFECT_UNKNOWN : ENTELEA_EFFECT_NONE;
 	}
 	k_mutex_unlock(&task_lock);
 	return ENTELEA_OK;
 }
 
-static entelea_result_t transition(entelea_principal_t ctx, entelea_task_id_t id,
-				   entelea_task_state_t expect_from,
-				   entelea_task_state_t next)
+static entelea_result_t
+transition(entelea_principal_t ctx, entelea_task_id_t id,
+	   entelea_task_state_t expect_from, entelea_task_state_t next)
 {
 	/* 状态迁移（无效果域面——start 等中间迁移用）。 */
 	k_mutex_lock(&task_lock, K_FOREVER);
@@ -218,31 +221,36 @@ static entelea_result_t transition(entelea_principal_t ctx, entelea_task_id_t id
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_task_start(entelea_principal_t ctx, entelea_task_id_t id)
+entelea_result_t
+entelea_task_start(entelea_principal_t ctx, entelea_task_id_t id)
 {
 	return transition(ctx, id, ENTELEA_TASK_ACCEPTED, ENTELEA_TASK_RUNNING);
 }
 
-static entelea_result_t finish(entelea_principal_t ctx, entelea_task_id_t id,
-			       entelea_task_state_t st, bool flag)
+static entelea_result_t
+finish(entelea_principal_t ctx, entelea_task_id_t id, entelea_task_state_t st,
+       bool flag)
 {
 	/* 效果域由调用方据真实回执给出——本层不伪造确认；写入在锁内。 */
 	return transition_effect(ctx, id, ENTELEA_TASK_RUNNING, st, flag);
 }
 
-entelea_result_t entelea_task_succeed(entelea_principal_t ctx,
-				      entelea_task_id_t id, bool effect_confirmed)
+entelea_result_t
+entelea_task_succeed(entelea_principal_t ctx, entelea_task_id_t id,
+		     bool effect_confirmed)
 {
 	return finish(ctx, id, ENTELEA_TASK_SUCCEEDED, effect_confirmed);
 }
 
-entelea_result_t entelea_task_fail(entelea_principal_t ctx, entelea_task_id_t id,
-				   bool effect_unknown)
+entelea_result_t
+entelea_task_fail(entelea_principal_t ctx, entelea_task_id_t id,
+		  bool effect_unknown)
 {
 	return finish(ctx, id, ENTELEA_TASK_FAILED, effect_unknown);
 }
 
-entelea_result_t entelea_task_cancel(entelea_principal_t ctx, entelea_task_id_t id)
+entelea_result_t
+entelea_task_cancel(entelea_principal_t ctx, entelea_task_id_t id)
 {
 	k_mutex_lock(&task_lock, K_FOREVER);
 	int i = find_id(id);
@@ -274,7 +282,8 @@ entelea_result_t entelea_task_cancel(entelea_principal_t ctx, entelea_task_id_t 
 	return ENTELEA_E_STATE; /* 终态后取消 */
 }
 
-entelea_result_t entelea_task_get(entelea_task_id_t id, entelea_task_t *out)
+entelea_result_t
+entelea_task_get(entelea_task_id_t id, entelea_task_t *out)
 {
 	if (out == NULL) {
 		return ENTELEA_E_PARAM;
@@ -288,7 +297,8 @@ entelea_result_t entelea_task_get(entelea_task_id_t id, entelea_task_t *out)
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_task_release(entelea_principal_t ctx, entelea_task_id_t id)
+entelea_result_t
+entelea_task_release(entelea_principal_t ctx, entelea_task_id_t id)
 {
 	k_mutex_lock(&task_lock, K_FOREVER);
 	int i = find_id(id);
@@ -304,7 +314,8 @@ entelea_result_t entelea_task_release(entelea_principal_t ctx, entelea_task_id_t
 		return ENTELEA_E_PERM;
 	}
 	expire_locked(t); /* 过期 ACCEPTED 先转终态（可回收） */
-	if (t->state == ENTELEA_TASK_ACCEPTED || t->state == ENTELEA_TASK_RUNNING) {
+	if (t->state == ENTELEA_TASK_ACCEPTED ||
+	    t->state == ENTELEA_TASK_RUNNING) {
 		k_mutex_unlock(&task_lock);
 		return ENTELEA_E_STATE; /* 未终态不可回收 */
 	}
@@ -315,7 +326,8 @@ entelea_result_t entelea_task_release(entelea_principal_t ctx, entelea_task_id_t
 }
 
 #ifdef ENTELEA_TEST
-void entelea_task_test_reset(void)
+void
+entelea_task_test_reset(void)
 {
 	memset(&tb, 0, sizeof(tb));
 	task_clock = NULL; /* 连时钟绑定一并隔离（用例自含重绑） */

@@ -6,19 +6,20 @@
 #include <entelea/d12.h>
 #include "d12_ports.h"
 
-static entelea_result_t fake_read_ms(void *user, uint64_t *out)
+static entelea_result_t
+fake_read_ms(void *user, uint64_t *out)
 {
-	*out = *(uint64_t *)user; /* 测试时钟：显式推进 */
+	*out = *(uint64_t *) user; /* 测试时钟：显式推进 */
 	return ENTELEA_OK;
 }
 
 static uint8_t d12_rec[ENTELEA_D12_REC_LEN];
 static bool d12_rec_present;
 
-static entelea_result_t d12_store_load(void *user,
-				       uint8_t rec[ENTELEA_D12_REC_LEN])
+static entelea_result_t
+d12_store_load(void *user, uint8_t rec[ENTELEA_D12_REC_LEN])
 {
-	(void)user;
+	(void) user;
 	if (!d12_rec_present) {
 		return ENTELEA_E_NOTFOUND;
 	}
@@ -26,24 +27,26 @@ static entelea_result_t d12_store_load(void *user,
 	return ENTELEA_OK;
 }
 
-static entelea_result_t d12_store_save(void *user,
-				       const uint8_t rec[ENTELEA_D12_REC_LEN])
+static entelea_result_t
+d12_store_save(void *user, const uint8_t rec[ENTELEA_D12_REC_LEN])
 {
-	(void)user;
+	(void) user;
 	memcpy(d12_rec, rec, ENTELEA_D12_REC_LEN);
 	d12_rec_present = true;
 	return ENTELEA_OK;
 }
 
-static entelea_result_t d12_wall_read(void *user, uint64_t *out)
+static entelea_result_t
+d12_wall_read(void *user, uint64_t *out)
 {
-	*out = *(uint64_t *)user;
+	*out = *(uint64_t *) user;
 	return ENTELEA_OK;
 }
 
 /* r16/WP4a：d12 闸接入面——model_test_reset 不动 d12，各段 reset 后重绑；
  * 每段为新设备（清持久替身，墙钟置于 UTC 日 20000）。 */
-static void bind_d12_fake(void)
+static void
+bind_d12_fake(void)
 {
 	static uint64_t fake_now;
 	static uint64_t fake_utc_s = 20000ULL * 86400ULL;
@@ -61,8 +64,8 @@ static void bind_d12_fake(void)
 	d12_wall.user = &fake_utc_s;
 	d12_rec_present = false;
 	entelea_d12_test_reset();
-	zassert_ok(entelea_clock_init(&d12_clock, fake_read_ms,
-				      &fake_now, 0xD12));
+	zassert_ok(
+		entelea_clock_init(&d12_clock, fake_read_ms, &fake_now, 0xD12));
 	zassert_ok(entelea_d12_bind_clock(&d12_clock));
 	zassert_ok(entelea_platform_d12_lock_init(&d12_lock));
 	zassert_ok(entelea_d12_bind_lock(&d12_lock));
@@ -80,7 +83,8 @@ static void bind_d12_fake(void)
 #include <entelea/safety.h>
 #include <entelea/task.h>
 
-static void *assist_setup(void)
+static void *
+assist_setup(void)
 {
 	entelea_safety_test_reset();
 	entelea_perm_test_reset();
@@ -93,10 +97,10 @@ ZTEST(framework_assist, test_context_window_bounds)
 	entelea_context_window_t w;
 
 	memset(&w, 0, sizeof(w));
-	entelea_ctx_event_t e = {.id = ENTELEA_EVT_WDT_WARN, .t_ms = 1};
+	entelea_ctx_event_t e = { .id = ENTELEA_EVT_WDT_WARN, .t_ms = 1 };
 
 	for (int i = 0; i < ENTELEA_CTX_EVENTS_MAX + 5; i++) {
-		e.t_ms = (uint32_t)i;
+		e.t_ms = (uint32_t) i;
 		entelea_ctx_push(&w, &e);
 	}
 	zassert_equal(w.count, ENTELEA_CTX_EVENTS_MAX, "有界");
@@ -114,23 +118,28 @@ ZTEST(framework_assist, test_context_window_bounds)
 ZTEST(framework_assist, test_candidate_gate_and_protection)
 {
 	static const entelea_out_channel_t led = {
-		.uid = "aled", .kind = ENTELEA_CH_GPIO,
-		.poweron = {.b = false}, .linkloss = {.b = false},
-		.fault = {.b = false},
+		.uid = "aled",
+		.kind = ENTELEA_CH_GPIO,
+		.poweron = { .b = false },
+		.linkloss = { .b = false },
+		.fault = { .b = false },
 	};
 	zassert_equal(entelea_safety_register_channel(&led), ENTELEA_OK);
 	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
 	/* periph 注册（review P1 修复后 execute 经 R04 acquire 门）。 */
 	static const entelea_periph_desc_t led_desc = {
-		.uid = "aled", .kind = ENTELEA_DEV_OUTPUT, .inst = 0,
-		.perm_class = ENTELEA_PERM_GPIO, .safety_uid = "aled",
+		.uid = "aled",
+		.kind = ENTELEA_DEV_OUTPUT,
+		.inst = 0,
+		.perm_class = ENTELEA_PERM_GPIO,
+		.safety_uid = "aled",
 	};
 
 	zassert_equal(entelea_periph_register(&led_desc, 1), ENTELEA_OK);
 
 	entelea_candidate_t cand = {
 		.kind = ENTELEA_ACT_OUTPUT,
-		.source = {.id = 1, .kind = ENTELEA_SOURCE_MODEL},
+		.source = { .id = 1, .kind = ENTELEA_SOURCE_MODEL },
 		.target_uid = "aled",
 		.value_kind = 0,
 		.value_b = true,
@@ -178,15 +187,16 @@ ZTEST(framework_assist, test_candidate_gate_and_protection)
 	zassert_equal(entelea_assistant_execute(actor, &cand, NULL),
 		      ENTELEA_E_STATE);
 	/* NOTIFY/NONE 无副作用。 */
-	entelea_candidate_t note = {.kind = ENTELEA_ACT_NOTIFY};
+	entelea_candidate_t note = { .kind = ENTELEA_ACT_NOTIFY };
 
-	zassert_equal(entelea_assistant_execute(actor, &note, NULL), ENTELEA_OK);
+	zassert_equal(entelea_assistant_execute(actor, &note, NULL),
+		      ENTELEA_OK);
 	/* NULL/域外拒。 */
 	zassert_equal(entelea_assistant_execute(actor, NULL, NULL),
 		      ENTELEA_E_PARAM);
 	entelea_candidate_t bad = cand;
 
-	bad.kind = (entelea_action_kind_t)99;
+	bad.kind = (entelea_action_kind_t) 99;
 	zassert_equal(entelea_assistant_execute(actor, &bad, NULL),
 		      ENTELEA_E_PARAM);
 }
@@ -196,8 +206,10 @@ ZTEST(framework_assist, test_cloud_down_stops_brain_only)
 	/* 初始 DOWN → 停用智能。 */
 	zassert_false(entelea_assistant_available());
 	/* 网络恢复但模型仍 down → 仍停。 */
-	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 100), ENTELEA_OK);
-	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 200), ENTELEA_OK);
+	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 100),
+		      ENTELEA_OK);
+	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 200),
+		      ENTELEA_OK);
 	zassert_false(entelea_assistant_available(), "model down → 停智能");
 	/* 模型也恢复 → 可用。 */
 	zassert_equal(entelea_dep_report(ENTELEA_DEP_MODEL, true, 300),
@@ -227,7 +239,7 @@ ZTEST(framework_assist, test_trigger_on_full_window)
 
 	memset(&w, 0, sizeof(w));
 	zassert_false(entelea_should_deliberate(&w, 0, NULL));
-	entelea_ctx_event_t e = {0};
+	entelea_ctx_event_t e = { 0 };
 
 	for (int i = 0; i < ENTELEA_CTX_EVENTS_MAX - 1; i++) {
 		entelea_ctx_push(&w, &e);
@@ -247,27 +259,44 @@ ZTEST(framework_assist, test_output_domain_gates)
 	entelea_perm_test_reset();
 	/* 注册 PWM 输出 + GPIO 输出 + 传感器（非输出）目标。 */
 	static const entelea_out_channel_t pwmch = {
-		.uid = "apwm", .kind = ENTELEA_CH_PWM,
-		.poweron = {.u = 0}, .linkloss = {.u = 0}, .fault = {.u = 0},
+		.uid = "apwm",
+		.kind = ENTELEA_CH_PWM,
+		.poweron = { .u = 0 },
+		.linkloss = { .u = 0 },
+		.fault = { .u = 0 },
 	};
 	static const entelea_out_channel_t gpioch = {
-		.uid = "agio", .kind = ENTELEA_CH_GPIO,
-		.poweron = {.b = false}, .linkloss = {.b = false},
-		.fault = {.b = false},
+		.uid = "agio",
+		.kind = ENTELEA_CH_GPIO,
+		.poweron = { .b = false },
+		.linkloss = { .b = false },
+		.fault = { .b = false },
 	};
 
 	zassert_equal(entelea_safety_register_channel(&pwmch), ENTELEA_OK);
 	zassert_equal(entelea_safety_register_channel(&gpioch), ENTELEA_OK);
 	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
 	static const entelea_periph_desc_t descs[] = {
-		{.uid = "apwm", .kind = ENTELEA_DEV_OUTPUT, .inst = 0,
-		 .perm_class = ENTELEA_PERM_PWM, .safety_uid = "apwm"},
-		{.uid = "agio", .kind = ENTELEA_DEV_OUTPUT, .inst = 0,
-		 .perm_class = ENTELEA_PERM_GPIO, .safety_uid = "agio"},
-		{.uid = "asens", .kind = ENTELEA_DEV_SENSOR, .inst = 0,
-		 .perm_class = ENTELEA_PERM_GPIO, .safety_uid = NULL},
-		{.uid = "apwr", .kind = ENTELEA_DEV_OUTPUT, .inst = 0,
-		 .perm_class = ENTELEA_PERM_POWER, .safety_uid = "apwr"},
+		{ .uid = "apwm",
+		  .kind = ENTELEA_DEV_OUTPUT,
+		  .inst = 0,
+		  .perm_class = ENTELEA_PERM_PWM,
+		  .safety_uid = "apwm" },
+		{ .uid = "agio",
+		  .kind = ENTELEA_DEV_OUTPUT,
+		  .inst = 0,
+		  .perm_class = ENTELEA_PERM_GPIO,
+		  .safety_uid = "agio" },
+		{ .uid = "asens",
+		  .kind = ENTELEA_DEV_SENSOR,
+		  .inst = 0,
+		  .perm_class = ENTELEA_PERM_GPIO,
+		  .safety_uid = NULL },
+		{ .uid = "apwr",
+		  .kind = ENTELEA_DEV_OUTPUT,
+		  .inst = 0,
+		  .perm_class = ENTELEA_PERM_POWER,
+		  .safety_uid = "apwr" },
 	};
 
 	zassert_equal(entelea_periph_register(descs, 4), ENTELEA_OK);
@@ -283,8 +312,9 @@ ZTEST(framework_assist, test_output_domain_gates)
 
 	entelea_candidate_t cand = {
 		.kind = ENTELEA_ACT_OUTPUT,
-		.source = {.id = 1, .kind = ENTELEA_SOURCE_MODEL},
-		.value_b = true, .value_u = 100,
+		.source = { .id = 1, .kind = ENTELEA_SOURCE_MODEL },
+		.value_b = true,
+		.value_u = 100,
 	};
 
 	/* 跨类拒（双向）：GPIO 值打 PWM 目标 / PWM 值打 GPIO 目标。 */
@@ -306,8 +336,8 @@ ZTEST(framework_assist, test_output_domain_gates)
 	/* 同类对照：正面路径仍通（防过度收紧）。 */
 	cand.target_uid = "agio";
 	cand.value_kind = 0;
-	zassert_equal(entelea_assistant_execute(actor, &cand, NULL),
-		      ENTELEA_OK, "同类（GPIO→GPIO）放行");
+	zassert_equal(entelea_assistant_execute(actor, &cand, NULL), ENTELEA_OK,
+		      "同类（GPIO→GPIO）放行");
 
 	/* 域外 value_kind 拒（>2）。 */
 	cand.value_kind = 3;
@@ -331,10 +361,12 @@ ZTEST(framework_assist, test_output_domain_gates)
 	/* POWER 路由（value_kind=2 必经 power_request）：无 power:write →
 	 * E_PERM（不旁路预算门）。 */
 	static const entelea_out_channel_t pwrch = {
-		.uid = "apwr", .kind = ENTELEA_CH_POWER,
-		.poweron = {.pwr = {false, 0}}, .linkloss = {.pwr = {false, 0}},
-		.fault = {.pwr = {false, 0}},
-		.limits = {.current_limit_ma = 1000},
+		.uid = "apwr",
+		.kind = ENTELEA_CH_POWER,
+		.poweron = { .pwr = { false, 0 } },
+		.linkloss = { .pwr = { false, 0 } },
+		.fault = { .pwr = { false, 0 } },
+		.limits = { .current_limit_ma = 1000 },
 	};
 
 	zassert_equal(entelea_safety_register_channel(&pwrch), ENTELEA_OK);
@@ -346,7 +378,8 @@ ZTEST(framework_assist, test_output_domain_gates)
 	cand.value_b = true;
 	cand.value_u = 50;
 	zassert_equal(entelea_assistant_execute(actor, &cand, NULL),
-		      ENTELEA_E_PERM, "无 power:write → power_request 权限门拒");
+		      ENTELEA_E_PERM,
+		      "无 power:write → power_request 权限门拒");
 	zassert_equal(entelea_safety_readback("apwr", &rb), ENTELEA_OK);
 	zassert_false(rb.b, "POWER 旁路拒：零输出");
 
@@ -378,20 +411,26 @@ ZTEST(framework_assist, test_output_targets_checked_safety_uid)
 	entelea_power_test_reset();
 	entelea_power_test_set_budget(100);
 	static const entelea_out_channel_t lamp_ch = {
-		.uid = "lamp_ch", .kind = ENTELEA_CH_GPIO,
-		.poweron = {.b = false}, .linkloss = {.b = false},
-		.fault = {.b = false},
+		.uid = "lamp_ch",
+		.kind = ENTELEA_CH_GPIO,
+		.poweron = { .b = false },
+		.linkloss = { .b = false },
+		.fault = { .b = false },
 	};
 	static const entelea_out_channel_t guarded_ch = {
-		.uid = "lamp", .kind = ENTELEA_CH_GPIO,
-		.poweron = {.b = false}, .linkloss = {.b = false},
-		.fault = {.b = false},
+		.uid = "lamp",
+		.kind = ENTELEA_CH_GPIO,
+		.poweron = { .b = false },
+		.linkloss = { .b = false },
+		.fault = { .b = false },
 	};
 	static const entelea_out_channel_t pwr_ch = {
-		.uid = "pwr_ch", .kind = ENTELEA_CH_POWER,
-		.poweron = {.pwr = {false, 0}}, .linkloss = {.pwr = {false, 0}},
-		.fault = {.pwr = {false, 0}},
-		.limits = {.current_limit_ma = 1000},
+		.uid = "pwr_ch",
+		.kind = ENTELEA_CH_POWER,
+		.poweron = { .pwr = { false, 0 } },
+		.linkloss = { .pwr = { false, 0 } },
+		.fault = { .pwr = { false, 0 } },
+		.limits = { .current_limit_ma = 1000 },
 	};
 
 	zassert_equal(entelea_safety_register_channel(&lamp_ch), ENTELEA_OK);
@@ -399,12 +438,21 @@ ZTEST(framework_assist, test_output_targets_checked_safety_uid)
 	zassert_equal(entelea_safety_register_channel(&pwr_ch), ENTELEA_OK);
 	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
 	static const entelea_periph_desc_t descs[] = {
-		{.uid = "lamp", .kind = ENTELEA_DEV_OUTPUT, .inst = 0,
-		 .perm_class = ENTELEA_PERM_GPIO, .safety_uid = "lamp_ch"},
-		{.uid = "guarded", .kind = ENTELEA_DEV_OUTPUT, .inst = 5,
-		 .perm_class = ENTELEA_PERM_GPIO, .safety_uid = "lamp"},
-		{.uid = "heater", .kind = ENTELEA_DEV_OUTPUT, .inst = 0,
-		 .perm_class = ENTELEA_PERM_POWER, .safety_uid = "pwr_ch"},
+		{ .uid = "lamp",
+		  .kind = ENTELEA_DEV_OUTPUT,
+		  .inst = 0,
+		  .perm_class = ENTELEA_PERM_GPIO,
+		  .safety_uid = "lamp_ch" },
+		{ .uid = "guarded",
+		  .kind = ENTELEA_DEV_OUTPUT,
+		  .inst = 5,
+		  .perm_class = ENTELEA_PERM_GPIO,
+		  .safety_uid = "lamp" },
+		{ .uid = "heater",
+		  .kind = ENTELEA_DEV_OUTPUT,
+		  .inst = 0,
+		  .perm_class = ENTELEA_PERM_POWER,
+		  .safety_uid = "pwr_ch" },
 	};
 
 	zassert_equal(entelea_periph_register(descs, 3), ENTELEA_OK);
@@ -418,12 +466,15 @@ ZTEST(framework_assist, test_output_targets_checked_safety_uid)
 	zassert_equal(entelea_principal_bind(&actor, 21, &t), ENTELEA_OK);
 	entelea_candidate_t cand = {
 		.kind = ENTELEA_ACT_OUTPUT,
-		.source = {.id = 1, .kind = ENTELEA_SOURCE_MODEL},
-		.target_uid = "lamp", .value_kind = 0, .value_b = true,
+		.source = { .id = 1, .kind = ENTELEA_SOURCE_MODEL },
+		.target_uid = "lamp",
+		.value_kind = 0,
+		.value_b = true,
 	};
 	entelea_out_value_t rb;
 
-	zassert_equal(entelea_assistant_execute(actor, &cand, NULL), ENTELEA_OK);
+	zassert_equal(entelea_assistant_execute(actor, &cand, NULL),
+		      ENTELEA_OK);
 	zassert_equal(entelea_safety_readback("lamp", &rb), ENTELEA_OK);
 	zassert_false(rb.b, "无 gpio:write:5 不得写 guarded 的同名通道");
 	zassert_equal(entelea_safety_readback("lamp_ch", &rb), ENTELEA_OK);
@@ -445,18 +496,15 @@ ZTEST(framework_assist, test_output_targets_checked_safety_uid)
 	zassert_true(rb.b, "跨类拒零输出");
 }
 
-
 /* ---- B-2 模型适配层：依赖联动/有界重试/用量累计/参数域 ---- */
 static uint32_t mock_calls;
 static entelea_result_t mock_next_rc[8];
 static uint32_t mock_tokens_per_call;
 static char mock_answer[32];
 
-static entelea_result_t mock_chat(void *user,
-				  const entelea_model_msg_t *msgs, uint8_t n,
-				  char *out, size_t out_max,
-				  uint32_t timeout_ms,
-				  entelea_model_usage_t *usage)
+static entelea_result_t
+mock_chat(void *user, const entelea_model_msg_t *msgs, uint8_t n, char *out,
+	  size_t out_max, uint32_t timeout_ms, entelea_model_usage_t *usage)
 {
 	ARG_UNUSED(user);
 	ARG_UNUSED(msgs);
@@ -480,9 +528,10 @@ static entelea_result_t mock_chat(void *user,
 	return ENTELEA_E_IO;
 }
 
-static const entelea_model_transport_t mock_transport = {.chat = mock_chat};
+static const entelea_model_transport_t mock_transport = { .chat = mock_chat };
 
-static void deps_up(void)
+static void
+deps_up(void)
 {
 	/* 防抖 2 连 good（R06 合同）。 */
 	for (int i = 0; i < 2; i++) {
@@ -496,8 +545,7 @@ static void deps_up(void)
 ZTEST(framework_assist, test_unknown_io_is_not_retried)
 {
 	char out[128] = "stale";
-	entelea_model_msg_t msgs[1] = {
-		{.role = "user", .content = "ping"}};
+	entelea_model_msg_t msgs[1] = { { .role = "user", .content = "ping" } };
 	entelea_model_usage_t usage;
 
 	entelea_model_test_reset();
@@ -511,8 +559,9 @@ ZTEST(framework_assist, test_unknown_io_is_not_retried)
 	mock_next_rc[1] = ENTELEA_OK;
 	mock_tokens_per_call = 1;
 	strcpy(mock_answer, "pong");
-	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &usage),
-		      ENTELEA_E_IO, "未知发送效果不能自动重发");
+	zassert_equal(
+		entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &usage),
+		ENTELEA_E_IO, "未知发送效果不能自动重发");
 	zassert_equal(mock_calls, 1, "失败后不得再次触及传输");
 	zassert_equal(entelea_d12_model_calls(), 1);
 	zassert_equal(out[0], '\0', "失败不得保留旧回答");
@@ -523,8 +572,7 @@ ZTEST(framework_assist, test_unknown_io_is_not_retried)
 ZTEST(framework_assist, test_model_adapter_policy)
 {
 	char out[128];
-	entelea_model_msg_t msgs[1] = {
-		{.role = "user", .content = "ping"}};
+	entelea_model_msg_t msgs[1] = { { .role = "user", .content = "ping" } };
 	entelea_model_usage_t u;
 
 	entelea_model_test_reset();
@@ -551,7 +599,8 @@ ZTEST(framework_assist, test_model_adapter_policy)
 
 	/* 仅明确未发送可重试：3 次失败达到封顶。 */
 	mock_calls = 0;
-	mock_next_rc[0] = mock_next_rc[1] = mock_next_rc[2] = ENTELEA_E_NOT_SENT;
+	mock_next_rc[0] = mock_next_rc[1] = mock_next_rc[2] =
+		ENTELEA_E_NOT_SENT;
 	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
 		      ENTELEA_E_NOT_SENT);
 	zassert_equal(mock_calls, 3, "首发+2 重试封顶");
@@ -606,8 +655,7 @@ ZTEST(framework_assist, test_model_adapter_policy)
 ZTEST(framework_assist, test_model_retry_gated_by_d12)
 {
 	char out[128];
-	entelea_model_msg_t msgs[1] = {
-		{.role = "user", .content = "ping"}};
+	entelea_model_msg_t msgs[1] = { { .role = "user", .content = "ping" } };
 	entelea_model_usage_t u;
 
 	entelea_model_test_reset();
@@ -620,13 +668,15 @@ ZTEST(framework_assist, test_model_retry_gated_by_d12)
 	mock_tokens_per_call = 1;
 	mock_calls = 0;
 	for (int i = 0; i < 5; i++) {
-		zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out),
-						5000, &u), ENTELEA_OK);
+		zassert_equal(
+			entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
+			ENTELEA_OK);
 	}
 	zassert_equal(entelea_d12_model_calls(), 5);
 	/* 第 6 槽首发未发送；重试被窗拒 → E_BUSY，传输仅 1 次。 */
 	mock_calls = 0;
-	mock_next_rc[0] = mock_next_rc[1] = mock_next_rc[2] = ENTELEA_E_NOT_SENT;
+	mock_next_rc[0] = mock_next_rc[1] = mock_next_rc[2] =
+		ENTELEA_E_NOT_SENT;
 	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
 		      ENTELEA_E_BUSY, "重试过闸被拒");
 	zassert_equal(mock_calls, 1, "被闸重试不触传输");
@@ -640,39 +690,45 @@ ZTEST(framework_assist, test_model_retry_gated_by_d12)
 ZTEST(framework_assist, test_model_probe_and_real_recovery_observations)
 {
 	char out[128];
-	entelea_model_msg_t msgs[1] = {
-		{.role = "user", .content = "ping"}};
-	const entelea_model_transport_t invalid = {.chat = NULL};
+	entelea_model_msg_t msgs[1] = { { .role = "user", .content = "ping" } };
+	const entelea_model_transport_t invalid = { .chat = NULL };
 
 	entelea_model_test_reset();
 	entelea_net_test_reset();
 	bind_d12_fake();
 	entelea_model_bind(&invalid, NULL);
-	zassert_equal(entelea_model_probe(msgs, 1, out, sizeof(out), 5000, NULL),
-		      ENTELEA_E_UNINIT, "空回调不可解引用");
+	zassert_equal(
+		entelea_model_probe(msgs, 1, out, sizeof(out), 5000, NULL),
+		ENTELEA_E_UNINIT, "空回调不可解引用");
 	entelea_model_bind(&mock_transport, NULL);
 	mock_calls = 0;
 	memset(mock_next_rc, 0, sizeof(mock_next_rc));
 	strcpy(mock_answer, "pong");
 	mock_tokens_per_call = 1;
-	zassert_equal(entelea_model_probe(msgs, 1, out, sizeof(out), 5000, NULL),
-		      ENTELEA_E_STATE, "网络未就绪不允许探测");
+	zassert_equal(
+		entelea_model_probe(msgs, 1, out, sizeof(out), 5000, NULL),
+		ENTELEA_E_STATE, "网络未就绪不允许探测");
 	zassert_equal(mock_calls, 0);
 	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 1), ENTELEA_OK);
 	zassert_equal(entelea_dep_report(ENTELEA_DEP_NET, true, 2), ENTELEA_OK);
 	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, NULL),
 		      ENTELEA_E_STATE, "模型未恢复时普通调用拒绝");
-	zassert_equal(entelea_model_probe(msgs, 1, out, sizeof(out), 5000, NULL),
-		      ENTELEA_OK);
+	zassert_equal(
+		entelea_model_probe(msgs, 1, out, sizeof(out), 5000, NULL),
+		ENTELEA_OK);
 	zassert_equal(entelea_dep_state(ENTELEA_DEP_MODEL), ENTELEA_DEP_DOWN,
 		      "探测本身不伪造恢复观测");
-	zassert_equal(entelea_dep_report(ENTELEA_DEP_MODEL, true, 3), ENTELEA_OK);
-	zassert_equal(entelea_dep_state(ENTELEA_DEP_MODEL), ENTELEA_DEP_DEGRADED);
+	zassert_equal(entelea_dep_report(ENTELEA_DEP_MODEL, true, 3),
+		      ENTELEA_OK);
+	zassert_equal(entelea_dep_state(ENTELEA_DEP_MODEL),
+		      ENTELEA_DEP_DEGRADED);
 	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, NULL),
 		      ENTELEA_E_STATE);
-	zassert_equal(entelea_model_probe(msgs, 1, out, sizeof(out), 5000, NULL),
+	zassert_equal(
+		entelea_model_probe(msgs, 1, out, sizeof(out), 5000, NULL),
+		ENTELEA_OK);
+	zassert_equal(entelea_dep_report(ENTELEA_DEP_MODEL, true, 4),
 		      ENTELEA_OK);
-	zassert_equal(entelea_dep_report(ENTELEA_DEP_MODEL, true, 4), ENTELEA_OK);
 	zassert_true(entelea_model_ready());
 	zassert_equal(mock_calls, 2, "两条成功观测来自两次真实传输回调");
 	zassert_equal(entelea_d12_model_calls(), 2);
@@ -690,8 +746,7 @@ ZTEST(framework_assist, test_model_probe_and_real_recovery_observations)
 ZTEST(framework_assist, test_model_usage_saturates)
 {
 	char out[128];
-	entelea_model_msg_t msgs[1] = {
-		{.role = "user", .content = "ping"}};
+	entelea_model_msg_t msgs[1] = { { .role = "user", .content = "ping" } };
 
 	entelea_model_test_reset();
 	entelea_net_test_reset();
@@ -707,7 +762,8 @@ ZTEST(framework_assist, test_model_usage_saturates)
 	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, NULL),
 		      ENTELEA_OK);
 	zassert_equal(entelea_model_usage_total().prompt_tokens, UINT32_MAX);
-	zassert_equal(entelea_model_usage_total().completion_tokens, UINT32_MAX);
+	zassert_equal(entelea_model_usage_total().completion_tokens,
+		      UINT32_MAX);
 	entelea_model_test_reset();
 	entelea_net_test_reset();
 }
@@ -726,7 +782,7 @@ ZTEST(framework_assist, test_task_acceptance_wiring)
 	zassert_equal(entelea_principal_bind(&actor, 21, &t), ENTELEA_OK);
 	entelea_candidate_t cand = {
 		.kind = ENTELEA_ACT_TASK,
-		.source = {.id = 77, .kind = ENTELEA_SOURCE_MODEL},
+		.source = { .id = 77, .kind = ENTELEA_SOURCE_MODEL },
 		.target_uid = "demo-task",
 		.value_u = 0, /* 无截止 */
 	};
@@ -735,7 +791,7 @@ ZTEST(framework_assist, test_task_acceptance_wiring)
 	zassert_equal(entelea_assistant_execute(actor, &cand, &ret),
 		      ENTELEA_OK);
 	zassert_true(ret >= 1 && ret <= 4, "task_ret=任务 id");
-	entelea_task_id_t id = (entelea_task_id_t)ret; /* 独立持有（执行
+	entelea_task_id_t id = (entelea_task_id_t) ret; /* 独立持有（执行
 	 * 前导置 0 语义：失败调用后 ret 不可复用） */
 	entelea_task_t view;
 

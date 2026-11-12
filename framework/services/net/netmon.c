@@ -19,7 +19,8 @@ static bool have_host_hb;
 static uint64_t last_host_ms;
 static uint32_t streak;
 
-void entelea_net_hb_host(uint64_t now_ms)
+void
+entelea_net_hb_host(uint64_t now_ms)
 {
 	last_host_ms = now_ms;
 	have_host_hb = true;
@@ -29,26 +30,30 @@ void entelea_net_hb_host(uint64_t now_ms)
 		streak = 0;
 		/* 部署模式守卫（CG2）：仅 orchestrated 把链路判定喂给安全态
 		 * 迁移；standalone 仅观测（本地逻辑照常）。 */
-		if (entelea_prov()->deploy_mode == ENTELEA_DEPLOY_ORCHESTRATED) {
-			(void)entelea_safety_set_link(true);
+		if (entelea_prov()->deploy_mode ==
+		    ENTELEA_DEPLOY_ORCHESTRATED) {
+			(void) entelea_safety_set_link(true);
 		}
 	}
 }
 
-void entelea_net_linkmon_tick(uint64_t now_ms)
+void
+entelea_net_linkmon_tick(uint64_t now_ms)
 {
 	if (have_host_hb && up &&
-	    (now_ms - last_host_ms) >
-		    (uint64_t)ENTELEA_NET_HB_PERIOD_MS * ENTELEA_NET_HB_MISS_LIMIT) {
+	    (now_ms - last_host_ms) > (uint64_t) ENTELEA_NET_HB_PERIOD_MS *
+					      ENTELEA_NET_HB_MISS_LIMIT) {
 		up = false;
 		streak = 0;
-		if (entelea_prov()->deploy_mode == ENTELEA_DEPLOY_ORCHESTRATED) {
-			(void)entelea_safety_set_link(false);
+		if (entelea_prov()->deploy_mode ==
+		    ENTELEA_DEPLOY_ORCHESTRATED) {
+			(void) entelea_safety_set_link(false);
 		}
 	}
 }
 
-bool entelea_net_link_up(void)
+bool
+entelea_net_link_up(void)
 {
 	return up;
 }
@@ -63,13 +68,15 @@ struct lease_state {
 static struct lease_state lease;
 static uint32_t last_granted;
 
-static bool lease_valid(uint64_t now_ms)
+static bool
+lease_valid(uint64_t now_ms)
 {
 	return lease.id != 0 && now_ms < lease.expires_at_ms;
 }
 
-entelea_result_t entelea_net_lease_acquire(const char *holder, uint64_t now_ms,
-					   uint32_t *id, uint64_t *expires_at_ms)
+entelea_result_t
+entelea_net_lease_acquire(const char *holder, uint64_t now_ms, uint32_t *id,
+			  uint64_t *expires_at_ms)
 {
 	if (holder == NULL || holder[0] == '\0' ||
 	    strlen(holder) >= ENTELEA_NET_LEASE_HOLDER_MAX) {
@@ -107,7 +114,8 @@ entelea_result_t entelea_net_lease_acquire(const char *holder, uint64_t now_ms,
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_net_lease_release(const char *holder, uint64_t now_ms)
+entelea_result_t
+entelea_net_lease_release(const char *holder, uint64_t now_ms)
 {
 	if (holder == NULL || holder[0] == '\0') {
 		return ENTELEA_E_PARAM;
@@ -123,7 +131,8 @@ entelea_result_t entelea_net_lease_release(const char *holder, uint64_t now_ms)
 	return ENTELEA_OK;
 }
 
-bool entelea_net_lease_held_by(const char *holder, uint64_t now_ms)
+bool
+entelea_net_lease_held_by(const char *holder, uint64_t now_ms)
 {
 	if (holder == NULL) {
 		return false;
@@ -147,17 +156,20 @@ struct idem_slot {
 static struct idem_slot idem_cache[ENTELEA_NET_IDEM_CACHE];
 static uint64_t idem_clock;
 
-static struct idem_slot *idem_find(const char *key)
+static struct idem_slot *
+idem_find(const char *key)
 {
 	for (int i = 0; i < ENTELEA_NET_IDEM_CACHE; i++) {
-		if (idem_cache[i].used && strcmp(idem_cache[i].idem, key) == 0) {
+		if (idem_cache[i].used &&
+		    strcmp(idem_cache[i].idem, key) == 0) {
 			return &idem_cache[i];
 		}
 	}
 	return NULL;
 }
 
-static void idem_insert(const char *key, const uint8_t *reply, size_t rlen)
+static void
+idem_insert(const char *key, const uint8_t *reply, size_t rlen)
 {
 	if (rlen > ENTELEA_NET_IDEM_REPLY_MAX) {
 		return; /* 回执预算即上限（不可达防御） */
@@ -185,13 +197,12 @@ static void idem_insert(const char *key, const uint8_t *reply, size_t rlen)
 	s->stamp = ++idem_clock;
 }
 
-entelea_result_t entelea_net_idem_run(const char *idem_key,
-				      const uint8_t *request, size_t req_len,
-				      entelea_result_t (*exec)(const uint8_t *,
-							       size_t,
-							       uint8_t *, size_t *),
-				      uint8_t *reply, size_t *reply_len,
-				      bool *replayed)
+entelea_result_t
+entelea_net_idem_run(const char *idem_key, const uint8_t *request,
+		     size_t req_len,
+		     entelea_result_t (*exec)(const uint8_t *, size_t,
+					      uint8_t *, size_t *),
+		     uint8_t *reply, size_t *reply_len, bool *replayed)
 {
 	if (idem_key == NULL || exec == NULL || reply == NULL ||
 	    reply_len == NULL || strlen(idem_key) > ENTELEA_NET_IDEM_KEY_MAX) {
@@ -243,20 +254,26 @@ static struct {
 static struct k_spinlock deps_lock;
 
 static const char *const dep_names[ENTELEA_DEP_COUNT] = {
-	"network", "model", "storage", "app",
+	"network",
+	"model",
+	"storage",
+	"app",
 };
 
-const char *entelea_dep_name(entelea_dep_kind_t kind)
+const char *
+entelea_dep_name(entelea_dep_kind_t kind)
 {
-	return (int)kind >= 0 && kind < ENTELEA_DEP_COUNT ? dep_names[kind] : "?";
+	return (int) kind >= 0 && kind < ENTELEA_DEP_COUNT ? dep_names[kind] :
+							     "?";
 }
 
-entelea_dep_state_t entelea_dep_state(entelea_dep_kind_t kind)
+entelea_dep_state_t
+entelea_dep_state(entelea_dep_kind_t kind)
 {
 	entelea_dep_state_t state;
 	k_spinlock_key_t key;
 
-	if ((int)kind < 0 || kind >= ENTELEA_DEP_COUNT) {
+	if ((int) kind < 0 || kind >= ENTELEA_DEP_COUNT) {
 		return ENTELEA_DEP_DOWN;
 	}
 	key = k_spin_lock(&deps_lock);
@@ -265,12 +282,12 @@ entelea_dep_state_t entelea_dep_state(entelea_dep_kind_t kind)
 	return state;
 }
 
-entelea_result_t entelea_dep_report(entelea_dep_kind_t kind, bool good,
-				    uint64_t now_ms)
+entelea_result_t
+entelea_dep_report(entelea_dep_kind_t kind, bool good, uint64_t now_ms)
 {
 	k_spinlock_key_t key;
 
-	if ((int)kind < 0 || kind >= ENTELEA_DEP_COUNT) {
+	if ((int) kind < 0 || kind >= ENTELEA_DEP_COUNT) {
 		return ENTELEA_E_PARAM;
 	}
 	key = k_spin_lock(&deps_lock);
@@ -312,11 +329,12 @@ entelea_result_t entelea_dep_report(entelea_dep_kind_t kind, bool good,
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_dep_mark_down(entelea_dep_kind_t kind)
+entelea_result_t
+entelea_dep_mark_down(entelea_dep_kind_t kind)
 {
 	k_spinlock_key_t key;
 
-	if ((int)kind < 0 || kind >= ENTELEA_DEP_COUNT) {
+	if ((int) kind < 0 || kind >= ENTELEA_DEP_COUNT) {
 		return ENTELEA_E_PARAM;
 	}
 	key = k_spin_lock(&deps_lock);
@@ -330,7 +348,8 @@ entelea_result_t entelea_dep_mark_down(entelea_dep_kind_t kind)
 }
 
 #ifdef ENTELEA_TEST
-void entelea_net_test_reset(void)
+void
+entelea_net_test_reset(void)
 {
 	k_spinlock_key_t key;
 

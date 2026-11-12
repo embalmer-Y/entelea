@@ -7,27 +7,29 @@
 
 #define D12_KV_TAG 0x44313247U
 
-static entelea_result_t d12_store_load(void *user,
-				       uint8_t rec[ENTELEA_D12_REC_LEN])
+static entelea_result_t
+d12_store_load(void *user, uint8_t rec[ENTELEA_D12_REC_LEN])
 {
 	int32_t n;
 
-	(void)user;
+	(void) user;
 	n = entelea_kv_load(D12_KV_TAG, rec, ENTELEA_D12_REC_LEN);
 	if (n < 0) {
-		return (entelea_result_t)n;
+		return (entelea_result_t) n;
 	}
-	return n == (int32_t)ENTELEA_D12_REC_LEN ? ENTELEA_OK : ENTELEA_E_STATE;
+	return n == (int32_t) ENTELEA_D12_REC_LEN ? ENTELEA_OK :
+						    ENTELEA_E_STATE;
 }
 
-static entelea_result_t d12_store_save(void *user,
-				       const uint8_t rec[ENTELEA_D12_REC_LEN])
+static entelea_result_t
+d12_store_save(void *user, const uint8_t rec[ENTELEA_D12_REC_LEN])
 {
-	(void)user;
+	(void) user;
 	return entelea_kv_save(D12_KV_TAG, rec, ENTELEA_D12_REC_LEN);
 }
 
-entelea_result_t entelea_platform_d12_store_init(entelea_d12_store_t *store)
+entelea_result_t
+entelea_platform_d12_store_init(entelea_d12_store_t *store)
 {
 	entelea_result_t r;
 

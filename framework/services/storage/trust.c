@@ -15,13 +15,14 @@
 static entelea_trust_table_t table;
 static bool loaded;
 
-static uint32_t trust_stride(void)
+static uint32_t
+trust_stride(void)
 {
 	return TRUST_BACKEND_SIZE / 2;
 }
 
-static entelea_result_t read_rec(uint8_t copy, uint32_t *seq, uint16_t *len,
-				 uint8_t *data)
+static entelea_result_t
+read_rec(uint8_t copy, uint32_t *seq, uint16_t *len, uint8_t *data)
 {
 	uint8_t hdr[TRUST_REC_HDR];
 	uint32_t stride = trust_stride();
@@ -38,8 +39,9 @@ static entelea_result_t read_rec(uint8_t copy, uint32_t *seq, uint16_t *len,
 	if (*len == 0 || *len > ENTELEA_TRUST_CBOR_MAX) {
 		return ENTELEA_E_IO;
 	}
-	if (entelea_store_backend.read(ENTELEA_PART_TRUST, copy * stride + TRUST_REC_HDR,
-				       data, *len) != ENTELEA_OK) {
+	if (entelea_store_backend.read(ENTELEA_PART_TRUST,
+				       copy * stride + TRUST_REC_HDR, data,
+				       *len) != ENTELEA_OK) {
 		return ENTELEA_E_IO;
 	}
 	if (entelea_crc16(data, *len) != crc) {
@@ -48,8 +50,8 @@ static entelea_result_t read_rec(uint8_t copy, uint32_t *seq, uint16_t *len,
 	return ENTELEA_OK;
 }
 
-static entelea_result_t write_rec(uint8_t copy, uint32_t seq, const void *buf,
-				  uint16_t len)
+static entelea_result_t
+write_rec(uint8_t copy, uint32_t seq, const void *buf, uint16_t len)
 {
 	uint8_t rec[TRUST_REC_HDR + ENTELEA_TRUST_CBOR_MAX];
 	uint32_t stride = trust_stride();
@@ -80,13 +82,13 @@ static entelea_result_t write_rec(uint8_t copy, uint32_t seq, const void *buf,
 }
 
 /* 确定性 schema 走查（validate/load 共用——单一事实源）。 */
-static entelea_result_t trust_walk(const uint8_t *cbor, uint32_t cbor_len,
-				   entelea_trust_table_t *out)
+static entelea_result_t
+trust_walk(const uint8_t *cbor, uint32_t cbor_len, entelea_trust_table_t *out)
 {
-	entelea_rd_t r = {.p = cbor, .rem = cbor_len};
+	entelea_rd_t r = { .p = cbor, .rem = cbor_len };
 	uint8_t ib;
 
-	if (!entelea_rd_u8(&r, &ib) || (uint8_t)(ib & 0xE0) != 0xA0) {
+	if (!entelea_rd_u8(&r, &ib) || (uint8_t) (ib & 0xE0) != 0xA0) {
 		return ENTELEA_E_IO;
 	}
 	uint32_t pairs;
@@ -102,12 +104,13 @@ static entelea_result_t trust_walk(const uint8_t *cbor, uint32_t cbor_len,
 		return ENTELEA_E_IO; /* ver ≥ 1（0 = 哨兵非合法表值） */
 	}
 	out->ver = u;
-	if (!entelea_rd_tstr(&r, key, sizeof(key)) || strcmp(key, "keys") != 0) {
+	if (!entelea_rd_tstr(&r, key, sizeof(key)) ||
+	    strcmp(key, "keys") != 0) {
 		return ENTELEA_E_IO;
 	}
 	uint8_t ab;
 
-	if (!entelea_rd_u8(&r, &ab) || (uint8_t)(ab & 0xE0) != 0x80) {
+	if (!entelea_rd_u8(&r, &ab) || (uint8_t) (ab & 0xE0) != 0x80) {
 		return ENTELEA_E_IO; /* definite array */
 	}
 	uint32_t n;
@@ -128,12 +131,13 @@ static entelea_result_t trust_walk(const uint8_t *cbor, uint32_t cbor_len,
 	if (r.rem != 0) {
 		return ENTELEA_E_IO; /* 尾部余量 = 结构损坏 */
 	}
-	out->n_keys = (uint8_t)n;
+	out->n_keys = (uint8_t) n;
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_trust_validate(const uint8_t *cbor, uint32_t len,
-					entelea_trust_table_t *out)
+entelea_result_t
+entelea_trust_validate(const uint8_t *cbor, uint32_t len,
+		       entelea_trust_table_t *out)
 {
 	if (cbor == NULL || len == 0 || len > ENTELEA_TRUST_CBOR_MAX) {
 		return ENTELEA_E_PARAM;
@@ -141,7 +145,8 @@ entelea_result_t entelea_trust_validate(const uint8_t *cbor, uint32_t len,
 	return trust_walk(cbor, len, out);
 }
 
-entelea_result_t entelea_trust_load(void)
+entelea_result_t
+entelea_trust_load(void)
 {
 	static uint8_t data[ENTELEA_TRUST_CBOR_MAX];
 	uint32_t s0, s1;
@@ -172,15 +177,17 @@ entelea_result_t entelea_trust_load(void)
 	return ENTELEA_OK;
 }
 
-const entelea_trust_table_t *entelea_trust(void)
+const entelea_trust_table_t *
+entelea_trust(void)
 {
 	if (!loaded) {
-		(void)entelea_trust_load();
+		(void) entelea_trust_load();
 	}
 	return &table;
 }
 
-entelea_result_t entelea_trust_write(const uint8_t *cbor, uint32_t len)
+entelea_result_t
+entelea_trust_write(const uint8_t *cbor, uint32_t len)
 {
 	if (cbor == NULL || len == 0 || len > ENTELEA_TRUST_CBOR_MAX) {
 		return ENTELEA_E_PARAM;
@@ -213,7 +220,8 @@ entelea_result_t entelea_trust_write(const uint8_t *cbor, uint32_t len)
 	if (cur_seq + 1 < cur_seq) {
 		return ENTELEA_E_RANGE; /* seq 回绕（防御） */
 	}
-	entelea_result_t r = write_rec(inactive, cur_seq + 1, cbor, (uint16_t)len);
+	entelea_result_t r =
+		write_rec(inactive, cur_seq + 1, cbor, (uint16_t) len);
 
 	if (r != ENTELEA_OK) {
 		return r;
@@ -222,26 +230,29 @@ entelea_result_t entelea_trust_write(const uint8_t *cbor, uint32_t len)
 }
 
 #ifdef ENTELEA_TEST
-void entelea_trust_test_reset(void)
+void
+entelea_trust_test_reset(void)
 {
 	loaded = false;
 	memset(&table, 0, sizeof(table));
 }
 
-entelea_result_t entelea_trust_corrupt_test(uint8_t copy_idx)
+entelea_result_t
+entelea_trust_corrupt_test(uint8_t copy_idx)
 {
 	uint32_t stride = trust_stride();
 
 	if (copy_idx > 1 || stride < TRUST_REC_HDR) {
 		return ENTELEA_E_PARAM;
 	}
-	if (entelea_store_backend.erase_off(ENTELEA_PART_TRUST, copy_idx * stride,
+	if (entelea_store_backend.erase_off(ENTELEA_PART_TRUST,
+					    copy_idx * stride,
 					    stride) != ENTELEA_OK) {
 		return ENTELEA_E_IO;
 	}
-	uint8_t garbage[TRUST_REC_HDR] = {0xDE, 0xAD, 0xBE, 0xEF, 0, 0, 0, 0};
+	uint8_t garbage[TRUST_REC_HDR] = { 0xDE, 0xAD, 0xBE, 0xEF, 0, 0, 0, 0 };
 
-	return entelea_store_backend.write(ENTELEA_PART_TRUST, copy_idx * stride,
-					   garbage, TRUST_REC_HDR);
+	return entelea_store_backend.write(
+		ENTELEA_PART_TRUST, copy_idx * stride, garbage, TRUST_REC_HDR);
 }
 #endif

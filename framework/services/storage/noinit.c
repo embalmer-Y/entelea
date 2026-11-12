@@ -17,7 +17,8 @@
 static uint32_t last_reason;
 static bool last_present;
 
-void entelea_storage_last_reset(uint32_t *reason, bool *present)
+void
+entelea_storage_last_reset(uint32_t *reason, bool *present)
 {
 	if (reason != NULL) {
 		*reason = last_reason;
@@ -30,12 +31,14 @@ void entelea_storage_last_reset(uint32_t *reason, bool *present)
 /* safety 弱钩强实现（force.c 弱桩）：system_fail 原因留痕。
  * 调用上下文 = system_fail（halt 后、停机前；RAM 后端写安全，
  * flash 后端接入时须复核该上下文可写 flash——板级批留痕）。 */
-void entelea_safety_record_fail_reason(uint32_t reason)
+void
+entelea_safety_record_fail_reason(uint32_t reason)
 {
 	entelea_storage_noinit_put(&reason, sizeof(reason));
 }
 
-void entelea_storage_noinit_put(const void *rec, uint16_t len)
+void
+entelea_storage_noinit_put(const void *rec, uint16_t len)
 {
 	if (rec == NULL || len == 0 || len > ENTELEA_STORAGE_NOINIT_MAX_REC) {
 		return;
@@ -46,12 +49,13 @@ void entelea_storage_noinit_put(const void *rec, uint16_t len)
 	entelea_put_le16(buf + 2, len);
 	entelea_put_le16(buf + 4, entelea_crc16(rec, len));
 	memcpy(buf + NOINIT_HDR, rec, len);
-	(void)entelea_store_backend.erase(ENTELEA_PART_NOINIT);
-	(void)entelea_store_backend.write(ENTELEA_PART_NOINIT, 0, buf,
-					  NOINIT_HDR + len);
+	(void) entelea_store_backend.erase(ENTELEA_PART_NOINIT);
+	(void) entelea_store_backend.write(ENTELEA_PART_NOINIT, 0, buf,
+					   NOINIT_HDR + len);
 }
 
-entelea_result_t entelea_storage_noinit_get(void *rec, uint16_t *len, bool *fresh)
+entelea_result_t
+entelea_storage_noinit_get(void *rec, uint16_t *len, bool *fresh)
 {
 	if (rec == NULL || len == NULL || fresh == NULL) {
 		return ENTELEA_E_PARAM;
@@ -59,8 +63,8 @@ entelea_result_t entelea_storage_noinit_get(void *rec, uint16_t *len, bool *fres
 	uint8_t hdr[NOINIT_HDR];
 
 	*fresh = true;
-	if (entelea_store_backend.read(ENTELEA_PART_NOINIT, 0, hdr, sizeof(hdr)) !=
-	    ENTELEA_OK) {
+	if (entelea_store_backend.read(ENTELEA_PART_NOINIT, 0, hdr,
+				       sizeof(hdr)) != ENTELEA_OK) {
 		return ENTELEA_OK; /* 读失败按无留痕（保守呈现，非伪造成功） */
 	}
 	if (entelea_get_le16(hdr) != NOINIT_MAGIC) {
@@ -84,13 +88,14 @@ entelea_result_t entelea_storage_noinit_get(void *rec, uint16_t *len, bool *fres
 	*len = rlen;
 	*fresh = false;
 	/* one-shot：读后抹除。 */
-	(void)entelea_store_backend.erase(ENTELEA_PART_NOINIT);
+	(void) entelea_store_backend.erase(ENTELEA_PART_NOINIT);
 	return ENTELEA_OK;
 }
 
 /* init 期消费（boot 步骤调用）：有留痕则记录 reason 供查询/上报。
  * 仅识别 u32 reason 形态（system_fail 编码）；其他长度照常消费不留。 */
-entelea_result_t entelea_storage_init(void)
+entelea_result_t
+entelea_storage_init(void)
 {
 	uint8_t rec[ENTELEA_STORAGE_NOINIT_MAX_REC];
 	uint16_t len = 0;

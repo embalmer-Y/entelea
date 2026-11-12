@@ -9,9 +9,11 @@
 #include <zephyr/kernel.h>
 
 #if !defined(CONFIG_PICOLIBC)
-void __stdout_hook_install(int (*hook)(int));
+void
+__stdout_hook_install(int (*hook)(int));
 
-void __stdout_hook_install(int (*hook)(int))
+void
+__stdout_hook_install(int (*hook)(int))
 {
 	ARG_UNUSED(hook);
 }
@@ -25,7 +27,8 @@ void __stdout_hook_install(int (*hook)(int))
 #if defined(CONFIG_TS_APP_THREADS) && defined(CONFIG_XTENSA)
 #include <zephyr/irq.h>
 
-uint64_t __atomic_load_8(const volatile void *ptr, int memorder)
+uint64_t
+__atomic_load_8(const volatile void *ptr, int memorder)
 {
 	ARG_UNUSED(memorder);
 	const volatile uint64_t *p = ptr;
@@ -36,7 +39,8 @@ uint64_t __atomic_load_8(const volatile void *ptr, int memorder)
 	return v;
 }
 
-void __atomic_store_8(volatile void *ptr, uint64_t val, int memorder)
+void
+__atomic_store_8(volatile void *ptr, uint64_t val, int memorder)
 {
 	ARG_UNUSED(memorder);
 	volatile uint64_t *p = ptr;
@@ -46,7 +50,8 @@ void __atomic_store_8(volatile void *ptr, uint64_t val, int memorder)
 	irq_unlock(key);
 }
 
-uint64_t __atomic_exchange_8(volatile void *ptr, uint64_t val, int memorder)
+uint64_t
+__atomic_exchange_8(volatile void *ptr, uint64_t val, int memorder)
 {
 	ARG_UNUSED(memorder);
 	volatile uint64_t *p = ptr;
@@ -58,9 +63,10 @@ uint64_t __atomic_exchange_8(volatile void *ptr, uint64_t val, int memorder)
 	return old;
 }
 
-bool __atomic_compare_exchange_8(volatile void *ptr, void *expected,
-				  uint64_t desired, int weak,
-				  int success_mo, int failure_mo)
+bool
+__atomic_compare_exchange_8(volatile void *ptr, void *expected,
+			    uint64_t desired, int weak, int success_mo,
+			    int failure_mo)
 {
 	ARG_UNUSED(weak);
 	ARG_UNUSED(success_mo);

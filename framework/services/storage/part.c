@@ -11,9 +11,9 @@
 #include <entelea/storage.h>
 #include "internal.h"
 
-#define META_SIZE 1024U   /* 双副本各 512B */
+#define META_SIZE 1024U /* 双副本各 512B */
 #define NOINIT_SIZE 256U
-#define AUDIT_SIZE 8192U  /* 两页乒乓 × 64 槽 × 64B（DEC-52①） */
+#define AUDIT_SIZE 8192U /* 两页乒乓 × 64 槽 × 64B（DEC-52①） */
 #define PROV_SIZE 4096U
 #define TRUST_SIZE 8192U
 #define KV_SIZE 8192U
@@ -49,10 +49,13 @@ static bool ram_meta_initialized;
 /* 惰性短路：无 RAM 数组（尺寸表仍权威）。 */
 #define RAM_INERT_GUARD() return ENTELEA_E_UNINIT
 #else
-#define RAM_INERT_GUARD() do { } while (0)
+#define RAM_INERT_GUARD() \
+	do {              \
+	} while (0)
 #endif
 
-static uint8_t *part_ram(entelea_store_part_t part, uint32_t *size)
+static uint8_t *
+part_ram(entelea_store_part_t part, uint32_t *size)
 {
 	switch (part) {
 	case ENTELEA_PART_META:
@@ -85,7 +88,8 @@ static uint8_t *part_ram(entelea_store_part_t part, uint32_t *size)
 	}
 }
 
-static void ram_prepare(entelea_store_part_t part)
+static void
+ram_prepare(entelea_store_part_t part)
 {
 #ifndef RAM_BACKEND_INERT
 	if (part == ENTELEA_PART_META && !ram_meta_initialized) {
@@ -93,12 +97,12 @@ static void ram_prepare(entelea_store_part_t part)
 		ram_meta_initialized = true;
 	}
 #else
-	(void)part;
+	(void) part;
 #endif
 }
 
-static entelea_result_t ram_read(entelea_store_part_t part, uint32_t off, void *buf,
-				 uint32_t len)
+static entelea_result_t
+ram_read(entelea_store_part_t part, uint32_t off, void *buf, uint32_t len)
 {
 	uint32_t size;
 	uint8_t *base = part_ram(part, &size);
@@ -112,8 +116,9 @@ static entelea_result_t ram_read(entelea_store_part_t part, uint32_t off, void *
 	return ENTELEA_OK;
 }
 
-static entelea_result_t ram_write(entelea_store_part_t part, uint32_t off,
-				  const void *buf, uint32_t len)
+static entelea_result_t
+ram_write(entelea_store_part_t part, uint32_t off, const void *buf,
+	  uint32_t len)
 {
 	uint32_t size;
 	uint8_t *base = part_ram(part, &size);
@@ -127,8 +132,8 @@ static entelea_result_t ram_write(entelea_store_part_t part, uint32_t off,
 	return ENTELEA_OK;
 }
 
-static entelea_result_t ram_erase_off(entelea_store_part_t part, uint32_t off,
-				      uint32_t len)
+static entelea_result_t
+ram_erase_off(entelea_store_part_t part, uint32_t off, uint32_t len)
 {
 	uint32_t size;
 	uint8_t *base = part_ram(part, &size);
@@ -142,7 +147,8 @@ static entelea_result_t ram_erase_off(entelea_store_part_t part, uint32_t off,
 	return ENTELEA_OK;
 }
 
-static entelea_result_t ram_erase(entelea_store_part_t part)
+static entelea_result_t
+ram_erase(entelea_store_part_t part)
 {
 	uint32_t size;
 	uint8_t *base = part_ram(part, &size);
@@ -162,7 +168,8 @@ static entelea_result_t ram_erase(entelea_store_part_t part)
 	return ENTELEA_OK;
 }
 
-static uint32_t ram_size(entelea_store_part_t part)
+static uint32_t
+ram_size(entelea_store_part_t part)
 {
 	uint32_t size;
 
@@ -187,7 +194,8 @@ entelea_store_ops_t entelea_store_backend = {
 	.size = ram_size,
 };
 
-entelea_result_t entelea_storage_mount(const entelea_store_ops_t *ops)
+entelea_result_t
+entelea_storage_mount(const entelea_store_ops_t *ops)
 {
 	if (ops == NULL) {
 		entelea_store_backend = ram_ops_template; /* 恢复默认 */
@@ -205,27 +213,29 @@ entelea_result_t entelea_storage_mount(const entelea_store_ops_t *ops)
 
 #ifdef ENTELEA_TEST
 /* 越界/回绕负测探针：直通后端 read（端口边界合同）。 */
-entelea_result_t entelea_storage_test_backend_read(entelea_store_part_t part,
-						   uint32_t off, void *buf,
-						   uint32_t len)
+entelea_result_t
+entelea_storage_test_backend_read(entelea_store_part_t part, uint32_t off,
+				  void *buf, uint32_t len)
 {
 	return entelea_store_backend.read(part, off, buf, len);
 }
 
-entelea_result_t entelea_storage_test_backend_write(entelea_store_part_t part,
-						    uint32_t off, const void *buf,
-						    uint32_t len)
+entelea_result_t
+entelea_storage_test_backend_write(entelea_store_part_t part, uint32_t off,
+				   const void *buf, uint32_t len)
 {
 	return entelea_store_backend.write(part, off, buf, len);
 }
 
-entelea_result_t entelea_storage_test_reset(void)
+entelea_result_t
+entelea_storage_test_reset(void)
 {
 	for (int p = 0; p < ENTELEA_PART_COUNT; p++) {
-		if (entelea_store_backend.size((entelea_store_part_t)p) == 0) {
+		if (entelea_store_backend.size((entelea_store_part_t) p) == 0) {
 			continue;
 		}
-		entelea_result_t r = entelea_store_backend.erase((entelea_store_part_t)p);
+		entelea_result_t r =
+			entelea_store_backend.erase((entelea_store_part_t) p);
 
 		if (r != ENTELEA_OK) {
 			return r;
@@ -240,24 +250,28 @@ entelea_result_t entelea_storage_test_reset(void)
  * （prov/pkg/上层）仍静默走 RAM（计划符合性板级批发现：prov 在
  * flash 变体读到上一用例的 RAM 残影）。未挂载时后端=RAM 模板，
  * 行为不变。 */
-entelea_result_t entelea_storage_read(entelea_store_part_t part, uint32_t off,
-				      void *buf, uint32_t len)
+entelea_result_t
+entelea_storage_read(entelea_store_part_t part, uint32_t off, void *buf,
+		     uint32_t len)
 {
 	return entelea_store_backend.read(part, off, buf, len);
 }
 
-entelea_result_t entelea_storage_write(entelea_store_part_t part, uint32_t off,
-				       const void *buf, uint32_t len)
+entelea_result_t
+entelea_storage_write(entelea_store_part_t part, uint32_t off, const void *buf,
+		      uint32_t len)
 {
 	return entelea_store_backend.write(part, off, buf, len);
 }
 
-entelea_result_t entelea_storage_erase(entelea_store_part_t part)
+entelea_result_t
+entelea_storage_erase(entelea_store_part_t part)
 {
 	return entelea_store_backend.erase(part);
 }
 
-uint32_t entelea_storage_part_size(entelea_store_part_t part)
+uint32_t
+entelea_storage_part_size(entelea_store_part_t part)
 {
 	return entelea_store_backend.size(part);
 }
@@ -269,31 +283,34 @@ uint32_t entelea_storage_part_size(entelea_store_part_t part)
 #define ROTR(x, n) (((x) >> (n)) | ((x) << (32 - (n))))
 
 static const uint32_t SHA_K[64] = {
-	0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b,
-	0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01,
-	0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7,
-	0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
-	0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152,
-	0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
-	0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
-	0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-	0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819,
-	0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08,
-	0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f,
-	0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
-	0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
+	0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
+	0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+	0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
+	0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+	0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
+	0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+	0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+	0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+	0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
+	0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+	0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+};
 
-static void sha256_block(uint32_t state[8], const uint8_t p[64])
+static void
+sha256_block(uint32_t state[8], const uint8_t p[64])
 {
 	uint32_t w[64];
 
 	for (int i = 0; i < 16; i++) {
-		w[i] = ((uint32_t)p[i * 4] << 24) | ((uint32_t)p[i * 4 + 1] << 16) |
-		       ((uint32_t)p[i * 4 + 2] << 8) | p[i * 4 + 3];
+		w[i] = ((uint32_t) p[i * 4] << 24) |
+		       ((uint32_t) p[i * 4 + 1] << 16) |
+		       ((uint32_t) p[i * 4 + 2] << 8) | p[i * 4 + 3];
 	}
 	for (int i = 16; i < 64; i++) {
-		uint32_t s0 = ROTR(w[i - 15], 7) ^ ROTR(w[i - 15], 18) ^ (w[i - 15] >> 3);
-		uint32_t s1 = ROTR(w[i - 2], 17) ^ ROTR(w[i - 2], 19) ^ (w[i - 2] >> 10);
+		uint32_t s0 = ROTR(w[i - 15], 7) ^ ROTR(w[i - 15], 18) ^
+			      (w[i - 15] >> 3);
+		uint32_t s1 = ROTR(w[i - 2], 17) ^ ROTR(w[i - 2], 19) ^
+			      (w[i - 2] >> 10);
 
 		w[i] = w[i - 16] + s0 + w[i - 7] + s1;
 	}
@@ -308,11 +325,23 @@ static void sha256_block(uint32_t state[8], const uint8_t p[64])
 		uint32_t mj = (a & b) ^ (a & c) ^ (b & c);
 		uint32_t t2 = S0 + mj;
 
-		h = g; g = f; f = e; e = d + t1;
-		d = c; c = b; b = a; a = t1 + t2;
+		h = g;
+		g = f;
+		f = e;
+		e = d + t1;
+		d = c;
+		c = b;
+		b = a;
+		a = t1 + t2;
 	}
-	state[0] += a; state[1] += b; state[2] += c; state[3] += d;
-	state[4] += e; state[5] += f; state[6] += g; state[7] += h;
+	state[0] += a;
+	state[1] += b;
+	state[2] += c;
+	state[3] += d;
+	state[4] += e;
+	state[5] += f;
+	state[6] += g;
+	state[7] += h;
 }
 
 struct s256ctx {
@@ -323,18 +352,20 @@ struct s256ctx {
 };
 static struct s256ctx sc;
 
-void entelea_sha256_stream_init(uint32_t state[8])
+void
+entelea_sha256_stream_init(uint32_t state[8])
 {
-	static const uint32_t H0[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372,
-				       0xa54ff53a, 0x510e527f, 0x9b05688c,
-				       0x1f83d9ab, 0x5be0cd19};
+	static const uint32_t H0[8] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372,
+					0xa54ff53a, 0x510e527f, 0x9b05688c,
+					0x1f83d9ab, 0x5be0cd19 };
 
 	memcpy(state, H0, 32);
 	memset(&sc, 0, sizeof(sc));
 	memcpy(sc.state, state, 32);
 }
 
-static void sc_absorb(const uint8_t *data, uint32_t len)
+static void
+sc_absorb(const uint8_t *data, uint32_t len)
 {
 	sc.total += len;
 	while (len > 0) {
@@ -354,8 +385,9 @@ static void sc_absorb(const uint8_t *data, uint32_t len)
 	}
 }
 
-void entelea_sha256_stream_update(uint32_t state[8], const uint8_t *data,
-				  uint32_t len)
+void
+entelea_sha256_stream_update(uint32_t state[8], const uint8_t *data,
+			     uint32_t len)
 {
 	if (data == NULL && len > 0) {
 		return;
@@ -366,7 +398,8 @@ void entelea_sha256_stream_update(uint32_t state[8], const uint8_t *data,
 	memcpy(state, sc.state, 32);
 }
 
-void entelea_sha256_stream_final(const uint32_t state[8], uint8_t out[32])
+void
+entelea_sha256_stream_final(const uint32_t state[8], uint8_t out[32])
 {
 	memcpy(sc.state, state, 32);
 	uint64_t bits = sc.total * 8;
@@ -381,14 +414,14 @@ void entelea_sha256_stream_final(const uint32_t state[8], uint8_t out[32])
 	uint8_t lenb[8];
 
 	for (int i = 0; i < 8; i++) {
-		lenb[i] = (uint8_t)(bits >> (56 - i * 8));
+		lenb[i] = (uint8_t) (bits >> (56 - i * 8));
 	}
 	sc_absorb(lenb, 8);
 	for (int i = 0; i < 8; i++) {
-		out[i * 4] = (uint8_t)(sc.state[i] >> 24);
-		out[i * 4 + 1] = (uint8_t)(sc.state[i] >> 16);
-		out[i * 4 + 2] = (uint8_t)(sc.state[i] >> 8);
-		out[i * 4 + 3] = (uint8_t)sc.state[i];
+		out[i * 4] = (uint8_t) (sc.state[i] >> 24);
+		out[i * 4 + 1] = (uint8_t) (sc.state[i] >> 16);
+		out[i * 4 + 2] = (uint8_t) (sc.state[i] >> 8);
+		out[i * 4 + 3] = (uint8_t) sc.state[i];
 	}
 	memset(&sc, 0, sizeof(sc));
 }

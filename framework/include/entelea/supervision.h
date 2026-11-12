@@ -26,16 +26,17 @@ typedef struct {
 #define ENTELEA_FAIL_SRC_BOOT 0x0001U
 #define ENTELEA_FAIL_SRC_WDT 0x0002U
 #define ENTELEA_FAIL_BOOT(idx) \
-	((uint32_t)ENTELEA_FAIL_SRC_BOOT << 16 | (uint32_t)(idx))
+	((uint32_t) ENTELEA_FAIL_SRC_BOOT << 16 | (uint32_t) (idx))
 #define ENTELEA_FAIL_WDT(src) \
-	((uint32_t)ENTELEA_FAIL_SRC_WDT << 16 | (uint32_t)(src))
+	((uint32_t) ENTELEA_FAIL_SRC_WDT << 16 | (uint32_t) (src))
 
 /** [thread] 固定顺序执行；每步完成后发布 ENTELEA_EVT_BOOT_STEP（含失败步
  * result）。任一步失败 → entelea_safety_system_fail(ENTELEA_FAIL_BOOT(i))
  * 后受控停机（停喂 WDT → 硬 WDT 兜底复位；ENTELEA_TEST 构建停机路径可返回，
  * 由用例断言）。全部成功 → 发布 ENTELEA_EVT_BOOT_DONE 后返回；
  * 调用方（main）随后转常驻监督空闲。 */
-void entelea_supervision_boot(const entelea_boot_step_t *steps, size_t count);
+void
+entelea_supervision_boot(const entelea_boot_step_t *steps, size_t count);
 
 #ifdef __cplusplus
 }

@@ -29,14 +29,17 @@ static entelea_prov_t prov = {
 
 static entelea_prov_tls_t prov_tls;
 
-static entelea_result_t prov_walk(const uint8_t *cbor, uint32_t cbor_len,
-				  entelea_prov_t *out, entelea_prov_tls_t *tls_out);
+static entelea_result_t
+prov_walk(const uint8_t *cbor, uint32_t cbor_len, entelea_prov_t *out,
+	  entelea_prov_tls_t *tls_out);
 
-entelea_result_t entelea_prov_load(void)
+entelea_result_t
+entelea_prov_load(void)
 {
 	uint8_t hdr[6];
 
-	if (entelea_storage_read(ENTELEA_PART_PROV, 0, hdr, sizeof(hdr)) != ENTELEA_OK) {
+	if (entelea_storage_read(ENTELEA_PART_PROV, 0, hdr, sizeof(hdr)) !=
+	    ENTELEA_OK) {
 		return ENTELEA_E_IO;
 	}
 	uint32_t cbor_len = entelea_cfg_get_le32(hdr);
@@ -57,13 +60,14 @@ entelea_result_t entelea_prov_load(void)
 	return prov_walk(cbor, cbor_len, &prov, &prov_tls);
 }
 
-static entelea_result_t prov_walk(const uint8_t *cbor, uint32_t cbor_len,
-				  entelea_prov_t *out, entelea_prov_tls_t *tls_out)
+static entelea_result_t
+prov_walk(const uint8_t *cbor, uint32_t cbor_len, entelea_prov_t *out,
+	  entelea_prov_tls_t *tls_out)
 {
-	entelea_rd_t r = {.p = cbor, .rem = cbor_len};
+	entelea_rd_t r = { .p = cbor, .rem = cbor_len };
 	uint8_t ib;
 
-	if (!entelea_rd_u8(&r, &ib) || (uint8_t)(ib & 0xE0) != 0xA0) {
+	if (!entelea_rd_u8(&r, &ib) || (uint8_t) (ib & 0xE0) != 0xA0) {
 		return ENTELEA_E_IO;
 	}
 	uint32_t pairs;
@@ -83,9 +87,21 @@ static entelea_result_t prov_walk(const uint8_t *cbor, uint32_t cbor_len,
 	out->tls_key_len = 0;
 
 	static const char *const keys[15] = {
-		"v", "node_id", "cube_id", "routers", "pk0", "pk1", "cred",
-		"pwr_ma", "estop", "deploy_mode", "estop_remote_clear", "lconf",
-		"tls_ca", "tls_cert", "tls_key",
+		"v",
+		"node_id",
+		"cube_id",
+		"routers",
+		"pk0",
+		"pk1",
+		"cred",
+		"pwr_ma",
+		"estop",
+		"deploy_mode",
+		"estop_remote_clear",
+		"lconf",
+		"tls_ca",
+		"tls_cert",
+		"tls_key",
 	};
 	char key[20];
 	uint32_t u;
@@ -98,24 +114,27 @@ static entelea_result_t prov_walk(const uint8_t *cbor, uint32_t cbor_len,
 		switch (k) {
 		case 0: /* v：9 对 ⇔ v1，11/12/15 对 ⇔ v2（错配=结构损坏） */
 			if (!entelea_rd_uint(&r, &u) ||
-			    u != (uint32_t)(pairs == 9 ? 1 : 2)) {
+			    u != (uint32_t) (pairs == 9 ? 1 : 2)) {
 				return ENTELEA_E_IO;
 			}
 			break;
 		case 1:
-			if (!entelea_rd_tstr(&r, out->node_id, sizeof(out->node_id))) {
+			if (!entelea_rd_tstr(&r, out->node_id,
+					     sizeof(out->node_id))) {
 				return ENTELEA_E_IO;
 			}
 			break;
 		case 2:
-			if (!entelea_rd_tstr(&r, out->cube_id, sizeof(out->cube_id))) {
+			if (!entelea_rd_tstr(&r, out->cube_id,
+					     sizeof(out->cube_id))) {
 				return ENTELEA_E_IO;
 			}
 			break;
 		case 3: { /* routers: definite array of tstr ≤4 */
 			uint8_t ab;
 
-			if (!entelea_rd_u8(&r, &ab) || (uint8_t)(ab & 0xE0) != 0x80) {
+			if (!entelea_rd_u8(&r, &ab) ||
+			    (uint8_t) (ab & 0xE0) != 0x80) {
 				return ENTELEA_E_IO;
 			}
 			uint32_t n;
@@ -124,8 +143,9 @@ static entelea_result_t prov_walk(const uint8_t *cbor, uint32_t cbor_len,
 				return ENTELEA_E_IO;
 			}
 			for (uint32_t i = 0; i < n; i++) {
-				if (!entelea_rd_tstr(&r, out->router_locators[i],
-						     sizeof(out->router_locators[i]))) {
+				if (!entelea_rd_tstr(
+					    &r, out->router_locators[i],
+					    sizeof(out->router_locators[i]))) {
 					return ENTELEA_E_IO;
 				}
 			}
@@ -145,7 +165,8 @@ static entelea_result_t prov_walk(const uint8_t *cbor, uint32_t cbor_len,
 			}
 			break;
 		case 6:
-			if (!entelea_rd_tstr(&r, out->zenoh_cred, sizeof(out->zenoh_cred))) {
+			if (!entelea_rd_tstr(&r, out->zenoh_cred,
+					     sizeof(out->zenoh_cred))) {
 				return ENTELEA_E_IO;
 			}
 			break;
@@ -158,27 +179,27 @@ static entelea_result_t prov_walk(const uint8_t *cbor, uint32_t cbor_len,
 			if (!entelea_rd_uint(&r, &u) || u > 0xFFU) {
 				return ENTELEA_E_IO;
 			}
-			out->estop_trigger_flags = (uint8_t)u;
+			out->estop_trigger_flags = (uint8_t) u;
 			break;
 		case 9: /* deploy_mode：域外值 fail-closed */
 			if (!entelea_rd_uint(&r, &u) ||
-			    u > (uint32_t)ENTELEA_DEPLOY_STANDALONE) {
+			    u > (uint32_t) ENTELEA_DEPLOY_STANDALONE) {
 				return ENTELEA_E_IO;
 			}
-			out->deploy_mode = (uint8_t)u;
+			out->deploy_mode = (uint8_t) u;
 			break;
 		case 10: /* estop_remote_clear：0|1 之外 fail-closed */
 			if (!entelea_rd_uint(&r, &u) || u > 1U) {
 				return ENTELEA_E_IO;
 			}
-			out->estop_remote_clear = (uint8_t)u;
+			out->estop_remote_clear = (uint8_t) u;
 			break;
 		default:
 			if (k == 11) { /* lconf：域外 fail-closed */
 				if (!entelea_rd_uint(&r, &u) || u > 1U) {
 					return ENTELEA_E_IO;
 				}
-				out->local_confirm = (uint8_t)u;
+				out->local_confirm = (uint8_t) u;
 				break;
 			}
 			/* 12/13/14：TLS DER bstr；tls_out=NULL=validate 零拷贝。 */
@@ -204,7 +225,8 @@ static entelea_result_t prov_walk(const uint8_t *cbor, uint32_t cbor_len,
 				dlen = &out->tls_key_len;
 				break;
 			}
-			if (!entelea_rd_bstr_len(&r, dst, cap, &blen) || blen == 0) {
+			if (!entelea_rd_bstr_len(&r, dst, cap, &blen) ||
+			    blen == 0) {
 				return ENTELEA_E_IO; /* 键在值空=结构损坏 */
 			}
 			*dlen = blen;
@@ -227,7 +249,8 @@ static entelea_result_t prov_walk(const uint8_t *cbor, uint32_t cbor_len,
 	return ENTELEA_OK;
 }
 
-entelea_result_t entelea_prov_validate(const uint8_t *cbor, uint32_t len)
+entelea_result_t
+entelea_prov_validate(const uint8_t *cbor, uint32_t len)
 {
 	if (cbor == NULL || len == 0 || len > PROV_CBOR_MAX) {
 		return ENTELEA_E_PARAM;
@@ -238,12 +261,14 @@ entelea_result_t entelea_prov_validate(const uint8_t *cbor, uint32_t len)
 	return prov_walk(cbor, len, &scratch, NULL);
 }
 
-const entelea_prov_t *entelea_prov(void)
+const entelea_prov_t *
+entelea_prov(void)
 {
 	return &prov;
 }
 
-const entelea_prov_tls_t *entelea_prov_tls(void)
+const entelea_prov_tls_t *
+entelea_prov_tls(void)
 {
 	return &prov_tls;
 }
