@@ -5,6 +5,7 @@
 > [板级资源预算表](board-osptek-p4c5-resource-budget.md#rf1-静态红线复核)。
 > 200 次/启动不等于批准的 200 次/日；连续异常复位计数也不等于
 > 一小时窗口。二者及硬截止、物理停止与长期运行仍须单独评估。
+> （注：日额部分已由 RF1 WP4a 实现，见 [RF1 记录](rf1-validation.md)；本段为 r16 当时的记录。）
 
 owner 2026-11-10 批准 d12-threshold-proposal v1 全包（"同意"）。
 

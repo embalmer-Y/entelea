@@ -88,6 +88,7 @@ target_sources(app PRIVATE
   main.c
   ${WAMR_RUNTIME_LIB_SOURCE}
   ${ENTELEA_ROOT}/platform/zephyr/boot_steps.c
+  ${ENTELEA_ROOT}/platform/zephyr/d12_ports.c
   ${ENTELEA_ROOT}/platform/zephyr/clock.c
   ${ENTELEA_ROOT}/platform/zephyr/flash_store.c
   ${ENTELEA_ROOT}/framework/common/time.c

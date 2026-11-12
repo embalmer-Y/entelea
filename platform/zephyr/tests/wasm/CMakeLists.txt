@@ -65,6 +65,7 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/services/package/lua_feasibility.c
   ${ENTELEA_ROOT}/framework/services/package/wasm_host.c
   ${ENTELEA_ROOT}/framework/services/config/d12.c
+  ${ENTELEA_ROOT}/platform/zephyr/d12_ports.c
   ${ENTELEA_ROOT}/framework/services/delivery/delivery.c
   ${ENTELEA_ROOT}/framework/execution/capability/perm.c
   ${ENTELEA_ROOT}/framework/runtime/supervision/events.c

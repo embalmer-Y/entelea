@@ -6,6 +6,7 @@
 #include <zephyr/ztest.h>
 #include <entelea/appstore.h>
 #include <entelea/d12.h>
+#include "d12_ports.h"
 #include <entelea/delivery.h>
 #include <entelea/package.h>
 #include <entelea/principal.h>
@@ -268,6 +269,7 @@ static void wasm_after(void *fixture)
 static void wasm_before(void *fixture)
 {
 	static entelea_clock_t d12_clock;
+	static entelea_lock_t d12_lock;
 
 	ARG_UNUSED(fixture);
 	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
@@ -280,6 +282,8 @@ static void wasm_before(void *fixture)
 	zassert_ok(entelea_clock_init(&d12_clock, d12_fake_read_ms,
 				      &d12_fake_now, 0xD12));
 	zassert_ok(entelea_d12_bind_clock(&d12_clock));
+	zassert_ok(entelea_platform_d12_lock_init(&d12_lock));
+	zassert_ok(entelea_d12_bind_lock(&d12_lock));
 }
 
 /* R12 试用辅助：向 slot 提交（摘要由设备从槽内字节计算；宿主只申请权限、

@@ -4,6 +4,7 @@
 #include <zephyr/ztest.h>
 #include <entelea/time.h>
 #include <entelea/d12.h>
+#include "d12_ports.h"
 
 static entelea_result_t fake_read_ms(void *user, uint64_t *out)
 {
@@ -11,18 +12,64 @@ static entelea_result_t fake_read_ms(void *user, uint64_t *out)
 	return ENTELEA_OK;
 }
 
-/* r16：d12 闸接入面——model_test_reset 不动 d12，各段 reset 后重绑。 */
+static uint8_t d12_rec[ENTELEA_D12_REC_LEN];
+static bool d12_rec_present;
+
+static entelea_result_t d12_store_load(void *user,
+				       uint8_t rec[ENTELEA_D12_REC_LEN])
+{
+	(void)user;
+	if (!d12_rec_present) {
+		return ENTELEA_E_NOTFOUND;
+	}
+	memcpy(rec, d12_rec, ENTELEA_D12_REC_LEN);
+	return ENTELEA_OK;
+}
+
+static entelea_result_t d12_store_save(void *user,
+				       const uint8_t rec[ENTELEA_D12_REC_LEN])
+{
+	(void)user;
+	memcpy(d12_rec, rec, ENTELEA_D12_REC_LEN);
+	d12_rec_present = true;
+	return ENTELEA_OK;
+}
+
+static entelea_result_t d12_wall_read(void *user, uint64_t *out)
+{
+	*out = *(uint64_t *)user;
+	return ENTELEA_OK;
+}
+
+/* r16/WP4a：d12 闸接入面——model_test_reset 不动 d12，各段 reset 后重绑；
+ * 每段为新设备（清持久替身，墙钟置于 UTC 日 20000）。 */
 static void bind_d12_fake(void)
 {
 	static uint64_t fake_now;
+	static uint64_t fake_utc_s = 20000ULL * 86400ULL;
 	static entelea_clock_t d12_clock;
+	static entelea_lock_t d12_lock;
+	static entelea_wallclock_t d12_wall = {
+		.read_utc_s = d12_wall_read,
+	};
+	static entelea_d12_store_t d12_store = {
+		.load = d12_store_load,
+		.save = d12_store_save,
+	};
 
 	fake_now = 0;
+	d12_wall.user = &fake_utc_s;
+	d12_rec_present = false;
 	entelea_d12_test_reset();
 	zassert_ok(entelea_clock_init(&d12_clock, fake_read_ms,
 				      &fake_now, 0xD12));
 	zassert_ok(entelea_d12_bind_clock(&d12_clock));
+	zassert_ok(entelea_platform_d12_lock_init(&d12_lock));
+	zassert_ok(entelea_d12_bind_lock(&d12_lock));
+	zassert_ok(entelea_d12_bind_wallclock(&d12_wall));
+	zassert_ok(entelea_d12_bind_store(&d12_store));
 }
+
 #include <entelea/assistant.h>
 #include <entelea/capability.h>
 #include <entelea/events.h>

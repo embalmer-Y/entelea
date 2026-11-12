@@ -92,7 +92,11 @@
     "platform/zephyr/ca_roots.c",
     "platform/zephyr/d12_bootguard.c",
     "platform/zephyr/tests/d12/src/main.c",
-    "platform/zephyr/tests/d12/src/bootguard.c"
+    "platform/zephyr/tests/d12/src/bootguard.c",
+    "platform/zephyr/d12_ports.c",
+    "platform/zephyr/d12_store.c",
+    "platform/linux/d12_ports.c",
+    "platform/linux/tests/d12_concurrency.c"
   ],
   "diagnostics": {},
   "protected_output_sources": [

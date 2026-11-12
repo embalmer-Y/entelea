@@ -17,6 +17,7 @@
 #include "../https_json.h"
 #include "../secure_zero.h"
 #include "clock.h"
+#include "d12_ports.h"
 #include "https_chat.h"
 
 static int failures;
@@ -160,10 +161,20 @@ int main(int argc, char **argv)
 		.chat = entelea_https_chat,
 	};
 	static entelea_clock_t d12_clock;
+	static entelea_lock_t d12_lock;
+	static entelea_wallclock_t d12_wall;
+	static entelea_d12_store_t d12_store;
 
-	/* RF1 G5：model_ask 逐尝试过 D12 闸（r16 起依赖——未绑时钟=闭锁）。 */
+	/* RF1 G5：model_ask 逐尝试过 D12 闸（r16 起依赖——未绑任一端口即闭锁）。
+	 * 宿主持久为进程内存，进程退出后日计数不保留（见 d12_ports.c）。 */
 	CHECK(entelea_platform_clock_init(&d12_clock) == ENTELEA_OK);
 	CHECK(entelea_d12_bind_clock(&d12_clock) == ENTELEA_OK);
+	CHECK(entelea_platform_d12_lock_init(&d12_lock) == ENTELEA_OK);
+	CHECK(entelea_d12_bind_lock(&d12_lock) == ENTELEA_OK);
+	CHECK(entelea_platform_d12_wallclock_init(&d12_wall) == ENTELEA_OK);
+	CHECK(entelea_d12_bind_wallclock(&d12_wall) == ENTELEA_OK);
+	CHECK(entelea_platform_d12_store_init(&d12_store) == ENTELEA_OK);
+	CHECK(entelea_d12_bind_store(&d12_store) == ENTELEA_OK);
 	entelea_model_bind(&ops, &cfg);
 	if (failures != 0 || !report_network_pair(&d12_clock, cfg.host)) {
 		fprintf(stderr, "[cloud] network observation failed\n");

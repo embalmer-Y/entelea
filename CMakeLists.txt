@@ -78,4 +78,17 @@ if(BUILD_TESTING)
   add_test(NAME dependency_manifest COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_dependencies.py")
   add_test(NAME legacy_equivalence COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_legacy_equivalence.py" --cc "${CMAKE_C_COMPILER}")
+  find_package(Threads REQUIRED)
+  add_executable(entelea_d12_host_tests
+    platform/linux/tests/d12_concurrency.c
+    platform/linux/d12_ports.c
+    framework/services/config/d12.c)
+  target_include_directories(entelea_d12_host_tests PRIVATE framework/include platform/linux)
+  target_compile_definitions(entelea_d12_host_tests PRIVATE ENTELEA_TEST=1 _POSIX_C_SOURCE=200809L)
+  set_target_properties(entelea_d12_host_tests PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS OFF)
+  target_link_libraries(entelea_d12_host_tests PRIVATE entelea_common Threads::Threads)
+  if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(entelea_d12_host_tests PRIVATE -Wall -Wextra -Werror -Wconversion -Wshadow)
+  endif()
+  add_test(NAME d12_runtime_host COMMAND entelea_d12_host_tests)
 endif()

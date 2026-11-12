@@ -44,6 +44,7 @@ $CC -std=c11 -Wall -Wextra -Werror \
   platform/linux/zephyr_shim.c \
   framework/services/assistant/model.c \
   framework/services/config/d12.c \
+  platform/linux/d12_ports.c \
   framework/services/net/netmon.c \
   framework/services/config/prov.c \
   framework/services/storage/part.c \

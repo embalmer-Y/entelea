@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* R02 平台装配启动表：estop GPIO → 全通道安全起始态 → WDT 启动 →
  * 监督就绪（占位锚定顺序）。后续业务批次只在尾部追加步骤。 */
+#include <zephyr/sys/printk.h>
 #include <zephyr/toolchain.h> /* __weak */
 #include <entelea/d12.h>
 #include <entelea/safety.h>
@@ -8,6 +9,7 @@
 #include <entelea/wdt.h>
 #include "boot_steps.h"
 #include "clock.h"
+#include "d12_ports.h"
 #include <entelea/time.h>
 
 /* D12 启动防护（板级强实现=d12_bootguard.c；无实现板=native_sim/
@@ -25,9 +27,20 @@ __weak bool entelea_platform_d12_safe_halt(void)
 }
 #endif
 
+/* 持久端口弱缺省：仅链接 d12_store.c 的目标有强实现（KV）。 */
+__weak entelea_result_t entelea_platform_d12_store_init(
+	entelea_d12_store_t *store)
+{
+	(void)store;
+	return ENTELEA_E_UNINIT;
+}
+
 static entelea_result_t step_d12_bootguard(void)
 {
 	static entelea_clock_t d12_clock; /* 独立实例（uptime 单调，幂等） */
+	static entelea_lock_t d12_lock;
+	static entelea_wallclock_t d12_wall;
+	static entelea_d12_store_t d12_store;
 	entelea_result_t r = entelea_platform_clock_init(&d12_clock);
 
 	if (r != ENTELEA_OK) {
@@ -36,6 +49,28 @@ static entelea_result_t step_d12_bootguard(void)
 	r = entelea_d12_bind_clock(&d12_clock);
 	if (r != ENTELEA_OK) {
 		return r;
+	}
+	r = entelea_platform_d12_lock_init(&d12_lock);
+	if (r == ENTELEA_OK) {
+		r = entelea_d12_bind_lock(&d12_lock);
+	}
+	if (r != ENTELEA_OK) {
+		return r;
+	}
+	r = entelea_platform_d12_wallclock_init(&d12_wall);
+	if (r == ENTELEA_OK) {
+		r = entelea_d12_bind_wallclock(&d12_wall);
+	}
+	if (r != ENTELEA_OK) {
+		return r;
+	}
+	/* 持久端口缺席或失败不阻止启动：未绑定时闸门 fail-closed */
+	r = entelea_platform_d12_store_init(&d12_store);
+	if (r == ENTELEA_OK) {
+		r = entelea_d12_bind_store(&d12_store);
+	}
+	if (r != ENTELEA_OK) {
+		printk("[d12] store unbound (%d): model calls fail closed\n", r);
 	}
 	(void)entelea_platform_d12_bootguard();
 	return ENTELEA_OK; /* SAFE-HALT 判定归装配层（见上注） */

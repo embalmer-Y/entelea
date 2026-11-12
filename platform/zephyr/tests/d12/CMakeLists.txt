@@ -15,6 +15,7 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/services/config/d12.c
   ${ENTELEA_ROOT}/framework/common/time.c
   ${ENTELEA_ROOT}/platform/zephyr/d12_bootguard.c
+  ${ENTELEA_ROOT}/platform/zephyr/d12_ports.c
 )
 target_link_options(app PUBLIC -Wl,--wrap=z_impl_hwinfo_get_reset_cause
   -Wl,--wrap=z_impl_hwinfo_clear_reset_cause

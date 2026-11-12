@@ -6,7 +6,8 @@
 `f5160ae`），后续 G5/G6、追加反例修复及本文在其上继续修改。
 本文所在提交及后续台账记录可用 Git 历史确认；本地构建目录不是源码
 版本锚点。RF1 **仍 blocked**：WP2 已把试用确认的权限列表与运行时 natives
-授权取交集，并由设备计算候选摘要（F1/F3/F4）；WP3 已实施稳定集准入（D-E）。
+授权取交集，并由设备计算候选摘要（F1/F3/F4）；WP3 已实施稳定集准入（D-E）；
+WP4a 已实施 D12 日额持久化与墙钟、互斥、持久端口（板级墙钟待 SNTP 接线）。
 工厂权限映射与板级试用持久化闸未闭合，不能宣布软件安全闭环或框架/产品验收完成。
 R13 保持 pending。
 
@@ -32,7 +33,7 @@ R13 保持 pending。
 | 6 | KV/Audit 撕裂、损坏或读失败被解释成有效记录/空状态 | 新记录加 CRC、独立提交标记和回读；故障显式传播；[store 测试](../platform/zephyr/tests/store/src/main.c)注入逐阶段写失败、读失败和受保护位翻转 | CRC 非防篡改；旧记录仍可读但无法证明完整性，真断电未测 |
 | 7 | Wasm 二次装载在返回 `E_BUSY` 前卸载活模块；验证/读 I/O 被误报为签名/范围错误 | 空闲检查先于修改共享模块，保留底层错误；[Wasm 测试](../platform/zephyr/tests/wasm/src/main.c)再次调用活实例及注入 I/O | 使用固定 WAMR，非其他运行时证明 |
 | 8 | Wasm 调用者可替换实例 principal；宽返回类型有单槽缓冲越界风险 | 装载时绑定主体并检查导出 ABI；[Wasm 测试](../platform/zephyr/tests/wasm/src/main.c)测换主体和参数/返回类型 | 试用确认权限已与运行时 natives 授权取交集（WP2）；稳定集准入见下。 || 9 | 待确认包可执行；展示字段与确认、装载无关联；诊断自确认冒充用户 | 候选槽在装载/调用时核对状态和摘要，确认核对字段与纪元；[Wasm 测试](../platform/zephyr/tests/wasm/src/main.c)、[试用测试](../platform/zephyr/tests/delivery/src/main.c)覆盖待确认、改字节、过期确认和恢复 | **部分修复**：摘要由设备计算、授权与步数已绑定（WP2）；非候选槽及 `trial_end` 后的稳定集准入（D-E）未实施，纯计算仍可执行但无 natives 权限；串行存储假设下的并发改槽未证明。API 不验证真实用户身份/交互，诊断自动确认不是用户验收 || 10 | Forge 组装的 `spin(N)` 在 `N>=1` 死循环，SDK 工厂隔离/预算不符合承诺 | 独立 Forge 工作区修正生成循环并用真实 Wasm 执行、限额负测；当前 WAMR 回归覆盖指令配额 | **部分修复**：该工作区非 Git 仓库、无独立提交锚点；产品隔离、外发限制和 SDK 精确 token 硬上限未证明；SDK 直产替换为确定性组装的方向仍需确认 |
-| 11 | 每次模型请求仅计一次却可多次传输；未知 I/O 自动重试；云诊断绕过门；时间窗/冷却失效；HTTPS 等待读取无总预算 | 每次尝试单独过门，仅 `E_NOT_SENT` 自动重试；云诊断接入模型门；修复时间回退、零时刻、冷却及读写共享预算；[assist](../platform/zephyr/tests/assist/src/main.c)、[D12](../platform/zephyr/tests/d12/src/main.c)与离线 HTTPS 故障测试 | 同步 DNS、连接及 TLS 后端内部仍可能阻塞，不能称端到端硬截止；200 次/启动不是 200 次/日 |
+| 11 | 每次模型请求仅计一次却可多次传输；未知 I/O 自动重试；云诊断绕过门；时间窗/冷却失效；HTTPS 等待读取无总预算 | 每次尝试单独过门，仅 `E_NOT_SENT` 自动重试；云诊断接入模型门；修复时间回退、零时刻、冷却及读写共享预算；[assist](../platform/zephyr/tests/assist/src/main.c)、[D12](../platform/zephyr/tests/d12/src/main.c)与离线 HTTPS 故障测试 | 同步 DNS、连接及 TLS 后端内部仍可能阻塞，不能称端到端硬截止；200 次/日已由 WP4a 实现（持久预留，见下） |
 | 12 | 复位风暴第 3 次未停，retained RAM 失败被忽略；业务镜像用弱桩或忽略 SAFE-HALT | 更正阈值、故障保守处理，并将保护装入对应镜像；[bootguard 测试](../platform/zephyr/tests/d12/src/bootguard.c)注入读写/复位原因故障 | 连续异常复位不是“一小时内三次”；当前源码的物理复位与 retained RAM 未在真机验证 |
 | 13 | WAMR `register_natives` 返回 `false` 仍报告成功 | 按 bool 检查；[Wasm 测试](../platform/zephyr/tests/wasm/src/main.c)注入注册失败 | 生产与测试初始化路径应保持一致 |
 | 14 | 带 deadline 的任务在启动前时钟失败仍进入 RUNNING | 未知时钟拒绝启动；[R04 测试](../platform/zephyr/tests/r04/src/main.c)复现后验证 | 已运行任务的实际效果不因取消而撤回 |
@@ -117,6 +118,48 @@ R13 保持 pending。
 - 未测：多线程并发晋升与撤销；真实断电注入（当前仅以 `entelea_trial_test_reset` 模拟重启）；
   写入后回读失败的真机复现。残余窗口见[交付合同](../framework/services/delivery/contract.md)“稳定集准入”。
 
+### WP4a 验证记录（D12 日额与平台端口）
+
+- 修复前证据：`calls_total` 仅为自启动计数，`D12_CALLS_LIFETIME_MAX` 是每启动上限，
+  重启即清零，既无每日 200 上限，也无互斥。新接口下无法编译旧行为对拍，此项以代码审阅为证。
+  另：`build/rf1-d12` 残留陈旧 CMake 缓存，导致 `d12retained` 未定义（源码无误）；清洁重配后
+  构建通过。此前 14/14 的运行结果来自旧二进制，已作废。
+- 实现：`framework/services/config/d12.c`、`framework/include/entelea/d12.h` 按 UTC 日界计
+  日额 200；持久记录 12 字节（magic `D12G`、version 1、flags 0、reserved u16、utc_day u32），
+  存于 KV 保留键 `0x44313247`；预留步长 K=10，计数达到预留值时先写入 `min(预留+K, 200)`
+  再放行；重启后计数取持久预留值（偏保守）；墙钟未知、读失败、记录损坏、写失败均 `E_STATE`；
+  日期回退取较晚日、不放宽；入口经互斥端口，未绑定即拒绝，ISR 由锁端口拒绝。
+- 平台端口：Zephyr `platform/zephyr/d12_ports.{h,c}`（k_mutex；墙钟在 SNTP 接线前恒未同步）、
+  `platform/zephyr/d12_store.c`（KV 适配，仅 `hw_cloud_chat` 链接 `kv.c`）；`boot_steps.c` 绑定，
+  持久端口缺席不阻止启动并输出 printk 提示 fail-closed；14 个 boot_steps 目标加入 `d12_ports.c`。
+  Linux 宿主 `platform/linux/d12_ports.{h,c}`（pthread、CLOCK_REALTIME、进程内存持久，进程退出后
+  不保留）；`cloud_main.c` 绑定；`build-support/build-f2-cloud.sh` 编入。
+- 删除：每启动累计上限 `D12_CALLS_LIFETIME_MAX`。`entelea_d12_model_calls()` 仅为自启动观测值。
+- 测试：`platform/zephyr/tests/d12` 新增 9 个用例（未绑锁、墙钟未知、读失败、损坏记录、写失败、
+  掉电重启不重置、每日写入 20 次、墙钟回退不放宽、多线程并发）；`assist`、`wasm` 改用绑定替身与
+  真实互斥端口；`platform/linux/tests/d12_concurrency.c` 登记为 CTest `d12_runtime_host`。
+- 验证（真实命令与退出码）：
+  - native_sim `d12`：清洁重配构建退出码 0；运行 33/33（framework_d12 23 + bootguard 10），退出码 0。
+  - native_sim `assist` 12/12、`wasm` 26/26、`core` 11/11、`r04` 12/12、`store` 33/33、`net` 6/6、
+    `safety` 7/7、`wdt_start` 5/5、`wdt_hardware` 1/1；构建与运行退出码均为 0，计数与 WP2/WP3 基线一致。
+  - 主机 `RunCtest_CMakeTools` 7/7（新增 `d12_runtime_host`）。
+  - Linux 云诊断 `sh build-support/build-f2-cloud.sh`：退出码 0（仅编译链接，未运行云程序）。
+  - 板级交叉编译（`esp32p4c5_core_board/esp32p4/hpcore`，未烧录）：`minimal` 91,124、
+    `hw_wifi_netmon` 280,120、`hw_factory_intake` 449,268、`hw_flash_persist` 98,040、
+    `hw_cloud_chat` 481,648 字节；红线 552,960；`check_board_ram.py` 全部 PASS，且与 `size -A`
+    输出段求和逐镜像一致（见[资源预算表](board-osptek-p4c5-resource-budget.md#rf1-静态红线复核)）。
+- 未测与边界：
+  1. 板级墙钟未接 SNTP（owner 已确认留待板级授权批次）：墙钟恒未知，云模型调用 fail-closed，
+     `hw_cloud_chat` 等演示不可用。
+  2. 掉电由 `reboot()` 与宿主重绑模拟，未在真板注入掉电；KV 磨损按每日约 20 次预留写入估算，
+     未以真实 flash 寿命验证。
+  3. KV 处于需维护状态（压实返回 `E_STATE`）时 D12 拒绝模型调用；维护恢复策略未定义。
+  4. 宿主诊断面的持久为进程内存；产品闸以板级为准。
+  5. 未来日期的持久记录会按该日计数（不放宽），时钟异常后额度可能冻结到该日；清理策略未实现。
+  6. “连续 3 次异常复位”仍不等于“一小时 3 次”窗口，未实现。
+  7. ISR 拒绝由锁端口代码保证，未做中断注入测试；并发仅在主机与 native_sim 线程中验证，未在真板多核验证。
+  8. 名称仍为 `d12`；WP4b（改名为 `guard`）尚未执行。
+
 ## 对照原规划和批准修订
 
 | 批次 | 当前范围与未完成项 |
@@ -195,8 +238,8 @@ cd /home/emb/project/entelea
    （SRAM 预算），板级恢复须在获批预算后另行规划。
 2. 规划持久经历 schema、真实介质恢复和满盘策略；明确试用数据晋升、
    双副本异常与纪元耗尽的维护流程。
-3. 确定每日限额、一小时复位窗口、可信时基、跨重启状态及端到端
-   超时语义；当前每启动/连续计数不能替代批准阈值。
+3. 每日限额与跨重启持久已由 WP4a 实现（板级墙钟待 SNTP 接线）；仍需确定板级可信时基、一小时复位窗口及端到端
+   超时语义。
 4. 逐项决定 D11 真实媒体、Linux 完整宿主/ARM64、Lua VM、
    Forge 产品隔离/版本锚点及 SDK 产物方向的后续范围；若需要不可信
    原生扩展，同步决定进程隔离及身份传递边界。
