@@ -5,7 +5,7 @@
 /* R12 工厂/试用/晋升合同见 framework/services/delivery/contract.md。
  * 编程循环=OpenHands Software Agent SDK（owner 已确认决策）——SDK 侧
  * 循环不在固件内；Forge 侧集成契约（窄接口）与固件试用状态机在此。
- * 稳定/候选分离、单候选、试用数据隔离、用户内容绑定确认。 */
+ * 单候选与内容绑定试用确认已有；稳定集准入和试用数据晋升尚未闭合。 */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -48,7 +48,8 @@ entelea_result_t entelea_trial_submit(const entelea_trial_candidate_t *cand);
 /** [thread] 用户确认（PENDING→ACTIVE）。shown=向用户展示并获其确认的
  * 对象（取自 trial_current）：digest/permissions/version/slot/epoch
  * 任一不符=E_PERM 且保持 PENDING（旧展示/重推后的过期确认不生效）。
- * 当前尚未将权限位图与运行时 principal 的实际权限表绑定。 */
+ * 调用方负责真实用户授权，本 API 不验证用户身份或交互；当前尚未将
+ * 权限位图与运行时 principal 的实际权限表绑定。 */
 entelea_result_t entelea_trial_confirm(const entelea_trial_candidate_t *shown);
 
 /** [thread] 用户拒绝（PENDING→REJECTED；槽保留可重推）。 */

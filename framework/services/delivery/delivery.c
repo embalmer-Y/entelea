@@ -4,7 +4,7 @@
  * 编程循环=OpenHands Software Agent SDK（owner 已确认）——SDK 侧循环
  * 不在固件内；本层=固件试用状态机（单候选/对象绑定确认/执行门/
  * fail-closed 超时与恢复）+ 工厂产物 intake（域外拒/未知 payload 拒）。
- * 工程通过≠用户验收：confirm 是唯一晋升路径（用户显式）。
+ * 工程通过≠用户验收：confirm 开启试用；真实用户授权由可信调用方负责。
  * 单线程假设：全部入口 [thread]，无内部锁（与 wasm 宿主同线程）。
  */
 #include <string.h>

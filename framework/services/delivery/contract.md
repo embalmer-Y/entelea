@@ -19,10 +19,11 @@
   +version+**slot**+**epoch**。NONE → PENDING_CONFIRM（submit 分配 epoch：
   非 0、单调、跨 end/restore 不回退；到 `UINT32_MAX` 后新 submit
   返回 `E_RANGE` 且不更改状态，不能回绕复用旧确认）；PENDING → ACTIVE
-  （`confirm(&shown)`——**唯一晋升路径，用户显式**；shown 须与当前候选
-  全字段一致，否则 E_PERM 且保持 PENDING：旧展示/重推后的过期确认不
-  生效）/ REJECTED（reject）/ TIMEOUT（fail-closed 撤销）；ACTIVE → NONE
-  （end）。
+  （`confirm(&shown)`——开启试用前须由可信调用方取得真实用户确认；
+  API 本身只比较对象，不验证用户身份或交互；shown 须与当前候选全字段
+  一致，否则 E_PERM 且保持 PENDING：旧展示/重推后的过期确认不生效）
+  / REJECTED（reject）/ TIMEOUT（fail-closed 撤销）；ACTIVE → NONE
+  （end）。ACTIVE 是试用状态，不代表稳定集晋升。
 - 单候选与槽保留：ACTIVE/PENDING 期 submit=E_BUSY；REJECTED/TIMEOUT
   只可同槽重推（他槽=E_BUSY）；slot 域外=E_PARAM；非预期迁移=E_STATE。
 - **执行门（RF1）**：`entelea_trial_gate(slot, digest)` 由 wasm 宿主在

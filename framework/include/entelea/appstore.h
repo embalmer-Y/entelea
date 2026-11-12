@@ -31,7 +31,8 @@ entelea_result_t entelea_pkg_stage_chunk(uint8_t slot, uint32_t off,
 
 /** 全量验签：TSAP v2 头 + sha256 摘要对拍 + COSE_Sign1 ed25519
  * （tweetnacl）+ 内嵌副本比对（防签 A 装 B）。root=NULL = 有效信任集
- * （工厂根 ∪ R03 信任表）；失败 = E_INVALID_SIG（fail-closed，零激活）。
+ * （工厂根 ∪ R03 信任表）；格式/签名错误 = E_INVALID_SIG，存储读失败 =
+ * E_IO；失败不激活。
  * ENTELEA_TEST 构建验签对象 = 固定测试根（公开材料，测试信任≠生产）。 */
 entelea_result_t entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
 				    entelea_tsap_view_t *v, uint8_t digest_out[32]);
