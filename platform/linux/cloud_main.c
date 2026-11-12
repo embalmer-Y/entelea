@@ -15,13 +15,13 @@
 #include <string.h>
 #include <time.h>
 #include <mbedtls/net_sockets.h>
-#include <entelea/d12.h>
+#include <entelea/guard.h>
 #include <entelea/model.h>
 #include <entelea/netmon.h>
 #include "../https_json.h"
 #include "../secure_zero.h"
 #include "clock.h"
-#include "d12_ports.h"
+#include "guard_ports.h"
 #include "https_chat.h"
 
 static int failures;
@@ -178,25 +178,25 @@ main(int argc, char **argv)
 	static const entelea_model_transport_t ops = {
 		.chat = entelea_https_chat,
 	};
-	static entelea_clock_t d12_clock;
-	static entelea_lock_t d12_lock;
-	static entelea_wallclock_t d12_wall;
-	static entelea_d12_store_t d12_store;
+	static entelea_clock_t guard_clock;
+	static entelea_lock_t guard_lock;
+	static entelea_wallclock_t guard_wall;
+	static entelea_guard_store_t guard_store;
 
 	/* RF1 G5: model_ask passes the D12 gate on each attempt (since r16;
 	 * any unbound port fails closed).
 	 * Host persistence is in-process memory: the daily count is not kept
-	 * after the process exits (see d12_ports.c). */
-	CHECK(entelea_platform_clock_init(&d12_clock) == ENTELEA_OK);
-	CHECK(entelea_d12_bind_clock(&d12_clock) == ENTELEA_OK);
-	CHECK(entelea_platform_d12_lock_init(&d12_lock) == ENTELEA_OK);
-	CHECK(entelea_d12_bind_lock(&d12_lock) == ENTELEA_OK);
-	CHECK(entelea_platform_d12_wallclock_init(&d12_wall) == ENTELEA_OK);
-	CHECK(entelea_d12_bind_wallclock(&d12_wall) == ENTELEA_OK);
-	CHECK(entelea_platform_d12_store_init(&d12_store) == ENTELEA_OK);
-	CHECK(entelea_d12_bind_store(&d12_store) == ENTELEA_OK);
+	 * after the process exits (see guard_ports.c). */
+	CHECK(entelea_platform_clock_init(&guard_clock) == ENTELEA_OK);
+	CHECK(entelea_guard_bind_clock(&guard_clock) == ENTELEA_OK);
+	CHECK(entelea_platform_guard_lock_init(&guard_lock) == ENTELEA_OK);
+	CHECK(entelea_guard_bind_lock(&guard_lock) == ENTELEA_OK);
+	CHECK(entelea_platform_guard_wallclock_init(&guard_wall) == ENTELEA_OK);
+	CHECK(entelea_guard_bind_wallclock(&guard_wall) == ENTELEA_OK);
+	CHECK(entelea_platform_guard_store_init(&guard_store) == ENTELEA_OK);
+	CHECK(entelea_guard_bind_store(&guard_store) == ENTELEA_OK);
 	entelea_model_bind(&ops, &cfg);
-	if (failures != 0 || !report_network_pair(&d12_clock, cfg.host)) {
+	if (failures != 0 || !report_network_pair(&guard_clock, cfg.host)) {
 		fprintf(stderr, "[cloud] network observation failed\n");
 		goto cleanup;
 	}
@@ -219,7 +219,8 @@ main(int argc, char **argv)
 		r = entelea_model_probe(msgs, 1, out, sizeof(out), 30000,
 					&usage);
 		if (touched == before || r != ENTELEA_OK || out[0] == '\0' ||
-		    !report_observation(&d12_clock, ENTELEA_DEP_MODEL, true)) {
+		    !report_observation(&guard_clock, ENTELEA_DEP_MODEL,
+					true)) {
 			(void) entelea_dep_mark_down(ENTELEA_DEP_MODEL);
 			fprintf(stderr,
 				"[cloud] model recovery probe failed rc=%d\n",
@@ -239,20 +240,20 @@ main(int argc, char **argv)
 	CHECK(r == ENTELEA_OK);
 	CHECK(out[0] != '\0'); /* Non-empty content (model-dependent text) */
 	CHECK(touched >= 3);
-	CHECK(entelea_d12_model_calls() == (uint32_t) touched); /* Per try */
+	CHECK(entelea_guard_model_calls() == (uint32_t) touched); /* Per try */
 	CHECK(usage.prompt_tokens > 0);
 
 	/* Simulated connectivity-loss control: with NET DOWN, ask is refused
 	 * with E_STATE and does not touch the transport. */
 	int before = touched;
-	CHECK(report_observation(&d12_clock, ENTELEA_DEP_NET, false));
+	CHECK(report_observation(&guard_clock, ENTELEA_DEP_NET, false));
 	CHECK(!entelea_model_ready());
 	r = entelea_model_ask(msgs, 1, out, sizeof(out), 5000, NULL);
 	CHECK(r == ENTELEA_E_STATE);
 	CHECK(touched == before);
 
 	/* Recovery surface: two real network observations. */
-	CHECK(report_network_pair(&d12_clock, cfg.host));
+	CHECK(report_network_pair(&guard_clock, cfg.host));
 	CHECK(entelea_model_ready());
 
 	if (failures == 0) {

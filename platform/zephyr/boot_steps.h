@@ -20,20 +20,20 @@
 extern const entelea_boot_step_t
 	entelea_platform_boot_steps[ENTELEA_PLATFORM_BOOT_STEP_COUNT];
 
-/* D12 reset-storm SAFE-HALT (strong implementation in d12_bootguard.c;
+/* D12 reset-storm SAFE-HALT (strong implementation in guard_bootguard.c;
  * targets that do not link the guard get a weak stub that always returns
  * false). The assembly layer queries it after boot: true = do not start
  * business, keep outputs at the safe initial state, feed the watchdog
  * continuously (exit only via POR). Business board images must link the
  * guard. */
 bool
-entelea_platform_d12_bootguard(void);
+entelea_platform_guard_bootguard(void);
 bool
-entelea_platform_d12_safe_halt(void);
+entelea_platform_guard_safe_halt(void);
 
 #ifdef ENTELEA_TEST
 void
-entelea_platform_d12_test_reset(void);
+entelea_platform_guard_test_reset(void);
 #endif
 
 #endif /* ENTELEA_PLATFORM_BOOT_STEPS_H */

@@ -81,7 +81,7 @@ __wrap_task_wdt_feed(int channel_id)
 	feed_calls++;
 }
 
-ZTEST(wdt_start_failures, test_d12_boot_step_propagates_clock_init_failure)
+ZTEST(wdt_start_failures, test_guard_boot_step_propagates_clock_init_failure)
 {
 	platform_clock_mode = 1;
 	entelea_result_t r = entelea_platform_boot_steps[5].fn();
@@ -90,7 +90,7 @@ ZTEST(wdt_start_failures, test_d12_boot_step_propagates_clock_init_failure)
 	zassert_equal(r, ENTELEA_E_IO);
 }
 
-ZTEST(wdt_start_failures, test_d12_boot_step_propagates_clock_bind_failure)
+ZTEST(wdt_start_failures, test_guard_boot_step_propagates_clock_bind_failure)
 {
 	platform_clock_mode = 2;
 	entelea_result_t r = entelea_platform_boot_steps[5].fn();

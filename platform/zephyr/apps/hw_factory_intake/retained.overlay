@@ -7,7 +7,7 @@
 	#address-cells = <1>;
 	#size-cells = <1>;
 
-	d12retained: d12-retained {
+	guardretained: guard-retained {
 		compatible = "zephyr,retained-ram";
 		status = "okay";
 	};

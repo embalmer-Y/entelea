@@ -7,9 +7,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <entelea/d12.h>
+#include <entelea/guard.h>
 #include <entelea/time.h>
-#include "d12_ports.h"
+#include "guard_ports.h"
 
 #define DAY0 20000ULL
 #define DAY_SECS 86400ULL
@@ -34,7 +34,7 @@ static bool wall_fail;
 static entelea_clock_t clk;
 static entelea_wallclock_t wall;
 static entelea_lock_t lock;
-static entelea_d12_store_t store;
+static entelea_guard_store_t store;
 
 static entelea_result_t
 mono_read(void *user, uint64_t *out)
@@ -57,20 +57,20 @@ fake_wall_read(void *user, uint64_t *out)
 static void
 boot_bind(void)
 {
-	entelea_d12_test_reset();
+	entelea_guard_test_reset();
 	CHECK(entelea_clock_init(&clk, mono_read, &fake_now, 1) == ENTELEA_OK);
-	CHECK(entelea_d12_bind_clock(&clk) == ENTELEA_OK);
-	CHECK(entelea_d12_bind_lock(&lock) == ENTELEA_OK);
-	CHECK(entelea_d12_bind_wallclock(&wall) == ENTELEA_OK);
-	CHECK(entelea_d12_bind_store(&store) == ENTELEA_OK);
+	CHECK(entelea_guard_bind_clock(&clk) == ENTELEA_OK);
+	CHECK(entelea_guard_bind_lock(&lock) == ENTELEA_OK);
+	CHECK(entelea_guard_bind_wallclock(&wall) == ENTELEA_OK);
+	CHECK(entelea_guard_bind_store(&store) == ENTELEA_OK);
 }
 
-/* 预置持久记录（与 d12.c 同格式：magic "D12G"、version 1、flags 0、
+/* 预置持久记录（与 guard.c 同格式：magic "D12G"、version 1、flags 0、
  * reserved u16 小端、utc_day u32 小端）。 */
 static void
 seed(uint32_t day, uint16_t reserved)
 {
-	uint8_t rec[ENTELEA_D12_REC_LEN];
+	uint8_t rec[ENTELEA_GUARD_REC_LEN];
 
 	memcpy(rec, "D12G", 4);
 	rec[4] = 1;
@@ -96,7 +96,7 @@ worker(void *arg)
 
 	(void) arg;
 	for (int i = 0; i < ATTEMPTS; i++) {
-		if (entelea_d12_model_allow() == ENTELEA_OK) {
+		if (entelea_guard_model_allow() == ENTELEA_OK) {
 			ok++;
 		} else {
 			bad++;
@@ -130,7 +130,7 @@ test_concurrent_admission_respects_daily_cap(void)
 	}
 	CHECK(admitted == 4);
 	CHECK(refused == WORKERS * ATTEMPTS - 4);
-	CHECK(entelea_d12_model_calls() == 4U);
+	CHECK(entelea_guard_model_calls() == 4U);
 }
 
 /* 每 37 次尝试重启一次：放行绝不超过 200；重启偏保守的损失每次不超过 K−1。 */
@@ -147,7 +147,7 @@ test_restarts_do_not_reset_daily_cap(void)
 	while (attempts < 400) {
 		fake_now += 60000U;
 		attempts++;
-		if (entelea_d12_model_allow() == ENTELEA_OK) {
+		if (entelea_guard_model_allow() == ENTELEA_OK) {
 			ok++;
 		}
 		if (attempts % 37 == 0) {
@@ -156,9 +156,9 @@ test_restarts_do_not_reset_daily_cap(void)
 		}
 	}
 	CHECK(ok <= 200);
-	CHECK(ok >= 200 - (int) (ENTELEA_D12_RESERVE_STEP - 1U) * boots);
+	CHECK(ok >= 200 - (int) (ENTELEA_GUARD_RESERVE_STEP - 1U) * boots);
 	fake_now += 60000U;
-	CHECK(entelea_d12_model_allow() == ENTELEA_E_BUSY);
+	CHECK(entelea_guard_model_allow() == ENTELEA_E_BUSY);
 }
 
 /* 墙钟未知即拒绝（不计放行）；墙钟恢复后，额度用尽仍拒，次日重新计数。 */
@@ -170,11 +170,11 @@ test_wall_unknown_and_day_rollover(void)
 	boot_bind();
 	wall_fail = true;
 	fake_now += 60000U;
-	CHECK(entelea_d12_model_allow() == ENTELEA_E_STATE);
+	CHECK(entelea_guard_model_allow() == ENTELEA_E_STATE);
 	wall_fail = false;
-	CHECK(entelea_d12_model_allow() == ENTELEA_E_BUSY);
+	CHECK(entelea_guard_model_allow() == ENTELEA_E_BUSY);
 	fake_utc_s += DAY_SECS;
-	CHECK(entelea_d12_model_allow() == ENTELEA_OK);
+	CHECK(entelea_guard_model_allow() == ENTELEA_OK);
 }
 
 int
@@ -183,9 +183,9 @@ main(void)
 	entelea_wallclock_t host_wall;
 	uint64_t host_now = 0;
 
-	CHECK(entelea_platform_d12_lock_init(&lock) == ENTELEA_OK);
-	CHECK(entelea_platform_d12_store_init(&store) == ENTELEA_OK);
-	CHECK(entelea_platform_d12_wallclock_init(&host_wall) == ENTELEA_OK);
+	CHECK(entelea_platform_guard_lock_init(&lock) == ENTELEA_OK);
+	CHECK(entelea_platform_guard_store_init(&store) == ENTELEA_OK);
+	CHECK(entelea_platform_guard_wallclock_init(&host_wall) == ENTELEA_OK);
 	CHECK(host_wall.read_utc_s(host_wall.user, &host_now) == ENTELEA_OK);
 	CHECK(host_now > MIN_UNIX_S);
 	wall.read_utc_s = fake_wall_read;
@@ -195,9 +195,9 @@ main(void)
 	test_restarts_do_not_reset_daily_cap();
 	test_wall_unknown_and_day_rollover();
 	if (failures != 0) {
-		fprintf(stderr, "d12 host tests: %d failure(s)\n", failures);
+		fprintf(stderr, "guard host tests: %d failure(s)\n", failures);
 		return 1;
 	}
-	printf("d12 host tests: PASS\n");
+	printf("guard host tests: PASS\n");
 	return 0;
 }

@@ -3,8 +3,8 @@
 #include <string.h>
 #include <zephyr/ztest.h>
 #include <entelea/time.h>
-#include <entelea/d12.h>
-#include "d12_ports.h"
+#include <entelea/guard.h>
+#include "guard_ports.h"
 
 static entelea_result_t
 fake_read_ms(void *user, uint64_t *out)
@@ -13,64 +13,65 @@ fake_read_ms(void *user, uint64_t *out)
 	return ENTELEA_OK;
 }
 
-static uint8_t d12_rec[ENTELEA_D12_REC_LEN];
-static bool d12_rec_present;
+static uint8_t guard_rec[ENTELEA_GUARD_REC_LEN];
+static bool guard_rec_present;
 
 static entelea_result_t
-d12_store_load(void *user, uint8_t rec[ENTELEA_D12_REC_LEN])
+guard_store_load(void *user, uint8_t rec[ENTELEA_GUARD_REC_LEN])
 {
 	(void) user;
-	if (!d12_rec_present) {
+	if (!guard_rec_present) {
 		return ENTELEA_E_NOTFOUND;
 	}
-	memcpy(rec, d12_rec, ENTELEA_D12_REC_LEN);
+	memcpy(rec, guard_rec, ENTELEA_GUARD_REC_LEN);
 	return ENTELEA_OK;
 }
 
 static entelea_result_t
-d12_store_save(void *user, const uint8_t rec[ENTELEA_D12_REC_LEN])
+guard_store_save(void *user, const uint8_t rec[ENTELEA_GUARD_REC_LEN])
 {
 	(void) user;
-	memcpy(d12_rec, rec, ENTELEA_D12_REC_LEN);
-	d12_rec_present = true;
+	memcpy(guard_rec, rec, ENTELEA_GUARD_REC_LEN);
+	guard_rec_present = true;
 	return ENTELEA_OK;
 }
 
 static entelea_result_t
-d12_wall_read(void *user, uint64_t *out)
+guard_wall_read(void *user, uint64_t *out)
 {
 	*out = *(uint64_t *) user;
 	return ENTELEA_OK;
 }
 
-/* r16/WP4a：d12 闸接入面——model_test_reset 不动 d12，各段 reset 后重绑；
+/* r16/WP4a：guard 闸接入面——model_test_reset 不动 guard，各段 reset 后重绑；
  * 每段为新设备（清持久替身，墙钟置于 UTC 日 20000）。 */
 static void
-bind_d12_fake(void)
+bind_guard_fake(void)
 {
 	static uint64_t fake_now;
 	static uint64_t fake_utc_s = 20000ULL * 86400ULL;
-	static entelea_clock_t d12_clock;
-	static entelea_lock_t d12_lock;
-	static entelea_wallclock_t d12_wall = {
-		.read_utc_s = d12_wall_read,
+	static entelea_clock_t guard_clock;
+	static entelea_lock_t guard_lock;
+	static entelea_wallclock_t guard_wall = {
+		.read_utc_s = guard_wall_read,
 	};
-	static entelea_d12_store_t d12_store = {
-		.load = d12_store_load,
-		.save = d12_store_save,
+	static entelea_guard_store_t guard_store = {
+		.load = guard_store_load,
+		.save = guard_store_save,
 	};
 
 	fake_now = 0;
-	d12_wall.user = &fake_utc_s;
-	d12_rec_present = false;
-	entelea_d12_test_reset();
+	guard_wall.user = &fake_utc_s;
+	guard_rec_present = false;
+	entelea_guard_test_reset();
 	zassert_ok(
-		entelea_clock_init(&d12_clock, fake_read_ms, &fake_now, 0xD12));
-	zassert_ok(entelea_d12_bind_clock(&d12_clock));
-	zassert_ok(entelea_platform_d12_lock_init(&d12_lock));
-	zassert_ok(entelea_d12_bind_lock(&d12_lock));
-	zassert_ok(entelea_d12_bind_wallclock(&d12_wall));
-	zassert_ok(entelea_d12_bind_store(&d12_store));
+		entelea_clock_init(&guard_clock, fake_read_ms, &fake_now,
+				   0xD12));
+	zassert_ok(entelea_guard_bind_clock(&guard_clock));
+	zassert_ok(entelea_platform_guard_lock_init(&guard_lock));
+	zassert_ok(entelea_guard_bind_lock(&guard_lock));
+	zassert_ok(entelea_guard_bind_wallclock(&guard_wall));
+	zassert_ok(entelea_guard_bind_store(&guard_store));
 }
 
 #include <entelea/assistant.h>
@@ -550,7 +551,7 @@ ZTEST(framework_assist, test_unknown_io_is_not_retried)
 
 	entelea_model_test_reset();
 	entelea_net_test_reset();
-	bind_d12_fake();
+	bind_guard_fake();
 	entelea_model_bind(&mock_transport, NULL);
 	deps_up();
 	mock_calls = 0;
@@ -563,7 +564,7 @@ ZTEST(framework_assist, test_unknown_io_is_not_retried)
 		entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &usage),
 		ENTELEA_E_IO, "未知发送效果不能自动重发");
 	zassert_equal(mock_calls, 1, "失败后不得再次触及传输");
-	zassert_equal(entelea_d12_model_calls(), 1);
+	zassert_equal(entelea_guard_model_calls(), 1);
 	zassert_equal(out[0], '\0', "失败不得保留旧回答");
 	entelea_model_test_reset();
 	entelea_net_test_reset();
@@ -577,7 +578,7 @@ ZTEST(framework_assist, test_model_adapter_policy)
 
 	entelea_model_test_reset();
 	entelea_net_test_reset();
-	bind_d12_fake();
+	bind_guard_fake();
 	mock_calls = 0;
 	memset(mock_next_rc, 0, sizeof(mock_next_rc));
 	strcpy(mock_answer, "pong");
@@ -608,14 +609,14 @@ ZTEST(framework_assist, test_model_adapter_policy)
 		      "失败尝试用量如实累计（3x10，review P3-4 激活）");
 	/* RF1 G5（审计 #11）：每次传输尝试=一次 D12 请求（逐尝试过闸+
 	 * 逐尝试上报）——3 次失败即 3 连败闩风暴。 */
-	zassert_equal(entelea_d12_model_calls(), 3, "逐尝试计入频度");
-	zassert_true(entelea_d12_storm_latched(), "3 次传输失败闩风暴");
+	zassert_equal(entelea_guard_model_calls(), 3, "逐尝试计入频度");
+	zassert_true(entelea_guard_storm_latched(), "3 次传输失败闩风暴");
 	zassert_equal(entelea_dep_state(ENTELEA_DEP_MODEL), ENTELEA_DEP_DOWN);
 	mock_calls = 0;
 	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
 		      ENTELEA_E_STATE, "风暴闩内拒");
 	zassert_equal(mock_calls, 0, "闩内不触传输");
-	entelea_d12_storm_clear(); /* 外部释放面（命令/到场） */
+	entelea_guard_storm_clear(); /* 外部释放面（命令/到场） */
 	deps_up(); /* 此处为测试夹具；真实恢复须两次实际成功探测。 */
 
 	/* 第 2 次成功：恰一次重试。 */
@@ -632,7 +633,7 @@ ZTEST(framework_assist, test_model_adapter_policy)
 
 	/* E_TIMEOUT 不自动重试（成本不可知——显式上抛）。 */
 	entelea_model_test_reset();
-	bind_d12_fake();
+	bind_guard_fake();
 	entelea_model_bind(&mock_transport, NULL); /* reset 解绑——重绑 */
 	mock_calls = 0;
 	memset(mock_next_rc, 0, sizeof(mock_next_rc));
@@ -642,7 +643,7 @@ ZTEST(framework_assist, test_model_adapter_policy)
 	zassert_equal(mock_calls, 1, "超时不重试");
 
 	/* 依赖再 DOWN：回到联动门。 */
-	bind_d12_fake();
+	bind_guard_fake();
 	entelea_dep_report(ENTELEA_DEP_NET, false, 0);
 	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
 		      ENTELEA_E_STATE);
@@ -652,7 +653,7 @@ ZTEST(framework_assist, test_model_adapter_policy)
 
 /* RF1 G5（审计 #11）：重试同受频度闸——窗满即停，返回闸结果且不再
  * 触传输（旧实现仅首发过闸，6 次 ask 实发 18 次请求）。 */
-ZTEST(framework_assist, test_model_retry_gated_by_d12)
+ZTEST(framework_assist, test_model_retry_gated_by_guard)
 {
 	char out[128];
 	entelea_model_msg_t msgs[1] = { { .role = "user", .content = "ping" } };
@@ -660,7 +661,7 @@ ZTEST(framework_assist, test_model_retry_gated_by_d12)
 
 	entelea_model_test_reset();
 	entelea_net_test_reset();
-	bind_d12_fake();
+	bind_guard_fake();
 	entelea_model_bind(&mock_transport, NULL);
 	deps_up();
 	memset(mock_next_rc, 0, sizeof(mock_next_rc));
@@ -672,7 +673,7 @@ ZTEST(framework_assist, test_model_retry_gated_by_d12)
 			entelea_model_ask(msgs, 1, out, sizeof(out), 5000, &u),
 			ENTELEA_OK);
 	}
-	zassert_equal(entelea_d12_model_calls(), 5);
+	zassert_equal(entelea_guard_model_calls(), 5);
 	/* 第 6 槽首发未发送；重试被窗拒 → E_BUSY，传输仅 1 次。 */
 	mock_calls = 0;
 	mock_next_rc[0] = mock_next_rc[1] = mock_next_rc[2] =
@@ -681,8 +682,8 @@ ZTEST(framework_assist, test_model_retry_gated_by_d12)
 		      ENTELEA_E_BUSY, "重试过闸被拒");
 	zassert_equal(mock_calls, 1, "被闸重试不触传输");
 	zassert_equal(out[0], '\0', "失败路径不留半答");
-	zassert_equal(entelea_d12_model_calls(), 6);
-	zassert_false(entelea_d12_storm_latched(), "闸拒不算传输失败");
+	zassert_equal(entelea_guard_model_calls(), 6);
+	zassert_false(entelea_guard_storm_latched(), "闸拒不算传输失败");
 	entelea_model_test_reset();
 	entelea_net_test_reset();
 }
@@ -695,7 +696,7 @@ ZTEST(framework_assist, test_model_probe_and_real_recovery_observations)
 
 	entelea_model_test_reset();
 	entelea_net_test_reset();
-	bind_d12_fake();
+	bind_guard_fake();
 	entelea_model_bind(&invalid, NULL);
 	zassert_equal(
 		entelea_model_probe(msgs, 1, out, sizeof(out), 5000, NULL),
@@ -731,7 +732,7 @@ ZTEST(framework_assist, test_model_probe_and_real_recovery_observations)
 		      ENTELEA_OK);
 	zassert_true(entelea_model_ready());
 	zassert_equal(mock_calls, 2, "两条成功观测来自两次真实传输回调");
-	zassert_equal(entelea_d12_model_calls(), 2);
+	zassert_equal(entelea_guard_model_calls(), 2);
 
 	mock_next_rc[2] = ENTELEA_E_PERM;
 	zassert_equal(entelea_model_ask(msgs, 1, out, sizeof(out), 5000, NULL),
@@ -750,7 +751,7 @@ ZTEST(framework_assist, test_model_usage_saturates)
 
 	entelea_model_test_reset();
 	entelea_net_test_reset();
-	bind_d12_fake();
+	bind_guard_fake();
 	entelea_model_bind(&mock_transport, NULL);
 	deps_up();
 	mock_calls = 0;

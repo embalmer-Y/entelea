@@ -51,7 +51,7 @@
   逐尝试重查（重试中途 DOWN=E_STATE 停触传输）。D12 闸同样逐尝试
   （RF1 G5）：每次传输尝试均计入 D12（即使确定未发送也保守计数），
   重试被闸拒即停并返回闸结果——3 次连续失败即闩风暴且 MODEL DOWN，
-  须外部 `entelea_d12_storm_clear` 释放；鉴权失败也立即 MODEL DOWN。
+  须外部 `entelea_guard_storm_clear` 释放；鉴权失败也立即 MODEL DOWN。
 - 显式 `entelea_model_probe` 在网络 UP、D12 允许时可探测尚未恢复的
   MODEL，避免“需先 UP 才能验证 UP”的循环；它不自动修改恢复状态，
   调用方只可据每次真实结果分别上报，不能把一次成功伪报成两次。

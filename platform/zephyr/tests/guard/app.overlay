@@ -1,0 +1,6 @@
+/ {
+	guardretained: guard-retained {
+		compatible = "test,guard-retained";
+		status = "okay";
+	};
+};

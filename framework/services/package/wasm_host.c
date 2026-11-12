@@ -17,7 +17,7 @@
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <entelea/appstore.h>
-#include <entelea/d12.h>
+#include <entelea/guard.h>
 #include <entelea/delivery.h>
 #include <entelea/wasm_host.h>
 #include <wasm_export.h>
@@ -343,7 +343,7 @@ entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx, const char *fn,
 		}
 	}
 	{ /* D12 cooldown precheck (60s after abnormal reset; E_BUSY) */
-		entelea_result_t gate = entelea_d12_wasm_allow();
+		entelea_result_t gate = entelea_guard_wasm_allow();
 
 		if (gate != ENTELEA_OK) {
 			return gate;

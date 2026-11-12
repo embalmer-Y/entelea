@@ -6,7 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <mbedtls/net_sockets.h>
-#include <entelea/d12.h>
+#include <entelea/guard.h>
 #include <entelea/time.h>
 
 #ifndef CLOUD_DIAGNOSTIC_SOURCE
@@ -59,14 +59,14 @@ entelea_clock_now(entelea_clock_t *clock, entelea_instant_t *out)
 }
 
 entelea_result_t
-entelea_d12_bind_clock(const entelea_clock_t *clock)
+entelea_guard_bind_clock(const entelea_clock_t *clock)
 {
 	(void) clock;
 	return ENTELEA_OK;
 }
 
 uint32_t
-entelea_d12_model_calls(void)
+entelea_guard_model_calls(void)
 {
 	return 0;
 }

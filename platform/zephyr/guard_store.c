@@ -2,35 +2,35 @@
 /* D12 day-counter persistent port (Zephyr KV). Its key shares the app_hash
  * key space with PKG_ACTIVE_KV_TAG (framework/services/package/store.c).
  * The tag is ASCII "D12G". */
-#include <entelea/d12.h>
+#include <entelea/guard.h>
 #include <entelea/kv.h>
-#include "d12_ports.h"
+#include "guard_ports.h"
 
-#define D12_KV_TAG 0x44313247U
+#define GUARD_KV_TAG 0x44313247U
 
 static entelea_result_t
-d12_store_load(void *user, uint8_t rec[ENTELEA_D12_REC_LEN])
+guard_store_load(void *user, uint8_t rec[ENTELEA_GUARD_REC_LEN])
 {
 	int32_t n;
 
 	(void) user;
-	n = entelea_kv_load(D12_KV_TAG, rec, ENTELEA_D12_REC_LEN);
+	n = entelea_kv_load(GUARD_KV_TAG, rec, ENTELEA_GUARD_REC_LEN);
 	if (n < 0) {
 		return (entelea_result_t) n;
 	}
-	return n == (int32_t) ENTELEA_D12_REC_LEN ? ENTELEA_OK :
-						    ENTELEA_E_STATE;
+	return n == (int32_t) ENTELEA_GUARD_REC_LEN ? ENTELEA_OK :
+						      ENTELEA_E_STATE;
 }
 
 static entelea_result_t
-d12_store_save(void *user, const uint8_t rec[ENTELEA_D12_REC_LEN])
+guard_store_save(void *user, const uint8_t rec[ENTELEA_GUARD_REC_LEN])
 {
 	(void) user;
-	return entelea_kv_save(D12_KV_TAG, rec, ENTELEA_D12_REC_LEN);
+	return entelea_kv_save(GUARD_KV_TAG, rec, ENTELEA_GUARD_REC_LEN);
 }
 
 entelea_result_t
-entelea_platform_d12_store_init(entelea_d12_store_t *store)
+entelea_platform_guard_store_init(entelea_guard_store_t *store)
 {
 	entelea_result_t r;
 
@@ -41,8 +41,8 @@ entelea_platform_d12_store_init(entelea_d12_store_t *store)
 	if (r != ENTELEA_OK) {
 		return r;
 	}
-	store->load = d12_store_load;
-	store->save = d12_store_save;
+	store->load = guard_store_load;
+	store->save = guard_store_save;
 	store->user = NULL;
 	return ENTELEA_OK;
 }

@@ -13,7 +13,7 @@
  * (RF1 G5: retries do not bypass frequency or storm limits).
  */
 #include <string.h>
-#include <entelea/d12.h>
+#include <entelea/guard.h>
 #include <entelea/model.h>
 #include <entelea/netmon.h>
 
@@ -40,7 +40,7 @@ entelea_model_ready(void)
 	return transport != NULL && transport->chat != NULL &&
 	       entelea_dep_state(ENTELEA_DEP_MODEL) == ENTELEA_DEP_UP &&
 	       entelea_dep_state(ENTELEA_DEP_NET) == ENTELEA_DEP_UP &&
-	       !entelea_d12_storm_latched();
+	       !entelea_guard_storm_latched();
 }
 
 static entelea_result_t
@@ -81,7 +81,7 @@ model_call(const entelea_model_msg_t *msgs, uint8_t n, char *out,
 		/* RF1 G5: D12 gate per attempt (each transport is one cloud
 		 * request). If the gate blocks, stop without a transport call
 		 * and return the gate result; refusals are not storms. */
-		gate = entelea_d12_model_allow();
+		gate = entelea_guard_model_allow();
 		if (gate != ENTELEA_OK) {
 			r = gate;
 			break;
@@ -92,8 +92,9 @@ model_call(const entelea_model_msg_t *msgs, uint8_t n, char *out,
 			usage_add(total_usage.prompt_tokens, u.prompt_tokens);
 		total_usage.completion_tokens = usage_add(
 			total_usage.completion_tokens, u.completion_tokens);
-		entelea_d12_model_note(r); /* Report per try (storm, E_BUSY) */
-		if (r == ENTELEA_E_PERM || entelea_d12_storm_latched()) {
+		/* Report per try (storm, E_BUSY) */
+		entelea_guard_model_note(r);
+		if (r == ENTELEA_E_PERM || entelea_guard_storm_latched()) {
 			(void) entelea_dep_mark_down(ENTELEA_DEP_MODEL);
 		}
 		if (r != ENTELEA_OK) {

@@ -50,7 +50,7 @@ main(void)
 	 * (cause=WATCHDOG, abnormal). After bootguard counts >=3,
 	 * SAFE-HALT stays resident (feeding does not fail).
 	 * Exit only via POR. */
-	if (entelea_platform_d12_safe_halt()) {
+	if (entelea_platform_guard_safe_halt()) {
 		printk("[storm-demo] SAFE-HALT confirmed (business halted, "
 		       "feeding)\n");
 	} else {
@@ -61,11 +61,11 @@ main(void)
 	k_sleep(K_FOREVER);
 	return 0;
 #endif
-	if (entelea_platform_d12_safe_halt()) {
+	if (entelea_platform_guard_safe_halt()) {
 		/* RF1 G5: production path also consumes SAFE-HALT. This image
 		 * has no business, so it only marks the state. Outputs are
 		 * already safe; heartbeat and patrol continue. */
-		printk("[d12] SAFE-HALT active: business disabled\n");
+		printk("[guard] SAFE-HALT active: business disabled\n");
 	}
 	for (;;) {
 		/* r14 hardware observation: a 5 s heartbeat prints the safety

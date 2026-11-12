@@ -11,8 +11,8 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/services/assistant/assistant.c
   ${ENTELEA_ROOT}/framework/services/assistant/model.c
   ${ENTELEA_ROOT}/framework/services/net/netmon.c
-  ${ENTELEA_ROOT}/framework/services/config/d12.c
-  ${ENTELEA_ROOT}/platform/zephyr/d12_ports.c
+  ${ENTELEA_ROOT}/framework/services/config/guard.c
+  ${ENTELEA_ROOT}/platform/zephyr/guard_ports.c
   ${ENTELEA_ROOT}/framework/services/storage/part.c
   ${ENTELEA_ROOT}/framework/services/storage/meta.c
   ${ENTELEA_ROOT}/framework/services/storage/noinit.c

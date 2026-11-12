@@ -9,8 +9,8 @@ zephyr_include_directories(${ENTELEA_ROOT}/framework/include
 target_sources(app PRIVATE
   main.c
   ${ENTELEA_ROOT}/platform/zephyr/boot_steps.c
-  ${ENTELEA_ROOT}/platform/zephyr/d12_ports.c
-  ${ENTELEA_ROOT}/framework/services/config/d12.c
+  ${ENTELEA_ROOT}/platform/zephyr/guard_ports.c
+  ${ENTELEA_ROOT}/framework/services/config/guard.c
   ${ENTELEA_ROOT}/platform/zephyr/clock.c
   ${ENTELEA_ROOT}/framework/common/time.c
   ${ENTELEA_ROOT}/framework/services/storage/part.c

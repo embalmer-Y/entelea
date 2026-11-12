@@ -5,7 +5,7 @@
 #include <zephyr/drivers/hwinfo.h>
 #include <zephyr/drivers/retained_mem.h>
 #include <zephyr/ztest.h>
-#include <entelea/d12.h>
+#include <entelea/guard.h>
 #include "boot_steps.h"
 
 static uint8_t retained_data[8];
@@ -62,8 +62,9 @@ static DEVICE_API(retained_mem, retained_api) = {
 	.clear = retained_clear,
 };
 
-DEVICE_DT_DEFINE(DT_NODELABEL(d12retained), NULL, NULL, NULL, NULL, POST_KERNEL,
-		 CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &retained_api);
+DEVICE_DT_DEFINE(DT_NODELABEL(guardretained), NULL, NULL, NULL, NULL,
+		 POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
+		 &retained_api);
 
 int
 __wrap_z_impl_hwinfo_get_reset_cause(uint32_t *cause)
@@ -87,7 +88,7 @@ __real_z_impl_device_is_ready(const struct device *dev);
 bool
 __wrap_z_impl_device_is_ready(const struct device *dev)
 {
-	if (dev == DEVICE_DT_GET(DT_NODELABEL(d12retained))) {
+	if (dev == DEVICE_DT_GET(DT_NODELABEL(guardretained))) {
 		return retained_ready && __real_z_impl_device_is_ready(dev);
 	}
 	return __real_z_impl_device_is_ready(dev);
@@ -104,87 +105,88 @@ reset_fixture(void *fixture)
 	fail_write = false;
 	fail_get_cause = false;
 	fail_clear_cause = false;
-	entelea_d12_test_reset();
-	entelea_platform_d12_test_reset();
+	entelea_guard_test_reset();
+	entelea_platform_guard_test_reset();
 }
 
-ZTEST_SUITE(platform_d12_bootguard, NULL, NULL, reset_fixture, NULL, NULL);
+ZTEST_SUITE(platform_guard_bootguard, NULL, NULL, reset_fixture, NULL, NULL);
 
-ZTEST(platform_d12_bootguard, test_por_then_three_abnormal_resets)
+ZTEST(platform_guard_bootguard, test_por_then_three_abnormal_resets)
 {
-	zassert_false(entelea_platform_d12_bootguard());
+	zassert_false(entelea_platform_guard_bootguard());
 	reset_cause = RESET_WATCHDOG;
-	zassert_false(entelea_platform_d12_bootguard());
-	zassert_false(entelea_platform_d12_bootguard());
-	zassert_true(entelea_platform_d12_bootguard());
-	zassert_true(entelea_platform_d12_safe_halt());
+	zassert_false(entelea_platform_guard_bootguard());
+	zassert_false(entelea_platform_guard_bootguard());
+	zassert_true(entelea_platform_guard_bootguard());
+	zassert_true(entelea_platform_guard_safe_halt());
 }
 
-ZTEST(platform_d12_bootguard, test_por_clears_valid_history)
+ZTEST(platform_guard_bootguard, test_por_clears_valid_history)
 {
-	zassert_false(entelea_platform_d12_bootguard());
+	zassert_false(entelea_platform_guard_bootguard());
 	reset_cause = RESET_WATCHDOG;
-	zassert_false(entelea_platform_d12_bootguard());
-	zassert_false(entelea_platform_d12_bootguard());
+	zassert_false(entelea_platform_guard_bootguard());
+	zassert_false(entelea_platform_guard_bootguard());
 	reset_cause = RESET_POR;
-	zassert_false(entelea_platform_d12_bootguard());
+	zassert_false(entelea_platform_guard_bootguard());
 	reset_cause = RESET_WATCHDOG;
-	zassert_false(entelea_platform_d12_bootguard());
-	zassert_false(entelea_platform_d12_bootguard());
+	zassert_false(entelea_platform_guard_bootguard());
+	zassert_false(entelea_platform_guard_bootguard());
 }
 
-ZTEST(platform_d12_bootguard, test_abnormal_reset_with_unknown_history_halts)
+ZTEST(platform_guard_bootguard, test_abnormal_reset_with_unknown_history_halts)
 {
 	reset_cause = RESET_WATCHDOG;
-	zassert_true(entelea_platform_d12_bootguard());
+	zassert_true(entelea_platform_guard_bootguard());
 }
 
-ZTEST(platform_d12_bootguard, test_por_with_unready_retained_device_halts)
+ZTEST(platform_guard_bootguard, test_por_with_unready_retained_device_halts)
 {
 	retained_ready = false;
-	zassert_true(entelea_platform_d12_bootguard());
+	zassert_true(entelea_platform_guard_bootguard());
 }
 
-ZTEST(platform_d12_bootguard, test_por_with_retained_read_failure_halts)
+ZTEST(platform_guard_bootguard, test_por_with_retained_read_failure_halts)
 {
 	fail_read = true;
-	zassert_true(entelea_platform_d12_bootguard());
+	zassert_true(entelea_platform_guard_bootguard());
 }
 
-ZTEST(platform_d12_bootguard, test_read_failure_latches_following_abnormal_boot)
+ZTEST(platform_guard_bootguard,
+      test_read_failure_latches_following_abnormal_boot)
 {
 	fail_read = true;
-	zassert_true(entelea_platform_d12_bootguard());
-	entelea_platform_d12_test_reset();
+	zassert_true(entelea_platform_guard_bootguard());
+	entelea_platform_guard_test_reset();
 	fail_read = false;
 	reset_cause = RESET_WATCHDOG;
-	zassert_true(entelea_platform_d12_bootguard());
+	zassert_true(entelea_platform_guard_bootguard());
 }
 
-ZTEST(platform_d12_bootguard, test_por_with_retained_write_failure_halts)
+ZTEST(platform_guard_bootguard, test_por_with_retained_write_failure_halts)
 {
 	fail_write = true;
-	zassert_true(entelea_platform_d12_bootguard());
+	zassert_true(entelea_platform_guard_bootguard());
 }
 
-ZTEST(platform_d12_bootguard, test_unknown_reset_cause_halts)
+ZTEST(platform_guard_bootguard, test_unknown_reset_cause_halts)
 {
-	zassert_false(entelea_platform_d12_bootguard());
+	zassert_false(entelea_platform_guard_bootguard());
 	fail_get_cause = true;
-	zassert_true(entelea_platform_d12_bootguard());
+	zassert_true(entelea_platform_guard_bootguard());
 }
 
-ZTEST(platform_d12_bootguard, test_failure_to_clear_reset_cause_halts)
+ZTEST(platform_guard_bootguard, test_failure_to_clear_reset_cause_halts)
 {
 	fail_clear_cause = true;
-	zassert_true(entelea_platform_d12_bootguard());
+	zassert_true(entelea_platform_guard_bootguard());
 }
 
-ZTEST(platform_d12_bootguard, test_mixed_por_and_brownout_is_abnormal)
+ZTEST(platform_guard_bootguard, test_mixed_por_and_brownout_is_abnormal)
 {
-	zassert_false(entelea_platform_d12_bootguard());
+	zassert_false(entelea_platform_guard_bootguard());
 	reset_cause = RESET_POR | RESET_BROWNOUT;
-	zassert_false(entelea_platform_d12_bootguard());
-	zassert_false(entelea_platform_d12_bootguard());
-	zassert_true(entelea_platform_d12_bootguard());
+	zassert_false(entelea_platform_guard_bootguard());
+	zassert_false(entelea_platform_guard_bootguard());
+	zassert_true(entelea_platform_guard_bootguard());
 }

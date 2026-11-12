@@ -4,84 +4,84 @@
  * business batches only append steps at the tail. */
 #include <zephyr/sys/printk.h>
 #include <zephyr/toolchain.h> /* __weak */
-#include <entelea/d12.h>
+#include <entelea/guard.h>
 #include <entelea/safety.h>
 #include <entelea/storage.h>
 #include <entelea/wdt.h>
 #include "boot_steps.h"
 #include "clock.h"
-#include "d12_ports.h"
+#include "guard_ports.h"
 #include <entelea/time.h>
 
-/* D12 boot guard (board strong implementation: d12_bootguard.c; boards
+/* D12 boot guard (board strong implementation: guard_bootguard.c; boards
  * without one, i.e. native_sim and tests, pass trivially). The SAFE-HALT
  * decision is consumed by the assembly layer via
- * entelea_platform_d12_safe_halt (the guard must not feed system_fail: that
+ * entelea_platform_guard_safe_halt (the guard must not feed system_fail: that
  * would add an MWDT reset and become a storm source). */
-#ifndef ENTELEA_REQUIRE_D12_BOOTGUARD
+#ifndef ENTELEA_REQUIRE_GUARD_BOOTGUARD
 __weak bool
-entelea_platform_d12_bootguard(void)
+entelea_platform_guard_bootguard(void)
 {
 	return false;
 }
 
 __weak bool
-entelea_platform_d12_safe_halt(void)
+entelea_platform_guard_safe_halt(void)
 {
 	return false;
 }
 #endif
 
-/* Weak default for the persistent port: only targets linking d12_store.c
+/* Weak default for the persistent port: only targets linking guard_store.c
  * have the strong (KV) implementation. */
 __weak entelea_result_t
-entelea_platform_d12_store_init(entelea_d12_store_t *store)
+entelea_platform_guard_store_init(entelea_guard_store_t *store)
 {
 	(void) store;
 	return ENTELEA_E_UNINIT;
 }
 
 static entelea_result_t
-step_d12_bootguard(void)
+step_guard_bootguard(void)
 {
-	static entelea_clock_t d12_clock; /* own uptime clock (idempotent) */
-	static entelea_lock_t d12_lock;
-	static entelea_wallclock_t d12_wall;
-	static entelea_d12_store_t d12_store;
-	entelea_result_t r = entelea_platform_clock_init(&d12_clock);
+	static entelea_clock_t guard_clock; /* own uptime clock (idempotent) */
+	static entelea_lock_t guard_lock;
+	static entelea_wallclock_t guard_wall;
+	static entelea_guard_store_t guard_store;
+	entelea_result_t r = entelea_platform_clock_init(&guard_clock);
 
 	if (r != ENTELEA_OK) {
 		return r;
 	}
-	r = entelea_d12_bind_clock(&d12_clock);
+	r = entelea_guard_bind_clock(&guard_clock);
 	if (r != ENTELEA_OK) {
 		return r;
 	}
-	r = entelea_platform_d12_lock_init(&d12_lock);
+	r = entelea_platform_guard_lock_init(&guard_lock);
 	if (r == ENTELEA_OK) {
-		r = entelea_d12_bind_lock(&d12_lock);
+		r = entelea_guard_bind_lock(&guard_lock);
 	}
 	if (r != ENTELEA_OK) {
 		return r;
 	}
-	r = entelea_platform_d12_wallclock_init(&d12_wall);
+	r = entelea_platform_guard_wallclock_init(&guard_wall);
 	if (r == ENTELEA_OK) {
-		r = entelea_d12_bind_wallclock(&d12_wall);
+		r = entelea_guard_bind_wallclock(&guard_wall);
 	}
 	if (r != ENTELEA_OK) {
 		return r;
 	}
 	/* A missing or failed persistent port does not block boot; the gate
 	 * fails closed while unbound. */
-	r = entelea_platform_d12_store_init(&d12_store);
+	r = entelea_platform_guard_store_init(&guard_store);
 	if (r == ENTELEA_OK) {
-		r = entelea_d12_bind_store(&d12_store);
+		r = entelea_guard_bind_store(&guard_store);
 	}
 	if (r != ENTELEA_OK) {
-		printk("[d12] store unbound (%d): model calls fail closed\n",
+		printk("[guard] store unbound (%d): model calls fail closed\n",
 		       r);
 	}
-	(void) entelea_platform_d12_bootguard();
+	(void) entelea_platform_guard_bootguard();
 	return ENTELEA_OK; /* SAFE-HALT left to assembly layer (see above) */
 }
 
@@ -149,5 +149,5 @@ const entelea_boot_step_t
 		{ "wdt_start", step_wdt_start },
 		{ "supervision_ready", step_supervision_ready },
 		{ "storage_init", step_storage_init },
-		{ "d12_bootguard", step_d12_bootguard },
+		{ "guard_bootguard", step_guard_bootguard },
 	};

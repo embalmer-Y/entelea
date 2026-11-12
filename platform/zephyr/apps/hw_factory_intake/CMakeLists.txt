@@ -35,7 +35,7 @@ if(TEST_FLASH_BACKEND)
 endif()
 # RF1 G5：板级业务镜像必须接 D12 复位风暴防护（retained RAM 仅板级有）。
 if(BOARD MATCHES "^esp32p4")
-  set(ENTELEA_D12_BOOTGUARD ON)
+  set(ENTELEA_GUARD_BOOTGUARD ON)
   list(APPEND EXTRA_DTC_OVERLAY_FILE ${CMAKE_CURRENT_SOURCE_DIR}/retained.overlay)
   list(APPEND EXTRA_CONF_FILE ${CMAKE_CURRENT_SOURCE_DIR}/retained.conf)
 endif()
@@ -98,7 +98,7 @@ target_sources(app PRIVATE
   main.c
   ${WAMR_RUNTIME_LIB_SOURCE}
   ${ENTELEA_ROOT}/platform/zephyr/boot_steps.c
-  ${ENTELEA_ROOT}/platform/zephyr/d12_ports.c
+  ${ENTELEA_ROOT}/platform/zephyr/guard_ports.c
   ${ENTELEA_ROOT}/platform/zephyr/clock.c
   ${ENTELEA_ROOT}/platform/zephyr/flash_store.c
   ${ENTELEA_ROOT}/framework/common/time.c
@@ -113,7 +113,7 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/services/package/store.c
   ${ENTELEA_ROOT}/framework/services/package/crypto/tweetnacl.c
   ${ENTELEA_ROOT}/framework/services/package/wasm_host.c
-  ${ENTELEA_ROOT}/framework/services/config/d12.c
+  ${ENTELEA_ROOT}/framework/services/config/guard.c
   ${ENTELEA_ROOT}/framework/services/delivery/delivery.c
   ${ENTELEA_ROOT}/framework/execution/capability/perm.c
   ${ENTELEA_ROOT}/framework/runtime/supervision/events.c
@@ -124,9 +124,9 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/execution/safety/force.c
   ${ENTELEA_ROOT}/framework/execution/safety/drivers.c
 )
-if(ENTELEA_D12_BOOTGUARD)
-  target_compile_definitions(app PRIVATE ENTELEA_REQUIRE_D12_BOOTGUARD=1)
-  target_sources(app PRIVATE ${ENTELEA_ROOT}/platform/zephyr/d12_bootguard.c)
+if(ENTELEA_GUARD_BOOTGUARD)
+  target_compile_definitions(app PRIVATE ENTELEA_REQUIRE_GUARD_BOOTGUARD=1)
+  target_sources(app PRIVATE ${ENTELEA_ROOT}/platform/zephyr/guard_bootguard.c)
 endif()
 # WAMR zephyr 平台层引用旧 __stdout_hook_install（minimal-libc 链接垫片）
 if(NOT CONFIG_PICOLIBC)

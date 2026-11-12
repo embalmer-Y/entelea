@@ -1,14 +1,14 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#ifndef ENTELEA_D12_H
-#define ENTELEA_D12_H
+#ifndef ENTELEA_GUARD_H
+#define ENTELEA_GUARD_H
 
 /* D12 product threshold runtime gate (owner-approved v1 conservative plan,
- * 2026-11-10; see docs/d12-threshold-proposal.md). Three surfaces:
+ * 2026-11-10; see docs/guard-threshold-proposal.md). Three surfaces:
  *   cooldown: 60s cooldown after E_BUSY; 60s business cooldown after an
  *             abnormal reset
  *   frequency: rolling 60s window of at most 6 calls; UTC daily quota of at
  *             most 200 calls (persistent across resets and power loss;
- *             reserve-style writes, see d12.c)
+ *             reserve-style writes, see guard.c)
  *   storm: latch after 3 consecutive failures (not cleared automatically;
  *          released by the external storm_clear command; rebinding the
  *          clock does not release it)
@@ -37,9 +37,9 @@ extern "C" {
 /** Daily quota and persistent-record parameters. K is the reserve step: each
  * time, the persisted limit is raised K calls ahead. Daily writes are about
  * MAX/K (plus the first reservation after a day change or restart). */
-#define ENTELEA_D12_DAILY_MAX 200U
-#define ENTELEA_D12_RESERVE_STEP 10U
-#define ENTELEA_D12_REC_LEN 12U
+#define ENTELEA_GUARD_DAILY_MAX 200U
+#define ENTELEA_GUARD_RESERVE_STEP 10U
+#define ENTELEA_GUARD_REC_LEN 12U
 
 /** Wall-clock port (day boundary): reads UTC seconds. Returns E_STATE if the
  * clock is not synchronized (the gate fails closed). */
@@ -55,38 +55,39 @@ typedef struct {
 	void *user;
 } entelea_lock_t;
 
-/** Daily-count persistent port: each record is a fixed ENTELEA_D12_REC_LEN
- * bytes (encoding in d12.c). load returns E_NOTFOUND if there is no record;
+/** Daily-count persistent port: each record is a fixed ENTELEA_GUARD_REC_LEN
+ * bytes (encoding in guard.c). load returns E_NOTFOUND if there is no record;
  * any other error makes the gate refuse; it is not treated as empty. */
 typedef struct {
-	entelea_result_t (*load)(void *user, uint8_t rec[ENTELEA_D12_REC_LEN]);
+	entelea_result_t (*load)(void *user,
+				 uint8_t rec[ENTELEA_GUARD_REC_LEN]);
 	entelea_result_t (*save)(void *user,
-				 const uint8_t rec[ENTELEA_D12_REC_LEN]);
+				 const uint8_t rec[ENTELEA_GUARD_REC_LEN]);
 	void *user;
-} entelea_d12_store_t;
+} entelea_guard_store_t;
 
 /** Binds the clock (the decision dependency). */
 entelea_result_t
-entelea_d12_bind_clock(const entelea_clock_t *clock);
+entelea_guard_bind_clock(const entelea_clock_t *clock);
 /** Binds the wall clock, mutex, and persistent ports (called at startup; an
  * unbound port makes decisions refuse). */
 entelea_result_t
-entelea_d12_bind_wallclock(const entelea_wallclock_t *wall);
+entelea_guard_bind_wallclock(const entelea_wallclock_t *wall);
 entelea_result_t
-entelea_d12_bind_lock(const entelea_lock_t *lock);
+entelea_guard_bind_lock(const entelea_lock_t *lock);
 entelea_result_t
-entelea_d12_bind_store(const entelea_d12_store_t *store);
+entelea_guard_bind_store(const entelea_guard_store_t *store);
 
 /** Platform boot report: whether this reset is an abnormal class (WDT or
  * panic), which decides the cooldown window. The platform boot guard calls
  * this; keeping counts across resets is the platform's job (reset_guard). */
 void
-entelea_d12_boot_note(bool abnormal_reset);
+entelea_guard_boot_note(bool abnormal_reset);
 
 /** Abnormal-reset storm threshold: 3 or more consecutive abnormal resets cause
  * SAFE-HALT on the current boot. Counting from POR, this is the "4th boot"
  * (D12 v1 section 9). */
-#define ENTELEA_D12_RESET_STORM_MAX 3U
+#define ENTELEA_GUARD_RESET_STORM_MAX 3U
 
 /** Cross-reset storm decision (pure policy; I/O belongs to the platform).
  * abnormal: whether this reset is an abnormal class. history_ok: the retained
@@ -98,7 +99,7 @@ entelea_d12_boot_note(bool abnormal_reset);
  * unavailable or a read or write fails, SAFE-HALT is required regardless of
  * reset type. */
 bool
-entelea_d12_reset_guard(bool abnormal, bool history_ok, uint32_t *count);
+entelea_guard_reset_guard(bool abnormal, bool history_ok, uint32_t *count);
 
 /** Pre-call decision for a model call (cooldown, frequency, daily quota, and
  * storm; the dependency side belongs to model_ask). OK = allowed; E_BUSY =
@@ -106,38 +107,38 @@ entelea_d12_reset_guard(bool abnormal, bool history_ok, uint32_t *count);
  * unbound port, unknown wall clock, failed persistent read or write, or a
  * corrupted record. */
 entelea_result_t
-entelea_d12_model_allow(void);
+entelea_guard_model_allow(void);
 
 /** Reports a model call result. Success clears the storm count; E_BUSY
  * triggers cooldown; failure accumulates toward the storm. */
 void
-entelea_d12_model_note(entelea_result_t r);
+entelea_guard_model_note(entelea_result_t r);
 
 /** Storm latch state and external release (command surface or on-site); with
  * the clock or lock unbound, reports latched. */
 bool
-entelea_d12_storm_latched(void);
+entelea_guard_storm_latched(void);
 void
-entelea_d12_storm_clear(void);
+entelea_guard_storm_clear(void);
 
 /** Pre-execution decision for wasm. Refused with E_BUSY within the cooldown
  * window; the storm does not affect wasm. */
 entelea_result_t
-entelea_d12_wasm_allow(void);
+entelea_guard_wasm_allow(void);
 
 /** Observation surface: calls since start / calls refused by the gate. */
 uint32_t
-entelea_d12_model_calls(void);
+entelea_guard_model_calls(void);
 uint32_t
-entelea_d12_model_blocked(void);
+entelea_guard_model_blocked(void);
 
 #ifdef ENTELEA_TEST
 void
-entelea_d12_test_reset(void);
+entelea_guard_test_reset(void);
 #endif
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* ENTELEA_D12_H */
+#endif /* ENTELEA_GUARD_H */

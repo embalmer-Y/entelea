@@ -55,11 +55,11 @@ main(void)
 	       (uint32_t) FACTORY_TSAP_LEN);
 	entelea_supervision_boot(entelea_platform_boot_steps,
 				 ENTELEA_PLATFORM_BOOT_STEP_COUNT);
-	if (entelea_platform_d12_safe_halt()) {
+	if (entelea_platform_guard_safe_halt()) {
 		/* RF1 G5: reset-storm SAFE-HALT; business is not started,
 		 * outputs stay at the safe initial state, and WDT patrol keeps
 		 * feeding (exit via POR). */
-		printk("[hw-fact] D12 SAFE-HALT: business disabled\n");
+		printk("[hw-fact] [guard] SAFE-HALT: business disabled\n");
 		k_sleep(K_FOREVER);
 		return 0;
 	}

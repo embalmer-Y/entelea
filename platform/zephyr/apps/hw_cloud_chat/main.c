@@ -23,7 +23,7 @@
 #include <zephyr/net/dhcpv4.h>
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/wifi_mgmt.h>
-#include <entelea/d12.h>
+#include <entelea/guard.h>
 #include <entelea/model.h>
 #include <entelea/netmon.h>
 #include <entelea/safety.h>
@@ -255,7 +255,7 @@ chat_once(bool probe, char *out, size_t out_max, entelea_model_usage_t *usage)
 	entelea_model_usage_t before = entelea_model_usage_total();
 	entelea_model_usage_t after = before;
 	int touched_before = chat_touched;
-	uint32_t calls_before = entelea_d12_model_calls();
+	uint32_t calls_before = entelea_guard_model_calls();
 	entelea_result_t ret =
 		probe ? entelea_model_probe(msgs, 1, out, out_max, 30000,
 					    &after) :
@@ -268,7 +268,7 @@ chat_once(bool probe, char *out, size_t out_max, entelea_model_usage_t *usage)
 			after.completion_tokens - before.completion_tokens;
 	}
 	if (chat_touched - touched_before !=
-	    (int) (entelea_d12_model_calls() - calls_before)) {
+	    (int) (entelea_guard_model_calls() - calls_before)) {
 		return ENTELEA_E_STATE;
 	}
 	if (chat_touched > touched_before) {
@@ -298,8 +298,8 @@ main(void)
 	printk("[hw-cloud] MCU real-cloud gate begins (r15 A-1)\n");
 	entelea_supervision_boot(entelea_platform_boot_steps,
 				 ENTELEA_PLATFORM_BOOT_STEP_COUNT);
-	if (entelea_platform_d12_safe_halt()) {
-		printk("[hw-cloud] D12 SAFE-HALT: cloud disabled\n");
+	if (entelea_platform_guard_safe_halt()) {
+		printk("[hw-cloud] [guard] SAFE-HALT: cloud disabled\n");
 		k_sleep(K_FOREVER);
 		return 0;
 	}

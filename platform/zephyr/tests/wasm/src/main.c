@@ -5,8 +5,8 @@
 #include <string.h>
 #include <zephyr/ztest.h>
 #include <entelea/appstore.h>
-#include <entelea/d12.h>
-#include "d12_ports.h"
+#include <entelea/guard.h>
+#include "guard_ports.h"
 #include <entelea/delivery.h>
 #include <entelea/package.h>
 #include <entelea/principal.h>
@@ -164,10 +164,10 @@ stage_signed(uint8_t slot, const uint8_t *wasm, uint32_t wlen)
 	staged_len = n + tn + plen + 2 + 64;
 }
 
-static uint64_t d12_fake_now; /* r16：d12 冷却窗面（wasm_allow） */
+static uint64_t guard_fake_now; /* r16：guard 冷却窗面（wasm_allow） */
 
 static entelea_result_t
-d12_fake_read_ms(void *user, uint64_t *out)
+guard_fake_read_ms(void *user, uint64_t *out)
 {
 	*out = *(uint64_t *) user;
 	return ENTELEA_OK;
@@ -314,8 +314,8 @@ wasm_after(void *fixture)
 static void
 wasm_before(void *fixture)
 {
-	static entelea_clock_t d12_clock;
-	static entelea_lock_t d12_lock;
+	static entelea_clock_t guard_clock;
+	static entelea_lock_t guard_lock;
 
 	ARG_UNUSED(fixture);
 	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
@@ -323,13 +323,13 @@ wasm_before(void *fixture)
 	entelea_perm_test_reset();
 	entelea_trial_test_reset();
 	observed_instruction_limit = -1;
-	d12_fake_now = 0;
-	entelea_d12_test_reset();
-	zassert_ok(entelea_clock_init(&d12_clock, d12_fake_read_ms,
-				      &d12_fake_now, 0xD12));
-	zassert_ok(entelea_d12_bind_clock(&d12_clock));
-	zassert_ok(entelea_platform_d12_lock_init(&d12_lock));
-	zassert_ok(entelea_d12_bind_lock(&d12_lock));
+	guard_fake_now = 0;
+	entelea_guard_test_reset();
+	zassert_ok(entelea_clock_init(&guard_clock, guard_fake_read_ms,
+				      &guard_fake_now, 0xD12));
+	zassert_ok(entelea_guard_bind_clock(&guard_clock));
+	zassert_ok(entelea_platform_guard_lock_init(&guard_lock));
+	zassert_ok(entelea_guard_bind_lock(&guard_lock));
 }
 
 /* R12 试用辅助：向 slot 提交（摘要由设备从槽内字节计算；宿主只申请权限、

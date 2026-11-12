@@ -60,7 +60,7 @@
 
 - 执行器消费平台装配表（platform/zephyr/boot_steps.c）；当前顺序：
   estop_gpio → safety_poweron → wdt_start → supervision_ready（旧
-  core_init 占位更名）→ storage_init → d12_bootguard。每步完成发布 `BOOT_STEP`
+  core_init 占位更名）→ storage_init → guard_bootguard。每步完成发布 `BOOT_STEP`
   （含失败步 result）；任一步失败 → `system_fail(FAIL_BOOT(i))` 后受控
   停机（停喂 WDT → 兜底复位），不得半启动。全部成功发布 `BOOT_DONE`
   后返回，main 转常驻监督空闲。
