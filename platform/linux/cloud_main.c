@@ -4,7 +4,7 @@
  * 失联对照（NET DOWN → ask 拒 E_STATE 且**不触传输**——touched
  * 计数证明）→ 恢复面。凭据经 ENTELEA_CLOUD_CRED（0600 json，仓库外）
  * 运行时读取——不入二进制不入日志（打印仅键名与长度）。
- * C5 阻塞的 MCU 面见 r06-validation F 批节（到场项）。 */
+ * C5 阻塞的 MCU 面见 r06 验证记录 F 批节（已删除，锚点见台账；到场项）。 */
 #define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>

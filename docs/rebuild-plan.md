@@ -233,7 +233,7 @@ R13 中 Linux 的 required output 只是已批准 D02 所选框架证明，不�
 
 ### R01：公共合同与构建底座
 
-R01 公共底座历史验收见 [R01 验证记录](r01-validation.md)；其后批次和
+R01 公共底座历史验收见 R01 验证记录（已删除，锚点见台账 removed_evidence_docs）；其后批次和
 RF1 现状见本节各批条目、[RF1 复核](rf1-validation.md)及唯一台账。
 历史里程碑的 done 不自动证明完整规划或当前产品验收已满足。
 
@@ -241,7 +241,7 @@ RF1 现状见本节各批条目、[RF1 复核](rf1-validation.md)及唯一台账
 旧 ABI/协议通过显式子集适配保留、不改包线格式；产品输出必须经保护入口，
 独立诊断精确分类/单独目标，不采用宽泛白名单，真实保护留 R02。
 已实现接口与明确边界见[公共合同](../framework/common/contract.md)，
-验收证据见[R01验证记录](r01-validation.md)。不再请求这些R01取舍的方向确认。
+验收证据见 R01 验证记录（已删除，锚点见台账 removed_evidence_docs）。不再请求这些R01取舍的方向确认。
 
 输入：A-HEADERS/A-SHA/A-CBOR/A-SCRIPTS/测试治理及 D01。
 允许面：M-CONTRACT/M-BUILD/M-TEST 和必要单份接口说明。

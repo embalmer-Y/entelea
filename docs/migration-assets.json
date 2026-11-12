@@ -3,6 +3,25 @@
   "project": "Entelea",
   "baseline_tag": "legacy-baseline-2026-11-08",
   "status_semantics": "R00–R12 的 done 是历史批次记录，不代表当前完整规划或产品验收；RF1 当前复核见 docs/rf1-validation.md。planned_root 是原规划位置，已落地位置和范围见 implemented_scope。",
+  "removed_evidence_note": "docs/r01–r16 验证记录已在提交 5cbdcf7 之后删除；其他台账文字（note）仍沿用旧名称。证据路径经 removed_evidence_docs 解析到锚点提交，锚点必须是 HEAD 祖先且包含该文件。",
+  "removed_evidence_docs": {
+    "docs/r01-validation.md": "5cbdcf74d84a4c86d1240a953b87846803d4b399",
+    "docs/r02-validation.md": "5cbdcf74d84a4c86d1240a953b87846803d4b399",
+    "docs/r03-validation.md": "5cbdcf74d84a4c86d1240a953b87846803d4b399",
+    "docs/r04-validation.md": "5cbdcf74d84a4c86d1240a953b87846803d4b399",
+    "docs/r05-validation.md": "5cbdcf74d84a4c86d1240a953b87846803d4b399",
+    "docs/r06-validation.md": "5cbdcf74d84a4c86d1240a953b87846803d4b399",
+    "docs/r07-validation.md": "5cbdcf74d84a4c86d1240a953b87846803d4b399",
+    "docs/r08-validation.md": "5cbdcf74d84a4c86d1240a953b87846803d4b399",
+    "docs/r09-validation.md": "5cbdcf74d84a4c86d1240a953b87846803d4b399",
+    "docs/r10-validation.md": "5cbdcf74d84a4c86d1240a953b87846803d4b399",
+    "docs/r11-validation.md": "5cbdcf74d84a4c86d1240a953b87846803d4b399",
+    "docs/r12-validation.md": "5cbdcf74d84a4c86d1240a953b87846803d4b399",
+    "docs/r13-validation.md": "5cbdcf74d84a4c86d1240a953b87846803d4b399",
+    "docs/r14-validation.md": "5cbdcf74d84a4c86d1240a953b87846803d4b399",
+    "docs/r15-validation.md": "5cbdcf74d84a4c86d1240a953b87846803d4b399",
+    "docs/r16-validation.md": "5cbdcf74d84a4c86d1240a953b87846803d4b399"
+  },
   "repositories": [
     {
       "id": "legacy",

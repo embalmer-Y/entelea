@@ -91,17 +91,17 @@ class MigrationChecks(unittest.TestCase):
 
     def test_removed_evidence_unknown_anchor(self):
         # Removed docs resolve only through a commit that exists and contains them.
-        self.data["removed_evidence_docs"] = {"docs/never-existed.md": "0" * 40}
+        self.data["removed_evidence_docs"] = {**DOCUMENT["removed_evidence_docs"], "docs/never-existed.md": "0" * 40}
         self.data["assets"][-1]["verification"]["evidence_paths"] = ["docs/never-existed.md"]
         self.rejected("Git check failed")
 
     def test_removed_evidence_outside_docs(self):
-        self.data["removed_evidence_docs"] = {"framework/never-existed.c": "0" * 40}
+        self.data["removed_evidence_docs"] = {**DOCUMENT["removed_evidence_docs"], "framework/never-existed.c": "0" * 40}
         self.data["assets"][-1]["verification"]["evidence_paths"] = ["framework/never-existed.c"]
         self.rejected("Removed evidence outside docs/")
 
     def test_removed_evidence_malformed_anchor(self):
-        self.data["removed_evidence_docs"] = {"docs/never-existed.md": "HEAD"}
+        self.data["removed_evidence_docs"] = {**DOCUMENT["removed_evidence_docs"], "docs/never-existed.md": "HEAD"}
         self.data["assets"][-1]["verification"]["evidence_paths"] = ["docs/never-existed.md"]
         self.rejected("Malformed evidence anchor")
 
