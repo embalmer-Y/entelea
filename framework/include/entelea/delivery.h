@@ -100,18 +100,19 @@ entelea_result_t entelea_trial_gate(uint8_t slot, const uint8_t digest[32]);
 entelea_result_t entelea_trial_grant(uint8_t slot, const uint8_t digest[32],
 				     entelea_trial_grant_t *out);
 
-/** [thread] 晋升稳定（D-E）：仅 ACTIVE 且 shown 与当前候选全字段一致时执行。先持久
- * 结束试用（→ NONE，已 flush），再把同一字节的摘要、权限列表与步数写入该槽的稳定
- * 记录（KV）。试用持久失败 = 错误码且保持 ACTIVE；稳定记录写入失败 = 错误码且试用
- * 已结束，须重新试用（fail-closed）。调用方须取得第二次用户确认。 */
+/** [thread] 晋升稳定（D-E）：仅 ACTIVE 且 shown 与当前候选全字段一致时执行。试用
+ * 结束与该槽稳定项（同一字节的摘要、权限列表与步数）经同一次双副本 meta 写入原子
+ * 持久化。写入失败 = 错误码且内存保持 ACTIVE；返回错误时持久结果以重启读取为准，
+ * 调用方须重新确认或撤销。调用方须取得第二次用户确认。 */
 entelea_result_t entelea_trial_promote(const entelea_trial_candidate_t *shown);
 
-/** [thread] 显式撤销该槽的稳定记录。该槽 ACTIVE 试用同样被结束并持久化。
- * 非 OK = 撤销结果未知，该槽可能仍有 natives 授权，须重试直至 OK。 */
+/** [thread] 显式撤销该槽的稳定项；该槽 ACTIVE 试用同样结束。撤销先于内存生效
+ * （fail-closed），与持久化经同一次 meta 写入。非 OK = 持久结果未知，重启后该槽
+ * 可能仍有 natives 授权，须重试直至 OK。 */
 entelea_result_t entelea_stable_revoke(uint8_t slot);
 
 /** [any] 稳定记录授权（执行时逐次查询）：该槽稳定记录存在且摘要相符时授予其
- * 权限与步数；未存、撤销或摘要不符 = E_PERM（输出清零）；存储读错误 = E_IO
+ * 权限与步数；未存、撤销或摘要不符 = E_PERM（输出清零）；持久读取失败 = E_IO
  * （不授予）。 */
 entelea_result_t entelea_stable_grant(uint8_t slot, const uint8_t digest[32],
 				      entelea_trial_grant_t *out);

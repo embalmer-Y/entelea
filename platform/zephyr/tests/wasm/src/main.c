@@ -7,7 +7,6 @@
 #include <entelea/appstore.h>
 #include <entelea/d12.h>
 #include <entelea/delivery.h>
-#include <entelea/kv.h>
 #include <entelea/package.h>
 #include <entelea/principal.h>
 #include <entelea/storage.h>
@@ -272,7 +271,6 @@ static void wasm_before(void *fixture)
 
 	ARG_UNUSED(fixture);
 	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
-	entelea_kv_test_reset();
 	entelea_wasm_test_reset();
 	entelea_perm_test_reset();
 	entelea_trial_test_reset();

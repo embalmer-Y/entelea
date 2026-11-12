@@ -56,10 +56,10 @@
 
 ## 跨重启持久（板级批 A-4 已交付）
 
-- `flush/restore` 经 R03 meta 单槽（本层独占——pkg active 已迁 KV，
-  review P1-1）。v3 记录 141B 小端：ver=3|state|cand_version|slot|
-  last_epoch32|budget_steps32|perm_len|perm[96]（零填充）|digest[32]。
-  v1/v2（旧布局）按坏记录处置，不迁移。
+- `flush/restore` 经 R03 meta 单记录（本层独占——pkg active 已迁 KV，
+  review P1-1）。v4 记录 409B 小端：试用段 141B 为 ver=4|state|cand_version|
+  slot|last_epoch32|budget_steps32|perm_len|perm[96]（零填充）|digest[32]；
+  其后为每槽稳定项 134B（见下节）。v1/v2/v3（旧布局）按坏记录处置，不迁移。
 - 恢复 fail-closed（RF1）：长度/版本/state 越界、非 NONE 时 slot≥2、
   epoch=0、步数域外或权限列表文法坏 → **E_IO、TIMEOUT + slot UNKNOWN**
   （两槽门拒）。
@@ -80,29 +80,32 @@
 
 ## 稳定集准入（D-E，WP3）
 
-- **稳定记录**：每槽一条，经 KV 持久，键为 `0x53544230 + slot`。记录版本 1，
-  共 134 字节：`ver | digest[32] | budget（LE32）| perm_len | perm[≤96]`。
-  撤销写入 1 字节标记（ver=0）。KV 以 CRC 与提交标记保护记录（见
-  [kv.h](../../include/entelea/kv.h)）；损坏、未知版本、长度不符或权限长度
-  越界均为 `E_PERM` 且输出清零。
+- **稳定项**：每槽一项，与试用段同一双副本 meta 记录原子持久（owner 确认）。
+  项布局 134 字节：`present | digest[32] | budget（LE32）| perm_len | perm[≤96]`，
+  present 仅为 0 或 1；present=1 时步数须在 1..1e8、权限列表须合法。记录上限
+  `ENTELEA_STORAGE_META_MAX`=448（副本步长 512 减头 8，物理布局不变）。
 - **绑定对象**：稳定记录绑定摘要、权限列表与步数，不绑定版本与纪元。记录按槽
   保存直到显式撤销；槽内字节被替换后旧记录摘要不符（无 natives 授权），同一字节
   再次装入则重新生效。
 - **晋升** `entelea_trial_promote(shown)`：仅 ACTIVE 且 shown 与当前候选全字段
-  一致时执行，调用方须取得第二次用户确认。顺序固定：①持久结束试用（NONE，
-  flush）；②写入稳定记录。①失败 = 错误码且保持 ACTIVE，未写稳定记录；②失败 =
-  错误码且试用已结束，须重新试用（fail-closed）。
-- **撤销** `entelea_stable_revoke(slot)`：若该槽处于 ACTIVE 试用，同样先持久结束
-  它，再删除稳定记录。非 OK 表示撤销结果未知，该槽可能仍有 natives 授权，须重试
-  直至 OK。
+  一致时执行，调用方须取得第二次用户确认。试用结束（NONE）与稳定项经同一次
+  `flush` 写入：整体生效或整体不生效。写入失败 = 错误码且内存恢复为 ACTIVE；
+  返回错误时持久结果以重启读取为准，须重新确认或撤销。
+- **撤销** `entelea_stable_revoke(slot)`：若该槽处于 ACTIVE 试用，同样结束。内存
+  中先撤销（fail-closed），再经同一次 `flush` 持久化。非 OK 表示持久结果未知，重启
+  后该槽可能仍有 natives 授权，须重试直至 OK。
 - **执行授权**：natives 授权 = 试用 ACTIVE 授权（`entelea_trial_grant`）；否则为
-  摘要相符的稳定记录授权（`entelea_stable_grant`）；两者均不满足则 natives 为
+  摘要相符的稳定项授权（`entelea_stable_grant`，读内存）；两者均不满足则 natives 为
   `E_PERM`。非候选槽的纯计算不受门禁限制（A1，owner 确认
   `pure_compute_allowed`，取代计划原文“非候选槽默认拒绝”）。
-- **与计划的差异（待 owner 确认）**：计划写“双副本 meta”。稳定记录改用 KV，
-  因为 meta 只有单一记录区，无法按槽存放。
-- **断电窗口（未经真机注入验证）**：晋升在①②之间断电 → 无稳定记录（fail-closed）；
-  撤销在两步之间断电 → 稳定授权可能仍在，直到撤销重试成功。
+- **读取与损坏**：恢复要求两副本均可读且内容一致（与试用段相同）。单副本损坏、
+  双副本皆损、版本或长度不符、稳定项非法均为 `E_IO`，试用与稳定授权同时关闭
+  （TIMEOUT，稳定项清空，授权 `E_PERM`）；维护恢复方式仍未制定。
+- **与计划的差异及裁决**：计划 WP3 写“双副本 meta”；首版误用 KV，owner 要求改为
+  双副本 meta。现实现把稳定项放入同一 meta 记录（扩展记录上限，不新增分区），
+  未改变试用段的字节位置。
+- **断电窗口（未经真机注入验证）**：双副本写入保证撕裂时旧副本仍完整；写入前
+  断电 = 旧记录生效；写入后的回读失败 = 结果未知。
 
 ## 未测与边界
 

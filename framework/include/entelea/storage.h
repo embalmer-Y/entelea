@@ -136,7 +136,8 @@ void entelea_sha256_stream_update(uint32_t state[8], const uint8_t *data,
 void entelea_sha256_stream_final(const uint32_t state[8], uint8_t out[32]);
 
 /* 尺寸出处 DEC-23/27 语义（基线结构性数值；板级按 DT 调整）。 */
-#define ENTELEA_STORAGE_META_MAX 256
+/* 单条 meta 记录上限：副本步长 512 减头 8；试用与稳定集共用一条记录（v4 为 409B）。 */
+#define ENTELEA_STORAGE_META_MAX 448
 #define ENTELEA_STORAGE_NOINIT_MAX_REC 250
 
 /* 仅 ENTELEA_TEST 构建：抹除全部分区（测试隔离）；撕裂注入。 */

@@ -30,7 +30,7 @@
   时读回旧副本内容）。
 - `meta_read(buf, cap, *len)`（RF1）：记录长于 cap = `E_RANGE` 且不写越
   buf（cap=0 同）；cap 恰等于记录长度 = OK。记录上限
-  `ENTELEA_STORAGE_META_MAX`=256。
+  `ENTELEA_STORAGE_META_MAX`=448（副本步长 512 减头 8；试用与稳定集共用一条记录）。
 - `meta_read_mirrored` 额外要求两副本均通过 CRC 且内容完全相同；
   否则 `E_IO`，不按序号退回旧内容。试用状态落盘两次并对拍后才报告
   成功，以失去单副本恢复可用性和增加擦写为代价避免宽松旧状态复活。

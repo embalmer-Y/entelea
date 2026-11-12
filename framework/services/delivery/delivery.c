@@ -11,7 +11,6 @@
 #include <entelea/appstore.h>
 #include <entelea/delivery.h>
 #include <entelea/principal.h>
-#include <entelea/kv.h>
 #include <entelea/storage.h>
 
 static entelea_trial_state_t state;
@@ -293,10 +292,21 @@ entelea_result_t entelea_factory_intake(const entelea_factory_candidate_t *fc,
  * u8 ver=3 | u8 state | u8 cand_version | u8 slot | u32 last_epoch |
  * u32 budget_steps | u8 perm_len | perm[96]（零填充）| digest[32]。
  * v1/v2 不迁移：按坏记录处置（fail-closed）。 */
-#define TRIAL_PERSIST_VER 3U
+#define TRIAL_PERSIST_VER 4U
 #define TRIAL_REC_PERM_OFF 13U
 #define TRIAL_REC_DIG_OFF (TRIAL_REC_PERM_OFF + ENTELEA_TRIAL_PERM_MAX)
 #define TRIAL_REC_LEN (TRIAL_REC_DIG_OFF + 32U)
+/* 同一双副本 meta 记录内追加每槽稳定项：present|digest|budget|plen|perm。 */
+#define STABLE_ITEM_LEN (1U + 32U + 4U + 1U + ENTELEA_TRIAL_PERM_MAX)
+#define PERSIST_REC_LEN (TRIAL_REC_LEN + ENTELEA_APP_SLOT_COUNT * STABLE_ITEM_LEN)
+
+typedef struct {
+	bool present;
+	uint8_t digest[32];
+	entelea_trial_grant_t grant;
+} stable_entry_t;
+
+static stable_entry_t stable[ENTELEA_APP_SLOT_COUNT];
 
 static void put_le32(uint8_t *p, uint32_t v)
 {
@@ -314,8 +324,8 @@ static uint32_t get_le32(const uint8_t *p)
 
 entelea_result_t entelea_trial_flush(void)
 {
-	uint8_t rec[TRIAL_REC_LEN];
-	uint8_t verify[TRIAL_REC_LEN];
+	uint8_t rec[PERSIST_REC_LEN];
+	uint8_t verify[PERSIST_REC_LEN];
 	uint16_t verify_len = 0;
 	entelea_result_t r = ensure_initialized();
 
@@ -337,6 +347,15 @@ entelea_result_t entelea_trial_flush(void)
 	rec[12] = current.perm_len;
 	memcpy(rec + TRIAL_REC_PERM_OFF, current.perm, current.perm_len);
 	memcpy(rec + TRIAL_REC_DIG_OFF, current.digest, sizeof(current.digest));
+	for (uint8_t i = 0; i < ENTELEA_APP_SLOT_COUNT; i++) {
+		uint8_t *p = rec + TRIAL_REC_LEN + i * STABLE_ITEM_LEN;
+
+		p[0] = stable[i].present ? 1U : 0U;
+		memcpy(p + 1, stable[i].digest, sizeof(stable[i].digest));
+		put_le32(p + 33, stable[i].grant.budget_steps);
+		p[37] = stable[i].grant.perm_len;
+		memcpy(p + 38, stable[i].grant.perm, stable[i].grant.perm_len);
+	}
 	r = entelea_storage_meta_write(rec, sizeof(rec));
 	if (r != ENTELEA_OK) {
 		return r;
@@ -353,27 +372,7 @@ entelea_result_t entelea_trial_flush(void)
 	return ENTELEA_OK;
 }
 
-/* 结束并持久化试用；持久失败则内存恢复为 ACTIVE。持久副本可能部分更新，
- * 重启以读取结果为准；两种结果都不超出失败前已确认的授权。 */
-static entelea_result_t trial_end_persisted(void)
-{
-	const entelea_trial_candidate_t keep = current;
-	entelea_result_t r;
-
-	clear_candidate();
-	state = ENTELEA_TRIAL_NONE;
-	r = entelea_trial_flush();
-	if (r != ENTELEA_OK) {
-		current = keep;
-		state = ENTELEA_TRIAL_ACTIVE;
-	}
-	return r;
-}
-
-/* ---- 稳定记录（D-E）：每槽一条，经 KV 持久；ver=0 为撤销标记。 */
-#define STABLE_REC_VER 1U
-#define STABLE_REC_LEN (1U + 32U + 4U + 1U + ENTELEA_TRIAL_PERM_MAX)
-#define STABLE_KV_BASE 0x53544230U /* "STB0"，每槽加 slot */
+/* ---- 稳定记录（D-E）：每槽一项，与试用同一双副本 meta 记录原子持久。 */
 
 entelea_result_t entelea_trial_promote(const entelea_trial_candidate_t *shown)
 {
@@ -391,75 +390,65 @@ entelea_result_t entelea_trial_promote(const entelea_trial_candidate_t *shown)
 	if (!candidate_matches(shown)) {
 		return ENTELEA_E_PERM;
 	}
-	uint8_t rec[STABLE_REC_LEN];
+	const entelea_trial_candidate_t keep = current;
 	const uint8_t slot = current.slot;
+	const stable_entry_t old = stable[slot];
 
-	memset(rec, 0, sizeof(rec));
-	rec[0] = STABLE_REC_VER;
-	memcpy(rec + 1, current.digest, sizeof(current.digest));
-	put_le32(rec + 33, current.budget_steps);
-	rec[37] = current.perm_len;
-	memcpy(rec + 38, current.perm, current.perm_len);
-	r = trial_end_persisted(); /* 先持久结束试用：失败则仍 ACTIVE，未写稳定记录 */
+	stable[slot].present = true;
+	memcpy(stable[slot].digest, current.digest, sizeof(current.digest));
+	stable[slot].grant.budget_steps = current.budget_steps;
+	stable[slot].grant.perm_len = current.perm_len;
+	memcpy(stable[slot].grant.perm, current.perm, current.perm_len);
+	clear_candidate();
+	state = ENTELEA_TRIAL_NONE;
+	r = entelea_trial_flush(); /* 试用结束与稳定项同一原子写入 */
 	if (r != ENTELEA_OK) {
-		return r;
+		current = keep;
+		stable[slot] = old;
+		state = ENTELEA_TRIAL_ACTIVE;
 	}
-	/* 试用已结束：此处写入失败即 fail-closed，须重新试用。 */
-	return entelea_kv_save(STABLE_KV_BASE + slot, rec,
-			       (uint16_t)sizeof(rec));
+	return r;
 }
 
 entelea_result_t entelea_stable_revoke(uint8_t slot)
 {
-	uint8_t rev = 0; /* ver=0：撤销标记 */
 	entelea_result_t r;
 
 	if (slot >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_PARAM;
 	}
-	/* 试用读取失败时状态已按 TIMEOUT 关闭（不授予），撤销记录仍须执行。 */
 	r = ensure_initialized();
-	if (r == ENTELEA_OK && state == ENTELEA_TRIAL_ACTIVE &&
-	    current.slot == slot) {
-		/* 该槽 ACTIVE 试用同样授予 natives：先持久结束，再撤销记录。 */
-		r = trial_end_persisted();
-		if (r != ENTELEA_OK) {
-			return r;
-		}
+	if (r != ENTELEA_OK) {
+		return r; /* 持久读取失败：状态已按 TIMEOUT 关闭，须维护恢复 */
 	}
-	return entelea_kv_save(STABLE_KV_BASE + slot, &rev, 1);
+	if (state == ENTELEA_TRIAL_ACTIVE && current.slot == slot) {
+		clear_candidate();
+		state = ENTELEA_TRIAL_NONE;
+	}
+	/* 内存先撤销（fail-closed）；写入失败则结果未知，须重试。 */
+	stable[slot].present = false;
+	memset(stable[slot].digest, 0, sizeof(stable[slot].digest));
+	memset(&stable[slot].grant, 0, sizeof(stable[slot].grant));
+	return entelea_trial_flush();
 }
 
 entelea_result_t entelea_stable_grant(uint8_t slot, const uint8_t digest[32],
 				      entelea_trial_grant_t *out)
 {
-	uint8_t rec[STABLE_REC_LEN];
-
 	if (digest == NULL || out == NULL || slot >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_PARAM;
 	}
 	memset(out, 0, sizeof(*out));
-	const int32_t n = entelea_kv_load(STABLE_KV_BASE + slot, rec,
-					  (uint16_t)sizeof(rec));
+	entelea_result_t r = ensure_initialized();
 
-	if (n == ENTELEA_E_NOTFOUND) {
+	if (r != ENTELEA_OK) {
+		return r;
+	}
+	if (!stable[slot].present ||
+	    memcmp(digest, stable[slot].digest, sizeof(stable[slot].digest)) != 0) {
 		return ENTELEA_E_PERM;
 	}
-	if (n < 0) {
-		return (entelea_result_t)n; /* 存储错误如实传播（不授予） */
-	}
-	const uint32_t budget = get_le32(rec + 33);
-	const uint8_t plen = rec[37];
-
-	if (n != (int32_t)sizeof(rec) || rec[0] != STABLE_REC_VER ||
-	    memcmp(rec + 1, digest, 32) != 0 || !budget_valid(budget) ||
-	    plen > ENTELEA_TRIAL_PERM_MAX ||
-	    !perm_valid((const char *)(rec + 38), plen)) {
-		return ENTELEA_E_PERM;
-	}
-	memcpy(out->perm, rec + 38, plen);
-	out->perm_len = plen;
-	out->budget_steps = budget;
+	*out = stable[slot].grant;
 	return ENTELEA_OK;
 }
 
@@ -489,7 +478,7 @@ static entelea_result_t meta_is_erased(bool *erased)
 
 entelea_result_t entelea_trial_restore(void)
 {
-	uint8_t rec[TRIAL_REC_LEN];
+	uint8_t rec[PERSIST_REC_LEN];
 	uint16_t len = 0;
 	entelea_result_t r;
 
@@ -500,6 +489,7 @@ entelea_result_t entelea_trial_restore(void)
 	r = entelea_storage_meta_read_mirrored(rec, sizeof(rec), &len);
 
 	clear_candidate();
+	memset(stable, 0, sizeof(stable));
 	initialized = true;
 	if (r == ENTELEA_E_IO) {
 		bool erased = false;
@@ -518,7 +508,19 @@ entelea_result_t entelea_trial_restore(void)
 	const bool perm_ok =
 		whole && rec[12] <= ENTELEA_TRIAL_PERM_MAX &&
 		perm_valid((const char *)(rec + TRIAL_REC_PERM_OFF), rec[12]);
-	const bool valid = whole && rec[0] == TRIAL_PERSIST_VER &&
+	bool stable_ok = whole;
+
+	for (uint8_t i = 0; whole && i < ENTELEA_APP_SLOT_COUNT; i++) {
+		const uint8_t *p = rec + TRIAL_REC_LEN + i * STABLE_ITEM_LEN;
+
+		stable_ok = stable_ok && p[0] <= 1U &&
+			    (p[0] == 0U ||
+			     (budget_valid(get_le32(p + 33)) &&
+			      p[37] <= ENTELEA_TRIAL_PERM_MAX &&
+			      (p[37] == 0U ||
+			       perm_valid((const char *)(p + 38), p[37]))));
+	}
+	const bool valid = stable_ok && rec[0] == TRIAL_PERSIST_VER &&
 			   rec[1] <= ENTELEA_TRIAL_TIMEOUT &&
 			   (rec[1] == ENTELEA_TRIAL_NONE ||
 			    (rec[3] < ENTELEA_APP_SLOT_COUNT && ep != 0U &&
@@ -543,6 +545,17 @@ entelea_result_t entelea_trial_restore(void)
 		memcpy(current.perm, rec + TRIAL_REC_PERM_OFF, rec[12]);
 		memcpy(current.digest, rec + TRIAL_REC_DIG_OFF,
 		       sizeof(current.digest));
+	}
+	for (uint8_t i = 0; i < ENTELEA_APP_SLOT_COUNT; i++) {
+		const uint8_t *p = rec + TRIAL_REC_LEN + i * STABLE_ITEM_LEN;
+
+		stable[i].present = p[0] == 1U;
+		if (stable[i].present) {
+			memcpy(stable[i].digest, p + 1, sizeof(stable[i].digest));
+			stable[i].grant.budget_steps = get_le32(p + 33);
+			stable[i].grant.perm_len = p[37];
+			memcpy(stable[i].grant.perm, p + 38, p[37]);
+		}
 	}
 	return ENTELEA_OK;
 }
@@ -572,6 +585,7 @@ void entelea_trial_test_reset(void)
 {
 	state = ENTELEA_TRIAL_NONE;
 	clear_candidate();
+	memset(stable, 0, sizeof(stable));
 	last_epoch = 0;
 	initialized = false;
 }

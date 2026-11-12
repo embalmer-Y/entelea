@@ -102,18 +102,20 @@ R13 保持 pending。
 - 修复前证据：新增回归断言“晋升须持久结束试用”在首版实现上失败（delivery 22/23
   通过，1 失败：`entelea_trial_state()` 不等于 NONE）。首版只在内存中结束试用，
   未持久化，重启后试用恢复为 ACTIVE，撤销稳定记录对同槽试用无效。修复后该断言通过。
-- 修复后（native_sim，退出码 0）：delivery 24/24（含
-  `test_stable_record_corruption_fails_closed`）、wasm 26/26（含
-  `test_stable_record_grants_natives_only_for_its_bytes`）、r13 2/2、pkg 9/9、r04 12/12。
+- 修复后（native_sim，退出码 0，双副本 v4 修订）：delivery 24/24（含
+  `test_stable_record_corruption_fails_closed`，覆盖单副本损坏、双副本皆损、版本与长度不符）、
+  wasm 26/26（含 `test_stable_record_grants_natives_only_for_its_bytes`）、store 33/33、
+  r13 2/2、pkg 9/9、r04 12/12。
 - 主机：`RunCtest_CMakeTools` 6/6；`check_migration.py --sources` PASS（800 项，117 资产）；
   `unittest discover` 通过；`git diff --check` 无输出。
-- 板级：`hw_factory_intake`（esp32p4c5_core_board/esp32p4/hpcore）交叉编译通过（未烧录）；
-  静态 SRAM 449,008 字节，红线 552,960（`check_board_ram.py`）。新增栈帧未单独测量。
-- 与计划的差异（待 owner 确认）：①计划写“双副本 meta”，实际改用 KV（CRC 与提交标记），
-  因为 meta 只有单一记录区；②计划 D-E 原文“非候选槽默认拒绝”与 A1 冲突，owner 已确认
-  `pure_compute_allowed`，故纯计算可执行，仅 natives 需授权。
+- 板级（修订后）：`hw_factory_intake` 与 `hw_flash_persist`（esp32p4c5_core_board/esp32p4/hpcore）
+  交叉编译通过（未烧录）；静态 SRAM 449,264 / 98,036 字节，红线 552,960（`check_board_ram.py`）。
+  meta 缓冲随记录上限增大带来的栈增量未单独测量。
+- owner 裁决与实现：①owner 要求双副本 meta（首版误用 KV，已改）：稳定项置于同一 meta
+  记录的 v4 稳定区，记录上限 256→448，副本步长与物理布局不变；②计划 D-E 原文“非候选槽默认拒绝”与
+  A1 冲突，owner 已确认 `pure_compute_allowed`，故纯计算可执行，仅 natives 需授权。
 - 未测：多线程并发晋升与撤销；真实断电注入（当前仅以 `entelea_trial_test_reset` 模拟重启）；
-  两步写入之间断电的真机验证。残余窗口见[交付合同](../framework/services/delivery/contract.md)“稳定集准入”。
+  写入后回读失败的真机复现。残余窗口见[交付合同](../framework/services/delivery/contract.md)“稳定集准入”。
 
 ## 对照原规划和批准修订
 
