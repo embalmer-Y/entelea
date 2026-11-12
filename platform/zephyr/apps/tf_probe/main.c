@@ -1,12 +1,15 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* r14 TF SDMMC 脚位对拍探针。判据行 [hw-tf]：
- *   DET=<0|1>            卡在位（ACTIVE_HIGH：1=卡在位；r14 真机实证
- *                        插卡=开关断开=物理高）
- *   PASS: sd_init ok ...  卡级初始化成功
- *   INIT_FAIL rc=<...>    卡级初始化失败
- * 对拍结论（真机三轮）：clk/cmd 值互换两轮均 PASS（角色由焊盘 func0
- * 硬定）；属性全删即 INIT_FAIL(-ENOTSUP=焊盘未使能)——属性决定使能
- * 哪组焊盘、语义标签不路由信号。见板 dts 注释。 */
+/* r14 TF SDMMC pin cross-check probe. Criteria lines [hw-tf]:
+ *   DET=<0|1>            card present (ACTIVE_HIGH: 1=card present; r14
+ *                        hardware-verified: card inserted = switch open =
+ *                        physically high)
+ *   PASS: sd_init ok ...  card-level initialization succeeded
+ *   INIT_FAIL rc=<...>    card-level initialization failed
+ * Cross-check results (three hardware rounds): swapping clk/cmd values
+ * passed in both rounds (roles are fixed by pad func0). Deleting all
+ * properties gives INIT_FAIL (-ENOTSUP = pad not enabled). Properties
+ * decide which pad group is enabled; semantic labels do not route signals.
+ * See the board dts comments. */
 #include <string.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
@@ -34,7 +37,7 @@ main(void)
 		return 0;
 	}
 	printk("[hw-tf] DET=%d\n", gpio_pin_get_dt(&det) > 0);
-	k_sleep(K_SECONDS(1)); /* 卡上电稳定窗 */
+	k_sleep(K_SECONDS(1)); /* settle window after card power-up */
 	memset(&card, 0, sizeof(card));
 	rc = sd_init(sdhc, &card);
 	if (rc == 0) {

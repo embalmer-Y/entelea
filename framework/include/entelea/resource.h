@@ -2,11 +2,12 @@
 #ifndef ENTELEA_RESOURCE_H
 #define ENTELEA_RESOURCE_H
 
-/* R04 资源预算合同见 framework/execution/resource/contract.md。
- * 功率预算：总额来自 prov（运行时只读）；记账 = 各输出通道 safety
- * readback 之和（单源纪律，不另设影子账本）；超预算不在线降额。
- * 检查-提交原子化：预算检查与 commit 同一 safety write_lock 临界区
- * （复用 entelea_safety_commit_locked）。 */
+/* R04 resource budget contract: see framework/execution/resource/contract.md.
+ * Power budget: the total comes from prov (read-only at runtime). Accounting is
+ * the sum of each output channel's safety readback (single-source discipline;
+ * no separate shadow ledger). Exceeding the budget does not derate online.
+ * Check and commit are atomic: the budget check and the commit run in the same
+ * safety write_lock critical section (reusing entelea_safety_commit_locked). */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -26,24 +27,28 @@ typedef struct {
 	uint16_t slots;
 } entelea_power_snapshot_t;
 
-/** [any] 预算总额（prov 只读；未配置=0=一切供电请求拒绝——缺省安全侧）。 */
+/** [any] Budget total (read-only from prov). Unconfigured = 0 = all power
+ * requests rejected (the default is the safe side). */
 uint32_t
 entelea_power_budget_ma(void);
 
-/** [any] 当前用电（Σ 已启用通道 readback；顺带更新峰值）。 */
+/** [any] Current power use (sum of enabled channel readbacks; also updates
+ * the peak). */
 uint32_t
 entelea_power_used_ma(void);
 
-/** [any] 快照（观测面）。 */
+/** [any] Snapshot (observation surface). */
 void
 entelea_power_snapshot(entelea_power_snapshot_t *out);
 
-/** [thread] 受控供电提交（原子预算检查+提交）：
- * ① SET 门（principal 对 power:write 声明）；
- * ② safety write_lock 内：预算检查（Σ+请求 ≤ 预算）→
- *    entelea_safety_commit_locked（保护末段仍在其内）→ 解锁。
- * 超预算 = E_RANGE（整笔拒绝，既有通道不受影响）；通道须 ACTIVE。
- * v.en=false（关闭）不受预算限。 */
+/** [thread] Controlled power commit (atomic budget check and commit):
+ * 1. SET gate (the principal must declare power:write).
+ * 2. Inside the safety write_lock: check the budget (sum + request <= budget),
+ *    then call entelea_safety_commit_locked (the final protection step remains
+ *    inside it), then unlock.
+ * Over budget = E_RANGE (the whole request is rejected; existing channels are
+ * unaffected). The channel must be ACTIVE.
+ * v.en=false (turn off) is not subject to the budget. */
 entelea_result_t
 entelea_power_request(entelea_principal_t ctx, const char *safety_uid,
 		      entelea_out_value_t v);

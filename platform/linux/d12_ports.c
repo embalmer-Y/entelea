@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* D12 闸的 Linux 宿主端口：pthread 互斥、CLOCK_REALTIME 墙钟、进程内存持久。
- * 进程内存持久在重启（进程退出）后不保留日计数，仅用于宿主诊断面；产品闸
- * 的日额持久以板级存储为准。 */
+/* Linux host ports for the D12 gate: pthread mutex, CLOCK_REALTIME wall
+ * clock, and in-process memory persistence. In-process memory does not keep
+ * the daily count across restarts (process exit); it serves only the host
+ * diagnostic surface. For the product gate, daily-quota persistence relies on
+ * board storage. */
 #include <pthread.h>
 #include <stdbool.h>
 #include <string.h>
@@ -38,7 +40,8 @@ entelea_platform_d12_lock_init(entelea_lock_t *lock)
 	return ENTELEA_OK;
 }
 
-/* 宿主墙钟视为已同步（CLOCK_REALTIME）；读失败即未知。 */
+/* The host wall clock is treated as synchronized (CLOCK_REALTIME); a failed
+ * read means the time is unknown. */
 static entelea_result_t
 d12_wall_read(void *user, uint64_t *out)
 {

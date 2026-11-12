@@ -1,11 +1,14 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * R08 最小辅助闭环（新-only N-CONTEXT/N-DELIBERATION；合同见本目录
- * contract.md）。事件→有界上下文→触发→候选→权限→执行→反馈。
- * 模型=建议者：本层组装的候选**必须**经 R04 principal 裁决 + R02
- * 保护层——模型输入整数不能构造 principal（R01 合同强制点）。
- * 云依赖：模型/网络任一 DOWN → assistant_available=false（停智能；
- * 独立 App 照常——各自查各自依赖，不查此面）。
+ * R08 minimal assistant loop (new-only N-CONTEXT/N-DELIBERATION; see
+ * contract.md in this directory). Event -> bounded context -> trigger ->
+ * candidate -> permission -> execution -> feedback.
+ * Model = advisor: candidates built here **must** be adjudicated by the
+ * R04 principal plus the R02 protection layer. Integer model input cannot
+ * construct a principal (the R01 contract enforcement point).
+ * Cloud dependency: if the model or network is DOWN, assistant_available=false
+ * (intelligence stops; standalone Apps keep running, each checking its own
+ * dependencies, not this surface).
  */
 #include <string.h>
 #include <entelea/assistant.h>
@@ -16,7 +19,7 @@
 #include <entelea/task.h>
 #include <entelea/safety.h>
 
-/* ---- 上下文汇聚（有界窗） ---- */
+/* ---- Context aggregation (bounded window) ---- */
 
 void
 entelea_ctx_push(entelea_context_window_t *w, const entelea_ctx_event_t *e)
@@ -27,7 +30,7 @@ entelea_ctx_push(entelea_context_window_t *w, const entelea_ctx_event_t *e)
 	if (w->count < ENTELEA_CTX_EVENTS_MAX) {
 		w->events[w->count++] = *e;
 	} else {
-		/* 窗满弃最旧（环形语义——保持最近上下文）。 */
+		/* Window full: drop oldest (ring keeps recent context) */
 		memmove(&w->events[0], &w->events[1],
 			(w->count - 1) * sizeof(w->events[0]));
 		w->events[w->count - 1] = *e;
@@ -56,7 +59,7 @@ entelea_ctx_dropped(const entelea_context_window_t *w)
 	return w == NULL ? 0 : w->dropped;
 }
 
-/* ---- 触发（建议值：窗满 或 显式；无内部定时器——确定性） ---- */
+/* ---- Trigger (advisory): window full or explicit; no timers ---- */
 
 bool
 entelea_should_deliberate(const entelea_context_window_t *w, uint64_t now_ms,
@@ -64,12 +67,12 @@ entelea_should_deliberate(const entelea_context_window_t *w, uint64_t now_ms,
 {
 	(void) now_ms;
 	if (next_due_ms != NULL) {
-		*next_due_ms = 0; /* 无周期触发（显式/窗满触发——合同） */
+		*next_due_ms = 0; /* No periodic trigger (explicit or full) */
 	}
 	return w != NULL && w->count >= ENTELEA_CTX_EVENTS_MAX;
 }
 
-/* ---- 执行门 ---- */
+/* ---- Execution gate ---- */
 
 entelea_result_t
 entelea_assistant_execute(entelea_principal_t actor,
@@ -83,24 +86,30 @@ entelea_assistant_execute(entelea_principal_t actor,
 	}
 	switch (cand->kind) {
 	case ENTELEA_ACT_NONE:
-		return ENTELEA_OK; /* 无动作（通知类候选由上层消费） */
+		return ENTELEA_OK; /* No-op; notify candidates handled above */
 	case ENTELEA_ACT_NOTIFY:
-		return ENTELEA_OK; /* 无副作用——不留执行回执面 */
+		return ENTELEA_OK; /* No side effects; no receipt surface */
 	case ENTELEA_ACT_TASK: {
-		/* B-3：任务受理接线（计划 R08 步骤"权限批准->Task 执行->
-		 * 来源化反馈"）。受理面=R04 任务机（有界表/受理去重/
-		 * deadline 门全复用）；seq=candidate 来源回合序（同
-		 * principal+seq 非终态=E_BUSY——重复候选可检测）；
-		 * deadline=value_u（0=无截止）。执行驱动（start/succeed/
-		 * fail）归上层执行器；**来源化反馈**=task_get 的 effect
-		 * 域（R04 合同——本层不复制回执）。task_ret=任务 id。 */
+		/* B-3: task admission wiring (plan R08 steps: "permission
+		 * approval -> Task execution -> source-tagged feedback").
+		 * Admission surface is the R04 task machine: bounded table,
+		 * admission dedup and deadline gate, all reused. seq is the
+		 * candidate's source turn order (same principal+seq while
+		 * non-terminal is E_BUSY, so duplicates are detectable).
+		 * deadline = value_u (0 = no deadline). Execution driving
+		 * (start/succeed/fail) is left to the upper executor;
+		 * **source-tagged feedback** is the effect domain of task_get
+		 * (R04 contract; this layer does not copy receipts). task_ret
+		 * is the task id. */
 		if (cand->target_uid == NULL) {
-			return ENTELEA_E_PARAM; /* target_uid=任务名 */
+			return ENTELEA_E_PARAM; /* target_uid = task name */
 		}
 		entelea_task_id_t id = 0;
-		/* seq=source.id 低 16 位（review P2-1 显式化）：任务幂等键
-		 * 域=uint16；全序去重政策归上层（回合序回绕 65536 后的
-		 * 伪 E_BUSY 方向安全——拒而非静默双受理）。 */
+		/* seq = low 16 bits of source.id (made explicit per
+		 * review P2-1). The task idempotency key domain is uint16;
+		 * full-order dedup policy belongs to the upper layer. After
+		 * the turn sequence wraps past 65536, a spurious E_BUSY is
+		 * safe: it rejects, never silently double-accepts. */
 		entelea_result_t r = entelea_task_submit(
 			actor, cand->target_uid,
 			(uint16_t) (cand->source.id & 0xFFFFU), cand->value_u,
@@ -113,27 +122,33 @@ entelea_assistant_execute(entelea_principal_t actor,
 	}
 	case ENTELEA_ACT_OUTPUT: {
 		if (cand->target_uid == NULL || cand->value_kind > 2) {
-			return ENTELEA_E_PARAM; /* 域外 value_kind 拒（review
-						  * P1：不再默认映射为 pwr） */
+			return ENTELEA_E_PARAM; /* bad value_kind (review P1:
+						 * no pwr default) */
 		}
-		/* 权限门（review P1 修复）：按目标描述符的真实类/实例裁决
-		 * ——不再以"任一 gpio/pwm write"替代目标面。 */
+		/* Permission gate (review P1 fix): decide by the target
+		 * descriptor's real class/instance, not by "any gpio/pwm
+		 * write" standing in for the target surface. */
 		const entelea_periph_desc_t *d = NULL;
 		entelea_result_t pr =
 			entelea_periph_acquire(actor, cand->target_uid, &d);
 
 		if (pr != ENTELEA_OK) {
-			return pr; /* 未注册/越权/非 ACTIVE（模型不能自批） */
+			return pr; /* unregistered, denied or not ACTIVE
+				    * (model cannot self-approve) */
 		}
-		/* 输出动作只打 DEV_OUTPUT 目标（计划符合性审查 P2：原类检
-		 * 条件化在 safety_uid!=NULL 内——非输出描述符（acquire 仅
-		 * 要求 READ）跳过类检直落 safety_commit，装配撞名时可越权）。*/
+		/* Output actions target only DEV_OUTPUT (plan conformance
+		 * review P2): the class check was conditional on
+		 * safety_uid!=NULL, so a non-output descriptor (acquire only
+		 * needs READ) skipped it and went straight to safety_commit.
+		 * A name clash at assembly could then escalate privilege. */
 		if (d->kind != ENTELEA_DEV_OUTPUT) {
 			return ENTELEA_E_PARAM;
 		}
-		/* 类匹配（无条件）：value_kind 0=GPIO/1=PWM/2=POWER 与目标描述符
-		 * 权限类一致（review P1：跨类写拒）。DEV_OUTPUT 注册强制
-		 * safety_uid 非空——描述符即权威类面。 */
+		/* Unconditional class check: value_kind 0=GPIO/1=PWM/2=POWER
+		 * must match the target descriptor's permission class (review
+		 * P1: cross-class writes refused). DEV_OUTPUT registration
+		 * forces a non-empty safety_uid; the descriptor is the
+		 * authoritative class surface. */
 		static const entelea_perm_class_t want[] = {
 			ENTELEA_PERM_GPIO, ENTELEA_PERM_PWM, ENTELEA_PERM_POWER
 		};
@@ -141,11 +156,14 @@ entelea_assistant_execute(entelea_principal_t actor,
 		if (d->perm_class != want[cand->value_kind]) {
 			return ENTELEA_E_PARAM;
 		}
-		/* 写入面=已裁决描述符的 safety_uid（RF1 P1-2）：逻辑名可能
-		 * 与他人保护通道同名，按逻辑名提交会越过本次权限裁决。 */
+		/* Write surface = safety_uid of the adjudicated descriptor
+		 * (RF1 P1-2): a logical name may collide with another party's
+		 * protection channel; committing by logical name would bypass
+		 * this permission decision. */
 		if (cand->value_kind == 2) {
-			/* POWER 值必须经 entelea_power_request：power:write
-			 * 权限 + 预算检查-提交原子化（review P1：不再旁路）。 */
+			/* POWER values must go through entelea_power_request:
+			 * power:write permission, plus an atomic budget
+			 * check-and-commit (review P1: no longer bypassed). */
 			entelea_out_value_t pv = {
 				.pwr = { .en = cand->value_b,
 					 .ma = cand->value_u }
@@ -160,7 +178,7 @@ entelea_assistant_execute(entelea_principal_t actor,
 		} else {
 			v = (entelea_out_value_t) { .u = cand->value_u };
 		}
-		/* 唯一写路径（保护层——无旁路）。 */
+		/* Only write path (protection layer; no bypass) */
 		return entelea_safety_commit(d->safety_uid, v);
 	}
 	default:
@@ -168,12 +186,13 @@ entelea_assistant_execute(entelea_principal_t actor,
 	}
 }
 
-/* ---- 云依赖判定 ---- */
+/* ---- Cloud dependency check ---- */
 
 bool
 entelea_assistant_available(void)
 {
-	/* D08：模型可用 = 模型依赖 UP 且网络 UP（云模型经网络到达）。 */
+	/* D08: model usable = model dependency UP and network UP
+	 * (a cloud model is reached through the network). */
 	return entelea_dep_state(ENTELEA_DEP_MODEL) == ENTELEA_DEP_UP &&
 	       entelea_dep_state(ENTELEA_DEP_NET) == ENTELEA_DEP_UP;
 }
@@ -182,6 +201,7 @@ entelea_assistant_available(void)
 void
 entelea_assistant_test_reset(void)
 {
-	/* 无模块级可变态（窗由调用方持有）——占位保持接口对称。 */
+	/* No module-level mutable state (the caller owns the window);
+	 * this placeholder keeps the interface symmetric. */
 }
 #endif

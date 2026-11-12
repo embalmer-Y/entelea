@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* D12 闸的 Zephyr 平台端口：互斥（k_mutex，ISR 中拒绝）与墙钟。墙钟在
- * SNTP 接线（板级授权批次）前恒为未同步，闸门对模型调用 fail-closed。 */
+/* Zephyr platform ports for the D12 gate: mutex (k_mutex, rejected in ISR
+ * context) and wall clock. The wall clock stays unsynchronized until SNTP
+ * wiring (board-level authorized batch); the gate fails closed for model
+ * calls. */
 #include <zephyr/kernel.h>
 #include <entelea/d12.h>
 #include "d12_ports.h"

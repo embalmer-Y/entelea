@@ -2,9 +2,12 @@
 #ifndef ENTELEA_EVENTS_H
 #define ENTELEA_EVENTS_H
 
-/* R02 同步事件总线合同见 framework/runtime/supervision/contract.md。
- * 分发顺序 = 注册表静态顺序（禁运行期插队）；ISR 投递经队列由 sysworkq
- * 分发，投递的 data 必须指向静态存储（借用寿命约束，无机械检查）。 */
+/* R02 synchronous event bus contract: see
+ * framework/runtime/supervision/contract.md.
+ * Dispatch order is the static registry order (no runtime queue-jumping). ISR
+ * posts go through the queue and are dispatched by sysworkq. The data of a
+ * posted event must point to static storage (a borrowed-lifetime constraint,
+ * with no mechanical check). */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -15,15 +18,16 @@
 extern "C" {
 #endif
 
-/* R02 事件子集；后续批次按需追加，不改既有编号。 */
+/* R02 event subset. Later batches append as needed and do not change existing
+ * numbers. */
 typedef enum {
 	ENTELEA_EVT_BOOT_STEP,
 	ENTELEA_EVT_BOOT_DONE,
-	ENTELEA_EVT_ESTOP, /* 事后补发；estop 动作本身不经队列 */
+	ENTELEA_EVT_ESTOP, /* backfilled; the estop action is not queued */
 	ENTELEA_EVT_SAFE_STATE_CHANGED,
 	ENTELEA_EVT_WDT_WARN,
-	ENTELEA_EVT_PERM_DENIED, /* R04：越权留痕（app_id+detail） */
-	ENTELEA_EVT_ARB_CHANGED, /* R04：仲裁席变更（old/owner/t） */
+	ENTELEA_EVT_PERM_DENIED, /* R04: denial record (app_id+detail) */
+	ENTELEA_EVT_ARB_CHANGED, /* R04: arbiter seat change (old/owner/t) */
 	ENTELEA_EVT_ID_COUNT,
 } entelea_event_id_t;
 
@@ -43,49 +47,58 @@ typedef struct {
 	const char *name;
 } entelea_boot_step_evt_t;
 
-/* ENTELEA_EVT_ESTOP payload（补发时携带 ISR 记录的触发时刻） */
+/* ENTELEA_EVT_ESTOP payload (a backfilled event carries the trigger time
+ * recorded by the ISR) */
 typedef struct {
 	uint32_t t_ms;
 } entelea_estop_evt_t;
 
 /* ENTELEA_EVT_WDT_WARN payload */
 typedef struct {
-	int32_t src; /* entelea_wdt_src_t 值 */
+	int32_t src; /* entelea_wdt_src_t value */
 	uint32_t last_feed;
 } entelea_wdt_warn_evt_t;
 
-/* 绑定实例时钟（发布时间戳来源）。未绑定时发布 t_ms = 0，不伪造默认时基；
- * 订阅/发布其余语义不变。绑定 NULL 恢复未绑定。 */
+/* Binds the instance clock (the source of publish timestamps). While unbound,
+ * events are published with t_ms = 0; no default time base is fabricated. Other
+ * subscribe/publish semantics are unchanged. Binding NULL restores the unbound
+ * state. */
 entelea_result_t
 entelea_evt_bind_clock(const entelea_clock_t *clock);
 
-/** [thread] 仅 init 期注册；每事件容量 ENTELEA_EVT_MAX_SUBS，满 = ENTELEA_E_NOMEM。 */
+/** [thread] Registers only during init. Each event has a capacity of
+ * ENTELEA_EVT_MAX_SUBS subscribers; when full, returns ENTELEA_E_NOMEM. */
 entelea_result_t
 entelea_evt_subscribe(entelea_event_id_t id, entelea_event_cb_t fn, void *user);
 
-/** [thread] 同步分发（注册表静态顺序）；[ISR] 投递到深度
- * ENTELEA_EVT_QUEUE_DEPTH 的队列由 sysworkq 分发；满 = 丢弃并计数（观测损失）。
- * ISR 投递的 data 必须指向静态存储。 */
+/** [thread] Dispatches synchronously (registry static order). [ISR] Posts to a
+ * queue of depth ENTELEA_EVT_QUEUE_DEPTH, dispatched by sysworkq; when full,
+ * the event is dropped and counted as an observation loss. The data of an ISR
+ * post must point to static storage. */
 void
 entelea_evt_publish(const entelea_event_t *evt);
 
-/** [any] 发布时复制至多 4 字节载荷；回调期间有效。队列满 = E_BUSY
- * 并计入丢弃数，载荷过大 = E_RANGE，参数非法 = E_PARAM。 */
+/** [any] Copies a payload of up to 4 bytes at publish time; valid during the
+ * callback. A full queue returns E_BUSY and is counted as a drop; an oversized
+ * payload returns E_RANGE; invalid arguments return E_PARAM. */
 entelea_result_t
 entelea_evt_publish_copy(const entelea_event_t *evt);
 
-/** [any] 队列溢出累计丢弃数（观测，不清零）。 */
+/** [any] Cumulative count of queue-overflow drops. Observation only; this
+ * count is not cleared. */
 uint32_t
 entelea_evt_queue_dropped(void);
 
-/* 仅 ENTELEA_TEST 构建：同步排空 ISR 投递队列并分发（测试观测用）。 */
+/* ENTELEA_TEST builds only: synchronously drains and dispatches the ISR post
+ * queue (for test observation). */
 #ifdef ENTELEA_TEST
 void
 entelea_evt_poll_drain(void);
 #endif
 
-/* 容量出处 DEC-27（旧 LLD-ts-core §4/§6），R02 为编译期常量；
- * 板级冻结（D12）前不提供 Kconfig 面。 */
+/* Capacity source: DEC-27 (legacy LLD-ts-core sections 4 and 6). R02 uses
+ * compile-time constants. Kconfig is not provided before the board-level
+ * freeze (D12). */
 #define ENTELEA_EVT_MAX_SUBS 4
 #define ENTELEA_EVT_QUEUE_DEPTH 16
 

@@ -1,11 +1,15 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * R11 模拟智能/情感/适应（新-only N-ADAPTATION；合同见本目录
- * contract.md）。驱力/情感单写者（tick 独占）+确定性时间演进；
- * 适应=版本环（回滚面）——**安全规则不可被适应修改**（本层无任何
- * 权限/安全面写路径——结构性保证）；情感关闭（零 stimulus 停摆）
- * 不破坏辅助配置（R08 面独立）。产品参数与共享机制分开（本层
- * 只管机制；参数语义归产品）。
+ * R11 simulated intelligence: affect, emotion and adaptation (new-only
+ * N-ADAPTATION; see contract.md in this directory). Drive and emotion
+ * have a single writer (tick-exclusive) with deterministic time
+ * evolution. Adaptation is a version ring (the rollback surface);
+ * **safety rules cannot be changed by adaptation**. This layer has no
+ * permission or safety write path (a structural guarantee). Turning
+ * emotion off (zero stimulus freezes it) does not break auxiliary
+ * configuration (the R08 surface is independent). Product parameters
+ * are kept apart from shared mechanisms: this layer handles mechanism
+ * only; parameter semantics belong to the product.
  */
 #include <string.h>
 #include <entelea/affect.h>
@@ -22,8 +26,9 @@ static entelea_adapt_params_t adapt_history[ENTELEA_ADAPT_HISTORY];
 static uint32_t adapt_len;
 static uint32_t adapt_version;
 
-/* 确定性演进（建议值规则）：stimulus>0 升、<0 降、0 回中位（50）。
- * 步长 = |stimulus| 与 dt/1000 的饱和积（上限 10/步——变化有界）。 */
+/* Deterministic evolution (advisory rule): stimulus>0 raises, <0 lowers,
+ * 0 returns to the midpoint (50). Step is the saturating product of
+ * |stimulus| and dt/1000 (at most 10 per step, so change is bounded). */
 entelea_result_t
 entelea_affect_tick(uint32_t dt_ms,
 		    const int8_t stimulus[ENTELEA_AFFECT_LEVELS])
@@ -34,10 +39,10 @@ entelea_affect_tick(uint32_t dt_ms,
 	uint32_t scale = dt_ms / 1000U;
 
 	if (scale == 0) {
-		scale = 1; /* 亚秒 tick 至少 1 步（时间推进不丢） */
+		scale = 1; /* Sub-second tick: at least 1 step, time not lost */
 	}
 	if (scale > AFFECT_STEP_MAX) {
-		scale = AFFECT_STEP_MAX; /* 步长饱和（变化有界） */
+		scale = AFFECT_STEP_MAX; /* Saturate step (bounded change) */
 	}
 	for (int i = 0; i < ENTELEA_AFFECT_LEVELS; i++) {
 		int v = affect.level[i];
@@ -54,7 +59,7 @@ entelea_affect_tick(uint32_t dt_ms,
 				v = 0;
 			}
 		} else {
-			/* 回中位（确定性衰减）。 */
+			/* Decay back to the midpoint (deterministic) */
 			if (v > AFFECT_MIDPOINT) {
 				v -= (int) scale;
 				if (v < AFFECT_MIDPOINT) {
@@ -80,7 +85,7 @@ entelea_affect_get(entelea_affect_state_t *out)
 	}
 }
 
-/* ---- 适应版本环 ---- */
+/* ---- Adaptation version ring ---- */
 
 entelea_result_t
 entelea_adapt_commit(const uint8_t weight[ENTELEA_AFFECT_LEVELS],
@@ -108,9 +113,9 @@ entelea_result_t
 entelea_adapt_rollback(entelea_adapt_params_t *out)
 {
 	if (adapt_len <= 1) {
-		return ENTELEA_E_STATE; /* 无历史可回（不静默成功） */
+		return ENTELEA_E_STATE; /* No history; no silent success */
 	}
-	adapt_len--; /* 当前版本出环（回滚不删除经历——R10 面） */
+	adapt_len--; /* Drop current version; rollback keeps history (R10) */
 	if (out != NULL) {
 		*out = adapt_history[adapt_len - 1];
 	}
@@ -132,7 +137,7 @@ void
 entelea_affect_test_reset(void)
 {
 	memset(&affect, 0, sizeof(affect));
-	/* 初始情感=中位（确定性基线）。 */
+	/* Initial affect = midpoint (deterministic baseline) */
 	for (int i = 0; i < ENTELEA_AFFECT_LEVELS; i++) {
 		affect.level[i] = AFFECT_MIDPOINT;
 	}

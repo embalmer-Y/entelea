@@ -2,9 +2,12 @@
 #ifndef ENTELEA_PROV_H
 #define ENTELEA_PROV_H
 
-/* R03 配置（provisioning）合同见 framework/services/config/contract.md。
- * 运行时只读（写通道仅烧录/维护窗）；装载面零写调用（机械检查目标）。
- * CBOR schema v1/v2（键序=v1 前缀+尾部追加，确定性子集解码）。 */
+/* R03 provisioning configuration contract: see
+ * framework/services/config/contract.md.
+ * Read-only at runtime (the write path is only the flashing or maintenance
+ * window). The load path makes zero write calls (a mechanically checked goal).
+ * CBOR schema v1/v2 (key order: v1 prefix, new keys appended at the tail;
+ * deterministic subset decoding). */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -16,8 +19,10 @@ extern "C" {
 #endif
 
 typedef enum {
-	ENTELEA_DEPLOY_ORCHESTRATED = 0, /* 断链→SAFE_LINKLOSS（缺省/缺字段） */
-	ENTELEA_DEPLOY_STANDALONE = 1, /* 独立运行：断链仅留痕不迁移 */
+	ENTELEA_DEPLOY_ORCHESTRATED = 0, /* link loss -> SAFE_LINKLOSS; default
+					    when the field is missing */
+	ENTELEA_DEPLOY_STANDALONE = 1, /* standalone: link loss is only logged,
+					  no migration */
 } entelea_deploy_mode_t;
 
 typedef struct {
@@ -28,16 +33,17 @@ typedef struct {
 	char zenoh_cred[96];
 	uint32_t power_budget_ma;
 	uint8_t estop_trigger_flags;
-	/* schema v2 尾部追加（缺字段缺省：orchestrated/远程清除开放/lconf 0） */
+	/* schema v2 fields, appended at the tail (defaults when absent:
+	 * orchestrated, remote clear allowed, lconf 0) */
 	uint8_t deploy_mode; /* entelea_deploy_mode_t */
 	uint8_t estop_remote_clear; /* 0/1 */
-	uint8_t local_confirm; /* 0/1：安装闸本地确认 */
+	uint8_t local_confirm; /* 0/1: install-gate local confirmation */
 	uint16_t tls_ca_len;
 	uint16_t tls_cert_len;
-	uint16_t tls_key_len; /* 0 = TLS off；三键须同现同缺 */
+	uint16_t tls_key_len; /* 0 = TLS off; all 3 keys present or none */
 } entelea_prov_t;
 
-/* TLS DER 上限（P-256 实测 +~30% 余量，DEC-63③）。 */
+/* TLS DER limits (P-256 measured, +~30% margin, DEC-63 #3). */
 #define ENTELEA_PROV_TLS_CA_MAX 768
 #define ENTELEA_PROV_TLS_CERT_MAX 768
 #define ENTELEA_PROV_TLS_KEY_MAX 256
@@ -51,33 +57,40 @@ typedef struct {
 	uint16_t key_len;
 } entelea_prov_tls_t;
 
-/** [boot/消费方] 装载（头 len|crc16 + CBOR；schema 走查失败/CRC 失败 =
- * ENTELEA_E_IO，调用方 fail-safe）。与 validate 同一解析路径。 */
+/** [boot/consumer] Loads the config (header len|crc16 + CBOR). A schema check
+ * or CRC failure returns ENTELEA_E_IO; the caller then goes fail-safe.
+ * Uses the same parsing path as validate. */
 entelea_result_t
 entelea_prov_load(void);
 
-/** [any] 只读指针（未装载/失败兜底 = v1 等义安全侧；无运行时写接口）。 */
+/** [any] Read-only pointer. If not loaded or the load failed, returns safe-side
+ * values equivalent to v1. There is no runtime write interface. */
 const entelea_prov_t *
 entelea_prov(void);
 
-/** [any] TLS 三元组只读指针（len=0 = TLS off）。 */
+/** [any] Read-only pointer to the TLS triple (len = 0 means TLS off). */
 const entelea_prov_tls_t *
 entelea_prov_tls(void);
 
-/** [thread] 维护通道写入前校验（零拷贝走查，不触装载活态）。 */
+/** [thread] Validates a maintenance-channel write without touching the live
+ * loaded state (zero-copy walk-through). */
 entelea_result_t
 entelea_prov_validate(const uint8_t *cbor, uint32_t len);
 
-/** [thread] 维护写：校验先行（失败零写入）+ per-boot 一次性窗（再写须
- * 复位循环——远程换身份结构性限速且可观测）。 */
+/** [thread] Maintenance write: validates first (a failure writes nothing).
+ * It then uses a one-shot window per boot. A further write needs a reset
+ * cycle, which structurally rate-limits remote identity changes and keeps
+ * them observable. */
 entelea_result_t
 entelea_prov_write_maint(const uint8_t *cbor, uint32_t len);
 
 #ifdef ENTELEA_TEST
-/** 烧录通道测试注入（仅测试构建；生产烧录=外部工具）。 */
+/** Test injection for the flashing channel (test builds only; production
+ * flashing uses external tools). */
 entelea_result_t
 entelea_prov_write_test(const uint8_t *cbor, uint32_t len);
-/** 维护窗 RAM 旗复位（测试隔离=模拟复位循环）。 */
+/** Resets the maintenance-window RAM flag (test isolation simulates a reset
+ * cycle). */
 void
 entelea_prov_maint_test_reset(void);
 #endif

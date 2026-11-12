@@ -1,14 +1,22 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * 审计两页乒乓环（迁自旧 store/audit.c，R03 合同见本目录 contract.md）：
- * 安全异常类掉电留存。8KB = 两页 × 4KB（擦除块对齐）× 64 槽 × 64B 定长。
- * "单条覆盖最旧"不可行（擦除单位=页）→ 两页乒乓：active 页写满 → 翻页
- * 续写（页首写前擦对页）——掉电始终保留最近 ~64 条（翻页瞬间 ≤128）。
- * RF1（review P1-6）：体及 CRC、原 magic、独立提交标记依次写；
- * 未提交槽跳过，已提交的损坏槽显式报错；读错误使 init 不就绪、
- * read 返回负错误码；写失败烧毁该槽与 seq。
- * 相对旧实现调整：boot 打印留在平台层（本模块 printk-free，经 read API
- * 消费）。全量内存环保留（旧 commit.c 面）归 R04 观测面，本环只落异常类。
+ * Audit two-page ping-pong ring (migrated from the old store/audit.c; R03
+ * contract in this directory's contract.md): power-loss retention of
+ * security exception classes. 8KB = two pages x 4KB (erase-block aligned) x
+ * 64 slots x 64B fixed size. "Overwrite the oldest in place" is not feasible
+ * (the erase unit is a page), so two pages ping-pong: when the active page
+ * fills, switch to the other page and continue writing (the target page is
+ * erased before its first write). Power loss always retains the latest ~64
+ * entries (at most 128 during a page switch).
+ * RF1 (review P1-6): body and CRC, then the original magic, then an
+ * independent commit tag, written in that order. Uncommitted slots are
+ * skipped; committed but corrupt slots are reported explicitly. A read error
+ * makes init not ready and read return a negative error code; a failed write
+ * burns that slot and its seq.
+ * Adjustments from the old implementation: boot printing stays in the
+ * platform layer (this module is printk-free and is consumed through the
+ * read API). The full in-memory ring (old commit.c surface) belongs to the
+ * R04 observation surface; this ring only holds exception classes.
  */
 #include <string.h>
 #include <entelea/storage.h>
@@ -23,12 +31,13 @@
 static struct {
 	bool ready;
 	uint8_t active_page; /* 0/1 */
-	uint8_t next_slot; /* active 页内下一写槽 0..63 */
-	uint32_t next_seq; /* 全局单调（1 起；0/0xFFFFFFFF 不用） */
+	uint8_t next_slot; /* next write slot in active page, 0..63 */
+	uint32_t next_seq; /* global monotonic (from 1; 0/0xFFFFFFFF unused) */
 } au;
 
-/* 槽小端布局（64B）：magic|seq|t_ms|ch_idx|actor|kind|_pad|evt|res|
- * value|crc16|tag|commit|pad。旧槽的 crc/tag/commit 均为擦除值。 */
+/* Slot layout (64B, little-endian):
+ * magic|seq|t_ms|ch_idx|actor|kind|_pad|evt|res|value|crc16|tag|commit|pad.
+ * Legacy slots have erased crc/tag/commit values. */
 #define OFF_MAGIC 0
 #define OFF_SEQ 4
 #define OFF_TMS 8
@@ -62,7 +71,7 @@ static void
 slot_encode(uint8_t *s, const entelea_storage_audit_entry_t *e, uint16_t evt,
 	    uint32_t seq)
 {
-	memset(s, 0xFF, AUDIT_SLOT_SZ); /* pad = 擦除态 */
+	memset(s, 0xFF, AUDIT_SLOT_SZ); /* pad = erased state */
 	entelea_put_le32(s + OFF_MAGIC, AUDIT_MAGIC);
 	entelea_put_le32(s + OFF_SEQ, seq);
 	put_le64(s + OFF_TMS, e->t_ms);
@@ -160,8 +169,9 @@ slot_commit(uint8_t page, uint8_t i, const uint8_t *s)
 	return ENTELEA_OK;
 }
 
-/* 页扫描：最大有效 seq + 已用槽数（末个非擦除槽 + 1；坏槽不复用、
- * 不断尾——其后有效槽照常可见）。读错误显式失败。 */
+/* Page scan: max valid seq plus used-slot count (last non-erased slot + 1;
+ * bad slots are neither reused nor truncate the tail; valid slots after them
+ * stay visible). Read errors fail explicitly. */
 static entelea_result_t
 page_scan(uint8_t page, uint32_t *max_seq, uint8_t *used_slots)
 {
@@ -200,14 +210,14 @@ entelea_storage_audit_init(void)
 	au.ready = false;
 	if (page_scan(0, &seq_a, &used_a) != ENTELEA_OK ||
 	    page_scan(1, &seq_b, &used_b) != ENTELEA_OK) {
-		return ENTELEA_E_IO; /* 读错误≠空环：不就绪、不擦页 */
+		return ENTELEA_E_IO; /* Read error != empty ring: not ready */
 	}
 	uint8_t page = (seq_b > seq_a) ? 1U : 0U;
 	uint8_t used = page ? used_b : used_a;
 
 	au.next_seq = ((seq_a > seq_b) ? seq_a : seq_b) + 1U;
 	if (used >= AUDIT_SLOTS) {
-		page ^= 1U; /* 满页：翻页目标在首 append 前擦 */
+		page ^= 1U; /* Full page: erase target before first append */
 		used = 0;
 	}
 	au.active_page = page;
@@ -224,8 +234,9 @@ entelea_storage_audit_append(const entelea_storage_audit_entry_t *e,
 		return ENTELEA_E_STATE;
 	}
 	if (au.next_slot == 0) {
-		/* 页首写：确保目标页为擦除态（翻页瞬间掉电的恢复路径；
-		 * 擦除幂等；失败不消耗槽/seq）。 */
+		/* First write on a page: ensure the target page is erased
+		 * (recovery path for power loss during a page switch;
+		 * erase is idempotent; a failure consumes no slot or seq). */
 		if (entelea_store_backend.erase_off(
 			    ENTELEA_PART_AUDIT, au.active_page * AUDIT_PAGE_SZ,
 			    AUDIT_PAGE_SZ) != ENTELEA_OK) {
@@ -237,11 +248,11 @@ entelea_storage_audit_append(const entelea_storage_audit_entry_t *e,
 	slot_encode(slot, e, evt, au.next_seq);
 	entelea_result_t r = slot_commit(au.active_page, au.next_slot, slot);
 
-	au.next_seq++; /* 失败亦烧毁槽与 seq：已编程字节不重写 */
+	au.next_seq++; /* Failure also burns slot and seq (no rewrite) */
 	au.next_slot++;
 	if (au.next_slot == AUDIT_SLOTS) {
 		au.next_slot = 0;
-		au.active_page ^= 1U; /* 写满翻页（对页在下次页首写前擦） */
+		au.active_page ^= 1U; /* Full: switch; erase before reuse */
 	}
 	if (r != ENTELEA_OK) {
 		au.ready = false;
@@ -258,8 +269,10 @@ entelea_storage_audit_read(entelea_storage_audit_entry_t *out, size_t max)
 	if (!au.ready) {
 		return ENTELEA_E_STATE;
 	}
-	/* 两页收集（≤128 过渡态）后按 seq 取最近 max 条。静态收集缓冲
-	 * （旧真机实测：4KB 线程栈上爆栈）；读路径低频单消费。 */
+	/* Collect both pages (at most 128 transiently), then take the newest
+	 * max entries by seq. The buffer is static (a 4KB thread stack
+	 * overflowed in real-device tests); the read path is low-frequency,
+	 * single consumer. */
 	static entelea_storage_audit_entry_t all[AUDIT_SLOTS * AUDIT_PAGES];
 	size_t n = 0;
 
@@ -283,7 +296,7 @@ entelea_storage_audit_read(entelea_storage_audit_entry_t *out, size_t max)
 			}
 		}
 	}
-	/* 插入排序（seq 升序；n ≤ 128 低频）。 */
+	/* Insertion sort (seq ascending; n <= 128, low frequency). */
 	for (size_t i = 1; i < n; i++) {
 		entelea_storage_audit_entry_t k = all[i];
 		size_t j = i;

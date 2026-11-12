@@ -1,12 +1,17 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* F-1 真网闸：WiFi 关联 + DHCP + netmon 依赖联动真测（R06 合同
- * "真机批替换观测源"——dep_report 的观测源=真实 WiFi/DHCP 事件）。
- * 凭据=串口运行时注入（P4C1 协议=旧树 E1 实测纪律：不入镜像不入
- * 仓库；用后 mbedtls 风格 zeroize——本闸手写显式清零）。
- * 两轮（防抖真测）：connect→DHCP→dep good×2→UP→disconnect→
- * dep bad→DOWN（立即）；第二轮再 UP（DOWN→UP 需连续 2 次 good——
- * DEGRADED 中间态可见）。诊断失败停用网络依赖，不伪装成硬件安全故障。
- * 主线程阻塞等待安全：patrol 在 sysworkq（喂狗+通道重排）。 */
+/* F-1 real-network gate: real test of WiFi association, DHCP and netmon
+ * dependency linkage (R06 contract "the board batch replaces the observation
+ * source": the dep_report observation source is real WiFi/DHCP events).
+ * Credentials are injected over the serial port at runtime (P4C1 protocol;
+ * the E1 measured discipline of the legacy tree: never stored in the image or
+ * the repo; zeroized after use, mbedtls style, which this gate does by hand).
+ * Two rounds (debounce real test): connect -> DHCP -> dep good x2 -> UP ->
+ * disconnect -> dep bad -> DOWN (immediate); the second round brings UP again
+ * (DOWN -> UP needs 2 consecutive goods; the DEGRADED intermediate state is
+ * visible). A diagnostic failure disables the network dependency and is not
+ * disguised as a hardware safety fault.
+ * The main thread parks in a safe state: patrol runs on sysworkq (watchdog
+ * feeding plus channel rescheduling). */
 #include <errno.h>
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -84,7 +89,7 @@ p4c1_uart_read(void *user, uint8_t *dst, size_t size)
 static int
 read_credentials(struct entelea_wifi_credentials *credentials)
 {
-	/* P4C1：magic + u8 ssid_len + u8 psk_len + ssid + psk（30s 窗）。 */
+	/* P4C1: magic, u8 ssid_len, u8 psk_len, ssid, psk (30s window). */
 	struct credential_uart_reader reader = {
 		.uart = DEVICE_DT_GET(DT_CHOSEN(zephyr_console)),
 		.end = sys_timepoint_calc(K_SECONDS(30)),
@@ -305,7 +310,7 @@ main(void)
 	callbacks_registered = false;
 	entelea_secure_zero(&credentials, sizeof(credentials));
 	printk("[hw-wifi] PASS: wifi/netmon loop closed (net dep live)\n");
-	k_sleep(K_FOREVER); /* 安全常驻（patrol 喂狗） */
+	k_sleep(K_FOREVER); /* parked safely; patrol keeps feeding */
 	return 0;
 
 fail:

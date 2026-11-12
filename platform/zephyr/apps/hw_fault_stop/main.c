@@ -1,17 +1,23 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* R02 D12 硬件闸验收镜像（板级）：真实硅上闭环验证两相故障停止。
- * 相位判别 = hwinfo 复位原因（noinit RAM 后端不跨复位存活——BSS 每次
- * 启动重置，板级 flash 后端归 R03 板级批，故不用于判别）：
- *  P1（上电/外硬复位进入）：健康窗口 6s（巡检+MWDT 喂狗的差分证明：
- *     若 MWDT 未安装/未喂则活不过窗口）→ 生产 system_fail(FAIL_WDT
- *     0xFF) → 停喂 → task_wdt 通道 5s 到期 → sys_reboot（期望复位
- *     原因 = SOFTWARE，≤~5s）。
- *  P2（复位原因 = SOFTWARE 进入）：irq_lock+自旋楔死内核（本板单核
- *     配置，CONFIG_SMP 未置）→ task_wdt 监视器死亡 → MWDT0
- *     (RESET_SOC, 窗 3+2s) 到期 → SoC 硬复位（期望复位原因 =
- *     WATCHDOG；ROM 横幅 rst:0x7 (HP_SYS_HP_WDT_RESET) 独立佐证）。
- *  P3（复位原因 = WATCHDOG 进入）：双闭环收官 → 常驻（巡检持续喂狗）。
- * 无测试钩子（ENTELEA_TEST 未定义）：只走生产 API。 */
+/* R02 D12 hardware-gate acceptance image (board level): closed-loop
+ * verification of the two-phase fault stop on real silicon.
+ * Phase discrimination = hwinfo reset cause. The noinit RAM backend does not
+ * survive a reset (BSS is reset on every boot), and the board flash backend
+ * belongs to the R03 board batch, so neither is used for discrimination:
+ *  P1 (entered on power-on or external hard reset): healthy window of 6 s
+ *     (differential proof that patrol and MWDT feeding are running; without
+ *     MWDT installed or fed, the image would not survive the window) ->
+ *     production system_fail(FAIL_WDT 0xFF) -> stop feeding -> task_wdt
+ *     channel expires after 5 s -> sys_reboot (expected reset cause =
+ *     SOFTWARE, <= ~5 s).
+ *  P2 (entered with reset cause = SOFTWARE): irq_lock + spin wedges the
+ *     kernel (single-core board config; CONFIG_SMP unset) -> task_wdt monitor
+ *     dies -> MWDT0 (RESET_SOC, window 3+2 s) expires -> SoC hard reset
+ *     (expected reset cause = WATCHDOG; the ROM banner rst:0x7
+ *     (HP_SYS_HP_WDT_RESET) independently corroborates).
+ *  P3 (entered with reset cause = WATCHDOG): double closed loop complete ->
+ *     resident (patrol keeps feeding the watchdog).
+ * No test hooks (ENTELEA_TEST undefined): only production APIs are used. */
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/drivers/hwinfo.h>
@@ -30,15 +36,16 @@ main(void)
 	    entelea_evt_bind_clock(&platform_clock) != ENTELEA_OK ||
 	    entelea_wdt_bind_clock(&platform_clock) != ENTELEA_OK ||
 	    entelea_safety_bind_clock(&platform_clock) != ENTELEA_OK) {
-		/* 时钟绑定失败 = 启动前置失败：fail-safe（同 minimal）。 */
+		/* Pre-boot clock bind failure: fail-safe (as minimal). */
 		entelea_safety_system_fail(ENTELEA_FAIL_BOOT(0));
 		return 0;
 	}
 	printk("[hw-gate] boot sequence begins\n");
 	entelea_supervision_boot(entelea_platform_boot_steps,
 				 ENTELEA_PLATFORM_BOOT_STEP_COUNT);
-	/* boot 任一步失败不返回（fail-safe 停机 + WDT 兜底复位）——
-	 * 执行到这里 = 五步全过（含 wdt_start 在真 MWDT0 上安装成功）。 */
+	/* Any boot step failure does not return (fail-safe halt, WDT fallback
+	 * reset). Reaching this point means all five steps passed, including
+	 * wdt_start installing successfully on the real MWDT0. */
 	uint32_t cause = 0;
 	int rc = hwinfo_get_reset_cause(&cause);
 
@@ -74,7 +81,7 @@ main(void)
 		entelea_safety_system_fail(ENTELEA_FAIL_WDT(0xFFu));
 	}
 	for (;;) {
-		k_sleep(K_FOREVER); /* 常驻监督空闲（P1 停喂后通道到期触发复位） */
+		k_sleep(K_FOREVER); /* idle; P1 feed-stop triggers reset */
 	}
 	return 0;
 }

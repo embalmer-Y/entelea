@@ -1,9 +1,11 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * R10 经历记忆（新-only N-MEMORY；合同见本目录 contract.md）。
- * 有界链（满=最旧让位+计数）；写入须同意（consent 显式——采集≠记忆）；
- * 删除=tombstone 区间（读取跳过；衍生面不复活）；恢复一致性=链序
- * 单调（RAM 后端进程内——持久后端随板级批）。
+ * R10 experience memory (new-only N-MEMORY; see contract.md in this
+ * directory). Bounded chain (full = the oldest yields, with a count).
+ * Writes require consent (explicit consent: collection is not memory).
+ * Deletion = tombstone interval (reads skip it; derived surfaces do not
+ * revive). Recovery consistency = monotonic chain order (RAM backend,
+ * in-process; the persistent backend follows the board-level batch).
  */
 #include <string.h>
 #include <entelea/memory.h>
@@ -13,12 +15,15 @@ static uint64_t chain_seq[ENTELEA_MEM_CHAIN_MAX];
 static uint32_t chain_len;
 static uint32_t evicted_count;
 static uint64_t write_seq;
-/* 墓碑列表（review P1 修复：单一墓碑被第二次 delete 覆盖会复活首个
- * 删除区间——改为累计列表）。容量有界；淘汰纪律（计划符合性审查 P2
- * 修复：原"满时覆盖 from 最小者"可使链内已删条目复活）：只复用被新区间
- * **完全覆盖**的槽（覆盖面不丢失）；无空槽且无被覆盖槽 = E_NOMEM
- * 显式拒（不复活任何已删区间）。全区间删除恒覆盖既有一切 → 永不因
- * 满而失败。 */
+/* Tombstone list (review P1 fix: a single tombstone overwritten by a second
+ * delete would revive the first deleted interval, so this is now an
+ * accumulating list). Capacity is bounded. Eviction discipline (plan
+ * conformance review P2 fix: the old "overwrite the smallest from when full"
+ * could revive deleted entries in the chain): only slots fully covered by
+ * the new interval are reused, so coverage is never lost. With no empty slot
+ * and no covered slot, the write fails with E_NOMEM (explicit refusal; no
+ * deleted interval is revived). A full-range delete covers everything, so it
+ * never fails due to fullness. */
 #define ENTELEA_MEM_TOMBSTONES_MAX 8
 static struct {
 	uint64_t from, to;
@@ -46,7 +51,7 @@ entelea_mem_write(bool consent, const entelea_mem_entry_t *e)
 		return ENTELEA_E_PARAM;
 	}
 	if (!consent) {
-		return ENTELEA_E_PERM; /* 无同意不保存（采集≠记忆） */
+		return ENTELEA_E_PERM; /* No consent: not saved */
 	}
 	if (e->len == 0 || e->len > ENTELEA_MEM_ENTRY_MAX) {
 		return ENTELEA_E_PARAM;
@@ -60,7 +65,7 @@ entelea_mem_write(bool consent, const entelea_mem_entry_t *e)
 		memmove(&chain_seq[0], &chain_seq[1],
 			(chain_len - 1) * sizeof(chain_seq[0]));
 		chain_len--;
-		evicted_count++; /* 有界：最旧让位（不拒写） */
+		evicted_count++; /* Bounded: oldest yields, no refusal */
 	}
 	chain[chain_len] = *e;
 	chain_seq[chain_len++] = ++write_seq;
@@ -77,7 +82,7 @@ entelea_mem_read(entelea_mem_entry_t *out, size_t max)
 
 	for (uint32_t i = 0; i < chain_len && n < max; i++) {
 		if (is_tombstoned(chain[i].t_ms, chain_seq[i])) {
-			continue; /* 删除后不复活 */
+			continue; /* Deleted entries stay deleted */
 		}
 		out[n++] = chain[i];
 	}
@@ -90,8 +95,9 @@ entelea_mem_delete(uint64_t t_from_ms, uint64_t t_to_ms)
 	if (t_from_ms > t_to_ms) {
 		return ENTELEA_E_PARAM;
 	}
-	/* 有界且不复活：① 空槽；② 被新区间完全覆盖的槽（覆盖面不丢）；
-	 * ③ 否则 E_NOMEM（显式拒——绝不覆盖仍有效的删除区间）。 */
+	/* Bounded, never revives: (1) an empty slot; (2) a slot fully covered
+	 * by the new interval (coverage kept); (3) otherwise E_NOMEM, an
+	 * explicit refusal that never overwrites a still-valid interval. */
 	int slot = -1;
 	int subsumed = -1;
 
@@ -102,14 +108,14 @@ entelea_mem_delete(uint64_t t_from_ms, uint64_t t_to_ms)
 		}
 		if (subsumed < 0 && t_from_ms <= tombstones[i].from &&
 		    tombstones[i].to <= t_to_ms) {
-			subsumed = i; /* 保留首个被覆盖槽（循环继续找空槽） */
+			subsumed = i; /* First covered slot; keep scanning */
 		}
 	}
 	if (slot < 0) {
 		slot = subsumed;
 	}
 	if (slot < 0) {
-		return ENTELEA_E_NOMEM; /* 满 + 无覆盖：拒（不复活） */
+		return ENTELEA_E_NOMEM; /* Full, none covered: refuse */
 	}
 	tombstones[slot].from = t_from_ms;
 	tombstones[slot].to = t_to_ms;

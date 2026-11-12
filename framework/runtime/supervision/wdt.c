@@ -1,14 +1,20 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * 软看门狗框架（迁自旧 core/wdt.c，R02 合同 framework/runtime/supervision/contract.md）。
- * 合同 4：每子系统独立喂狗（可定位卡死来源）；逾期 → WDT_WARN → system_fail。
- * 分层防线落点（DEC-48）：L1 本软看门狗（静态预注册 + 动态激活；boot 步骤
- * 启动巡检，子系统首次 feed 激活各自源）；L3 Zephyr task_wdt 通道
- * （CONFIG_TASK_WDT；callback=NULL → 过期即 sys_reboot——软巡检自身卡死兜底；
- * 硬件回退经 CONFIG_TASK_WDT_HW_FALLBACK + 板级 chosen zephyr,watchdog）。
- * 相对旧实现调整：时间源改实例时钟绑定（feed 的 ISR 安全性见合同）；
- * 源集合 R02 仅 SYWORK（NET/APPMGR 随其子系统批次加入）；
- * noinit 留痕/上次复位读出归 R03。
+ * Soft watchdog framework (migrated from the old core/wdt.c; R02 contract:
+ * framework/runtime/supervision/contract.md).
+ * Contract 4: each subsystem feeds its own watchdog, so a hang can be
+ * located; overdue -> WDT_WARN -> system_fail.
+ * Defense-layer placement (DEC-48): L1 is this soft watchdog (static
+ * pre-registration plus dynamic activation: the boot step runs the start-up
+ * patrol, and each subsystem's first feed activates its own source); L3 is the
+ * Zephyr task_wdt channel (CONFIG_TASK_WDT; callback=NULL -> on expiry
+ * sys_reboot, the fallback if the soft patrol itself hangs; the hardware
+ * fallback goes through CONFIG_TASK_WDT_HW_FALLBACK plus the board-level
+ * chosen zephyr,watchdog).
+ * Changes from the old implementation: the time source is now bound to an
+ * instance clock (feed ISR safety is described in the contract); the source
+ * set in R02 is SYWORK only (NET/APPMGR join with their subsystem batches);
+ * the noinit trace and last-reset readout belong to R03.
  */
 #include <errno.h>
 #include <string.h>
@@ -25,19 +31,19 @@
 
 struct wdt_src {
 	uint32_t period_ms;
-	atomic_t last_feed32; /* 时钟低 32 位；无符号差值对回绕安全 */
-	atomic_t grace_until32; /* 豁免窗绝对截止（0 = 无；feed 清除） */
+	atomic_t last_feed32; /* Clock low 32 bits; unsigned diff, wrap-safe */
+	atomic_t grace_until32; /* Grace deadline (0 = none; feed clears) */
 	bool registered;
-	atomic_t active; /* 首次 feed 激活——未激活源不参与逾期判定 */
+	atomic_t active; /* Set by first feed; inactive sources are skipped */
 };
 
 static struct wdt_src srcs[ENTELEA_WDT_COUNT];
 static bool started;
 static const entelea_clock_t *wdt_clock;
-static atomic_t halted = ATOMIC_INIT(0); /* 全局停机（system_fail 置位） */
+static atomic_t halted = ATOMIC_INIT(0); /* Global halt (set by system_fail) */
 static uint64_t clock_last_good;
 static uint32_t clock_fault_count;
-static uint8_t blind_rounds; /* 连续“时间不可知”巡检轮数（A1 策略） */
+static uint8_t blind_rounds; /* Consecutive time-unknown rounds (A1 policy) */
 
 #ifdef ENTELEA_TEST
 static void (*after_elapsed_sample)(void);
@@ -58,7 +64,7 @@ entelea_result_t
 entelea_wdt_bind_clock(const entelea_clock_t *clock)
 {
 	if (clock == NULL || clock->read_ms == NULL || clock->clock_id == 0) {
-		/* 绑定 NULL 恢复未绑定（测试隔离用）。 */
+		/* NULL binding restores unbound state (test isolation). */
 		if (clock == NULL) {
 			wdt_clock = NULL;
 			return ENTELEA_OK;
@@ -69,25 +75,34 @@ entelea_wdt_bind_clock(const entelea_clock_t *clock)
 	return ENTELEA_OK;
 }
 
-/* 经绑定实例时钟的原始 read（feed 须可在 ISR 调用：绕过 clock_now 的
- * 非原子回退簿记；ISR 安全性要求随绑定声明，见 wdt.h）。
- * 单调护栏：读失败或回退沿用最后有效值并计数——失败伪造 0 会使
- * elapsed 突变触发伪逾期（fail 误动作）。
- * 并发（二轮 review 缺陷 5）：last_good/失败计数是 64/32 位 RMW，
- * 线程（巡检/测试）与 ISR（feed）并发访问；32 位目标上 u64 访问可撕裂。
- * 全部比较/更新/计数入 irq_lock 微临界区（可在 ISR 嵌套）。
- * 返回 false = 本次时间不可知（护栏介入），*out 为最后有效值。 */
+/* Raw read of the bound instance clock (feed must be callable from ISR, so
+ * this bypasses the non-atomic regression bookkeeping of clock_now; ISR
+ * safety is a requirement declared with the binding, see wdt.h).
+ * Monotonic guard: on read failure or regression the last valid value is
+ * kept and counted. Faking 0 would make elapsed jump and cause a false
+ * overdue (a fail misfire).
+ * Concurrency (second-round review defect 5): last_good and the failure count
+ * are 64/32-bit read-modify-write; threads (patrol/tests) and the ISR (feed)
+ * access them concurrently, and u64 accesses can tear on 32-bit targets.
+ * All compare, update and count operations go inside an irq_lock micro
+ * critical section (nestable in ISR).
+ * Returns false = time unknown for this call (guard intervened); *out holds
+ * the last valid value. */
 static bool
 now32_checked(uint32_t *out)
 {
 	uint64_t ms = 0;
 	unsigned int key = irq_lock();
 
-	/* 读+比较+更新全程持锁（读取须短且不阻塞——平台合同约束）：
-	 * 线程/ISR 采样完全串行化，“较早采样晚登记”的交错不再可能；
-	 * 锁内仅剩真回退（时钟本身后退）→ 计故障 + 保守沿用最后有效值
-	 * （三轮 review 发现 3：真回退与正常交错必须区分，且不得因
-	 * 交错误停机）。 */
+	/* Read, compare and update all run under the lock (reads must be
+	 * short and non-blocking, per the platform contract). Thread and ISR
+	 * sampling is fully serialized, so an "earlier sample, later
+	 * registration" interleaving can no longer happen. Inside the lock
+	 * only a real regression (the clock itself went backward) remains:
+	 * count a fault and conservatively keep the last valid value
+	 * (third-round review finding 3: a real regression must be told
+	 * apart from a normal interleaving, and must not cause a false
+	 * halt). */
 	bool ok = wdt_clock != NULL &&
 		  wdt_clock->read_ms(wdt_clock->user, &ms) == ENTELEA_OK;
 	bool known = ok;
@@ -101,10 +116,13 @@ now32_checked(uint32_t *out)
 	}
 	irq_unlock(key);
 	*out = (uint32_t) ms;
-	/* 时间可知 = 读成功**且**未回退：真回退（读到过期值）与读失败同样
-	 * 按不可知上报——合同“真回退仍按 A1 计入失明轮数”（计划符合性
-	 * 审查 P2：修复前回退返回 true 会把 blind_rounds 归零，持续回退
-	 * 的时钟后端下 A1 静默失效）。 */
+	/* Time is known only if the read succeeded **and** no regression
+	 * occurred: a real regression (reading a stale value) is reported as
+	 * unknown, like a read failure. The contract says a real regression
+	 * still counts toward A1 blindness rounds (plan-conformance review P2:
+	 * before the fix, returning true on regression reset blind_rounds to
+	 * zero, so A1 silently failed with a persistently regressing clock
+	 * backend). */
 	return known;
 }
 
@@ -130,9 +148,11 @@ entelea_wdt_clock_faults(void)
 void
 entelea_wdt_halt(void)
 {
-	/* 全局停机（缺陷 4）：置位后巡检不喂、不重排、不判逾——任何线程
-	 * 触发 system_fail 的停机语义相同，不依赖调用线程自身挂起；
-	 * 停喂后 task_wdt 通道到期 → sys_reboot 兜底。 */
+	/* Global halt (defect 4): once set, the patrol neither feeds,
+	 * reschedules, nor checks for overdue. Any thread triggering
+	 * system_fail gets the same halt semantics and does not depend on the
+	 * calling thread suspending itself. After feeding stops, task_wdt
+	 * expiry -> sys_reboot is the fallback. */
 	atomic_set(&halted, 1);
 }
 
@@ -144,7 +164,7 @@ entelea_wdt_register(entelea_wdt_src_t src, uint32_t period_ms)
 		return ENTELEA_E_PARAM;
 	}
 	if (wdt_clock == NULL) {
-		return ENTELEA_E_UNINIT; /* 不伪造默认时基 */
+		return ENTELEA_E_UNINIT; /* No fake default time base */
 	}
 	if (srcs[src].registered) {
 		return ENTELEA_E_STATE;
@@ -158,9 +178,11 @@ entelea_wdt_register(entelea_wdt_src_t src, uint32_t period_ms)
 void
 entelea_wdt_feed(entelea_wdt_src_t src)
 {
-	/* halt 入口守卫（三轮 review 发现 6）：置位后任何调用路径（含巡检
-	 * 在 halt 检查与喂狗之间被置位的交错）的喂狗在入口被压制；粒度=
-	 * 调用入口，至多放行一次已在飞的调用。 */
+	/* Halt entry guard (third-round review finding 6): once halt is set,
+	 * feeds from any call path are suppressed at entry, including a
+	 * patrol halted between the halt check and the feed. Granularity is
+	 * per call entry; at most one call already in flight may still get
+	 * through. */
 	if (atomic_get(&halted) != 0) {
 		return;
 	}
@@ -168,9 +190,9 @@ entelea_wdt_feed(entelea_wdt_src_t src)
 		unsigned int key = irq_lock();
 
 		atomic_set(&srcs[src].last_feed32, (atomic_val_t) now32());
-		/* 正常喂狗恢复即清豁免窗。 */
+		/* A normal feed clears the grace window. */
 		atomic_set(&srcs[src].grace_until32, 0);
-		atomic_set(&srcs[src].active, 1); /* 首次喂狗 = 激活 */
+		atomic_set(&srcs[src].active, 1); /* First feed = activate */
 		irq_unlock(key);
 	}
 }
@@ -183,31 +205,35 @@ entelea_wdt_grace(entelea_wdt_src_t src, uint32_t budget_ms)
 	}
 	struct wdt_src *s = &srcs[src];
 
-	/* 豁免不激活源（激活 = feed 专属语义不变）。 */
+	/* Grace never activates a source (activation stays feed-only). */
 	if (!s->registered || atomic_get(&s->active) == 0) {
 		return;
 	}
 	if (budget_ms > ENTELEA_WDT_GRACE_CAP_MS) {
 		budget_ms = ENTELEA_WDT_GRACE_CAP_MS;
 	}
-	/* 绝对截止 = now + budget；u32 回绕由签名差值比较吸收。 */
+	/* Absolute deadline = now + budget; u32 wraparound is absorbed by the
+	 * signed-difference comparison. */
 	atomic_set(&s->grace_until32, (atomic_val_t) (now32() + budget_ms));
 }
 
 void
 entelea_wdt_deactivate(entelea_wdt_src_t src)
 {
-	/* 去激活对称面：源随其子系统停止，停后无人喂是预期态，不判逾期；
-	 * 下次 feed 重新激活。 */
+	/* Deactivation mirror: the source stops with its subsystem, so no
+	 * feeds after it stops is expected and not overdue; the next feed
+	 * reactivates it. */
 	if ((int) src >= 0 && src < ENTELEA_WDT_COUNT) {
 		atomic_set(&srcs[src].active, 0);
 	}
 }
 
-/* 巡检：返回首个逾期源；无则 ENTELEA_WDT_COUNT。
- * 时钟失明策略（A1，owner 2026-11-08 定案）：单轮读失败=本轮时间不可知，
- * 不判逾期也不假活；连续 ≥ENTELEA_WDT_BLIND_ROUNDS 轮不可知 → 监督无法
- * 计时 → system_fail（fail reason 载荷 0xFF=时钟失明，非源编号）。 */
+/* Patrol: returns the first overdue source, or ENTELEA_WDT_COUNT if none.
+ * Clock-blindness policy (A1, owner-approved 2026-11-08): a single read
+ * failure means the time is unknown for this round; it neither marks a
+ * source overdue nor assumes liveness. After ENTELEA_WDT_BLIND_ROUNDS or
+ * more consecutive unknown rounds, supervision cannot keep time -> system_fail
+ * (fail reason payload 0xFF = clock blindness, not a source number). */
 static entelea_wdt_src_t
 patrol_once_impl(void)
 {
@@ -224,7 +250,7 @@ patrol_once_impl(void)
 				ENTELEA_FAIL_WDT_CLOCK_BLIND);
 			return ENTELEA_WDT_COUNT;
 		}
-		return ENTELEA_WDT_COUNT; /* 单次瞬态：不判逾（不伪造时间） */
+		return ENTELEA_WDT_COUNT; /* Single transient: not overdue */
 	}
 	blind_rounds = 0;
 
@@ -240,19 +266,22 @@ patrol_once_impl(void)
 		}
 		if (last_feed[s] !=
 		    (uint32_t) atomic_get(&srcs[s].last_feed32)) {
-			/* 并发 feed 改变快照：下轮重判，避免新时间戳导致下溢。 */
+			/* Concurrent feed changed the snapshot: re-check next
+			 * round to avoid underflow from the new timestamp. */
 			continue;
 		}
 		if (now - last_feed[s] > srcs[s].period_ms) {
-			/* 豁免窗内不判逾（声明式合法阻塞期）；超窗恢复判逾
-			 * （预算过期 = 真卡死，fail-safe 保持）。 */
+			/* Within the grace window: no overdue (declared, legal
+			 * blocking). After the window: overdue again (budget
+			 * expired = real hang; fail-safe stays). */
 			uint32_t gu =
 				(uint32_t) atomic_get(&srcs[s].grace_until32);
 
 			if (gu != 0 && (int32_t) (now - gu) < 0) {
 				continue;
 			}
-			/* 先 WDT_WARN（带 src 与最后 feed 时间）再进 system_fail。 */
+			/* WDT_WARN first (carries src and last feed time),
+			 * then system_fail. */
 			entelea_wdt_warn_evt_t payload = {
 				.src = (int32_t) s,
 				.last_feed = last_feed[s],
@@ -276,25 +305,27 @@ patrol_work_cb(struct k_work *work)
 	struct k_work_delayable *d = k_work_delayable_from_work(work);
 
 	if (atomic_get(&halted) != 0) {
-		return; /* 全局停机：不喂、不重排（feed 入口另有自守卫） */
+		return; /* Halted: no feed or reschedule (feed self-guards) */
 	}
 	entelea_wdt_feed(
-		ENTELEA_WDT_SYWORK); /* 巡检自身运行 = sysworkq 活性证明 */
+		ENTELEA_WDT_SYWORK); /* Patrol run = sysworkq liveness proof */
 #ifdef CONFIG_TASK_WDT
 	if (twdt_ch >= 0 && atomic_get(&halted) == 0) {
 		task_wdt_feed(
-			twdt_ch); /* L3：软巡检卡死 → 通道过期 → sys_reboot */
+			twdt_ch); /* L3: patrol hang -> expiry -> sys_reboot */
 	}
 #endif
-	/* estop 事后补发（复用巡检节奏）。 */
+	/* Deferred estop publish (reuses patrol cadence). */
 	entelea_safety_estop_deferred_publish();
 	entelea_wdt_src_t overdue = patrol_once_impl();
 
 	if (overdue != ENTELEA_WDT_COUNT) {
 		entelea_safety_system_fail(
 			ENTELEA_FAIL_WDT((uint32_t) overdue));
-		/* system_fail 置 halted（先于停机）→ 巡检此后不再喂/重排；
-		 * 停机后 task_wdt 通道无人喂 → sys_reboot 复位闭环。 */
+		/* system_fail sets halted (before the halt itself): the patrol
+		 * no longer feeds or reschedules. With no feed after halt,
+		 * the task_wdt channel expires and sys_reboot closes the
+		 * reset loop. */
 		return;
 	}
 	uint32_t delay = entelea_wdt_patrol_period_ms();
@@ -315,9 +346,9 @@ entelea_wdt_patrol_period_ms(void)
 		}
 	}
 	if (min_p == UINT32_MAX) {
-		min_p = ENTELEA_WDT_HARD_CAP_MS; /* 无注册源：按硬 WDT 上限巡检 */
+		min_p = ENTELEA_WDT_HARD_CAP_MS; /* No sources: hard WDT cap */
 	}
-	return min_p / 2 < 1 ? 1 : min_p / 2; /* 巡检周期 = min(periods)/2 */
+	return min_p / 2 < 1 ? 1 : min_p / 2; /* Period: min(periods)/2 */
 }
 
 entelea_result_t
@@ -327,10 +358,11 @@ entelea_wdt_start(void)
 		return ENTELEA_E_STATE;
 	}
 	if (wdt_clock == NULL) {
-		return ENTELEA_E_UNINIT; /* 不伪造默认时基 */
+		return ENTELEA_E_UNINIT; /* No fake default time base */
 	}
-	/* 静态预注册（周期常量出处 DEC-48；注册表此后不可变，零并发面）。
-	 * 激活 = 各子系统首次 feed。 */
+	/* Static pre-registration (period constants: DEC-48; the registry is
+	 * immutable from here on, so there is no concurrency surface).
+	 * Activation = each subsystem's first feed. */
 	srcs[ENTELEA_WDT_SYWORK].registered = true;
 	srcs[ENTELEA_WDT_SYWORK].period_ms = ENTELEA_WDT_SYWORK_PERIOD_MS;
 	atomic_set(&srcs[ENTELEA_WDT_SYWORK].last_feed32,
@@ -341,7 +373,7 @@ entelea_wdt_start(void)
 	int ret;
 
 #if defined(ENTELEA_WDT_REQUIRE_HW) && !DT_HAS_CHOSEN(zephyr_watchdog)
-	return ENTELEA_E_IO; /* 必需硬件看门狗未选定：显式失败，不静默软兜底 */
+	return ENTELEA_E_IO; /* Required HW watchdog not chosen: no fallback */
 #endif
 #if defined(CONFIG_TASK_WDT_HW_FALLBACK) && DT_HAS_CHOSEN(zephyr_watchdog)
 	hw = DEVICE_DT_GET(DT_CHOSEN(zephyr_watchdog));
@@ -356,7 +388,7 @@ entelea_wdt_start(void)
 		}
 		twdt_initialized = true;
 	}
-	/* callback=NULL → 通道过期 = sys_reboot(COLD)（task_wdt 语义）。 */
+	/* callback=NULL: expiry -> sys_reboot(COLD) (task_wdt semantics). */
 	twdt_ch = task_wdt_add(ENTELEA_WDT_CHANNEL_MS, NULL, NULL);
 	if (twdt_ch < 0) {
 		return twdt_ch == -ENOMEM ? ENTELEA_E_NOMEM : ENTELEA_E_IO;
@@ -374,8 +406,10 @@ entelea_wdt_start(void)
 void
 entelea_wdt_test_reset(void)
 {
-	/* 测试隔离：先同步取消可能仍在调度的巡检项（对已调度 delayable
-	 * 重复 init 是未定义行为），再清源表/启动/halted/时钟护栏/失明轮数。 */
+	/* Test isolation: first synchronously cancel the patrol item that may
+	 * still be scheduled (re-initializing a scheduled delayable is
+	 * undefined behavior), then clear the source table, started flag,
+	 * halted, clock guard and blind rounds. */
 	struct k_work_sync sync;
 
 	(void) k_work_cancel_delayable_sync(&patrol_work, &sync);
@@ -397,7 +431,8 @@ entelea_wdt_patrol_once(void)
 bool
 entelea_wdt_test_patrol_tick(void)
 {
-	/* 确定性巡检体驱动（ halted 测试用）：返回是否真正执行。 */
+	/* Deterministic patrol-body driver (for halted tests): returns whether
+	 * it actually ran. */
 	if (atomic_get(&halted) != 0) {
 		return false;
 	}

@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* R02 最小监督镜像：无智脑也能启动、保持安全并显式关输出。
- * 装配顺序：绑定实例时钟 → 监督执行器（estop → 全通道安全起始态 →
- * WDT → 就绪）→ 常驻空闲。业务步骤由后续批次尾部追加。 */
+/* R02 minimal supervision image: boots without the intelligence module,
+ * stays safe, and explicitly turns outputs off.
+ * Assembly order: bind instance clock -> supervision executor (estop ->
+ * all-channel safe initial state -> WDT -> ready) -> resident idle. Business
+ * steps are appended by later batches at the tail. */
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 #include <entelea/events.h>
@@ -21,10 +23,10 @@ main(void)
 	    entelea_evt_bind_clock(&platform_clock) != ENTELEA_OK ||
 	    entelea_wdt_bind_clock(&platform_clock) != ENTELEA_OK ||
 	    entelea_safety_bind_clock(&platform_clock) != ENTELEA_OK) {
-		/* 时钟绑定失败 = 启动前置失败：fail-safe（不半启动；
-		 * reason 采用 BOOT(0) 语义：第 0 步前的装配失败）。 */
+		/* Clock bind failure is a pre-boot failure: fail safe, do not
+		 * half-start. Reason: BOOT(0), pre-step-0 assembly failure. */
 		entelea_safety_system_fail(ENTELEA_FAIL_BOOT(0));
-		return 0; /* 仅 ENTELEA_TEST 构建会走到这里 */
+		return 0; /* reached only in ENTELEA_TEST builds */
 	}
 
 	printk("[entelea] minimal supervision image: outputs held at safe "
@@ -43,9 +45,11 @@ main(void)
 		}
 	}
 #ifdef ENTELEA_STORM_DEMO
-	/* r16 storm 演示变体（--cmake-arg=-DSTORM_DEMO=ON）：强制异常复位
-	 * 循环——system_fail→wdt 停喂→MWDT 复位（cause=WATCHDOG=异常）。
-	 * bootguard 计数 ≥3 后 SAFE-HALT 常驻（喂狗不 fail）。POR 可出。 */
+	/* r16 storm demo variant (--cmake-arg=-DSTORM_DEMO=ON): forces an
+	 * abnormal-reset loop: system_fail -> wdt stops feeding -> MWDT reset
+	 * (cause=WATCHDOG, abnormal). After bootguard counts >=3,
+	 * SAFE-HALT stays resident (feeding does not fail).
+	 * Exit only via POR. */
 	if (entelea_platform_d12_safe_halt()) {
 		printk("[storm-demo] SAFE-HALT confirmed (business halted, "
 		       "feeding)\n");
@@ -58,13 +62,15 @@ main(void)
 	return 0;
 #endif
 	if (entelea_platform_d12_safe_halt()) {
-		/* RF1 G5：生产路径同样消费 SAFE-HALT（本镜像无业务——仅
-		 * 显式标记；输出已在安全起始态，心跳与巡检照常）。 */
+		/* RF1 G5: production path also consumes SAFE-HALT. This image
+		 * has no business, so it only marks the state. Outputs are
+		 * already safe; heartbeat and patrol continue. */
 		printk("[d12] SAFE-HALT active: business disabled\n");
 	}
 	for (;;) {
-		/* r14 真机观测面：5s 心跳打印安全汇总 + estop 闩（estop
-		 * 闸判据行；事件本体仍经 WDT 巡检补发 EVT_ESTOP）。 */
+		/* r14 hardware observation: a 5 s heartbeat prints the safety
+		 * summary and estop latch (estop gate criteria line; the event
+		 * itself is still re-sent by WDT patrol as EVT_ESTOP). */
 		entelea_safety_summary_t sum;
 		bool latched = entelea_safety_estop_latched();
 		uint32_t at = entelea_safety_estop_latched_at();

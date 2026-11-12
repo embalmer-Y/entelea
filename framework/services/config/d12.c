@@ -1,45 +1,49 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* D12 运行时闸实现（合同见 include/entelea/d12.h 头注；阈值=
- * owner 批准 v1 保守方案）。入口经互斥端口串行化，未绑定即拒绝。
- * 单调时间经夹紧（回退沿用最后有效值——窗/冷却只延不缩），冷却在时钟
- * 失明时挂起、首次好读起算。日额按 UTC 日界计，经持久端口保存：放行前
- * 确认当日预留上限有余量，余量耗尽时先写入新预留再放行。 */
+/* D12 runtime gate implementation (contract: see the include/entelea/d12.h
+ * header comment; thresholds: the owner-approved v1 conservative plan).
+ * Entry is serialized by a mutex port; an unbound gate refuses.
+ * Monotonic time is clamped (on regression the last valid value is reused:
+ * windows and cooldowns may only extend, never shrink). The cooldown is
+ * suspended while the clock is blind and starts at the first good read.
+ * The daily quota follows UTC day boundaries and is saved through a durable
+ * port: before admitting, confirm the day's reserved ceiling has headroom;
+ * when headroom runs out, write a new reservation before admitting. */
 #include <string.h>
 #include <entelea/time.h>
 #include <entelea/d12.h>
 #include <entelea/result.h>
 
-#define D12_COOLDOWN_MS 60000U /* E_BUSY 冷却（429 面） */
-#define D12_BOOT_COOLDOWN_MS 60000U /* 异常复位后业务冷却窗 */
+#define D12_COOLDOWN_MS 60000U /* E_BUSY cooldown (429 surface) */
+#define D12_BOOT_COOLDOWN_MS 60000U /* Service cooldown after abnormal reset */
 #define D12_RATE_WINDOW_MS 60000U
 #define D12_RATE_MAX_IN_WINDOW 6U
 #define D12_SECS_PER_DAY 86400U
 #define D12_REC_VERSION 1U
-#define D12_STORM_FAILS 3U /* 连续失败闩阈值 */
+#define D12_STORM_FAILS 3U /* Consecutive-failure latch threshold */
 
 static const entelea_clock_t *d12_clock;
 static const entelea_wallclock_t *d12_wall;
 static const entelea_lock_t *d12_lock;
 static const entelea_d12_store_t *d12_store;
 static const uint8_t d12_rec_magic[4] = { 'D', '1', '2', 'G' };
-static uint64_t last_t; /* 单调夹紧基准 */
+static uint64_t last_t; /* Monotonic clamp baseline */
 static uint64_t cooldown_start;
 static uint64_t boot_cooldown_start;
 static bool cooldown_active;
 static bool boot_cooldown_active;
-static bool cooldown_pending; /* 上报时时钟失明——待首次好读 */
+static bool cooldown_pending; /* Clock blind at report; await first good read */
 static bool boot_cooldown_pending;
-static uint64_t window[D12_RATE_MAX_IN_WINDOW]; /* 滚动窗（环形） */
-static uint8_t window_next; /* 下一写槽；窗满时即最老槽 */
+static uint64_t window[D12_RATE_MAX_IN_WINDOW]; /* Sliding window (ring) */
+static uint8_t window_next; /* Next write slot (the oldest when full) */
 static uint8_t window_used;
 static uint32_t calls_total;
 static uint32_t blocked_total;
 static uint8_t fail_streak;
-static bool day_loaded; /* 已读取持久记录并定下生效日 */
-static uint32_t day_utc; /* 生效 UTC 日（单调，只前进） */
-static uint16_t day_reserved; /* 该日已持久的放行上限 */
-static uint16_t day_count; /* 该日已放行次数 */
-static bool storm_latched; /* 仅 storm_clear 释放 */
+static bool day_loaded; /* Persisted record read; effective day set */
+static uint32_t day_utc; /* UTC day in effect (monotonic, forward only) */
+static uint16_t day_reserved; /* Persisted admission ceiling for this day */
+static uint16_t day_count; /* Admissions granted this day */
+static bool storm_latched; /* Released only by storm_clear */
 
 static bool
 now_ms(uint64_t *out)
@@ -51,7 +55,7 @@ now_ms(uint64_t *out)
 		return false;
 	}
 	if (t < last_t) {
-		t = last_t; /* 回退：不得经下溢放宽窗/冷却 */
+		t = last_t; /* Regression: no underflow to widen windows */
 	}
 	last_t = t;
 	if (boot_cooldown_pending) {
@@ -75,12 +79,13 @@ entelea_d12_reset_guard(bool abnormal, bool history_ok, uint32_t *count)
 		return true;
 	}
 	if (!abnormal) {
-		*count = 0; /* 纯 POR：出风暴窗 */
+		*count = 0; /* Pure POR: exit storm window */
 		return false;
 	}
 	if (!history_ok) {
-		/* 异常复位且跨复位历史不可知（留存面不可用/魔数坏——如
-		 * 掉电类复位丢 LP RAM）：无法证明不在风暴中 → 闭锁。 */
+		/* Abnormal reset with unknown cross-reset history (retention
+		 * unavailable or magic corrupt, e.g. power-loss reset losing
+		 * LP RAM): cannot rule out a storm, so latch closed. */
 		*count = ENTELEA_D12_RESET_STORM_MAX;
 		return true;
 	}
@@ -98,11 +103,12 @@ entelea_d12_bind_clock(const entelea_clock_t *c)
 	if (c == NULL || c->read_ms == NULL) {
 		return ENTELEA_E_PARAM;
 	}
-	d12_clock = c; /* 风暴闩不随重绑释放 */
+	d12_clock = c; /* Storm latch is not released by rebinding */
 	return ENTELEA_OK;
 }
 
-/* 启动期绑定（运行期只读）；未绑定的端口使依赖它的判定拒绝。 */
+/* Bound at startup (read-only at run time); an unbound port makes
+ * dependent checks refuse. */
 entelea_result_t
 entelea_d12_bind_wallclock(const entelea_wallclock_t *wall)
 {
@@ -133,7 +139,8 @@ entelea_d12_bind_store(const entelea_d12_store_t *store)
 	return ENTELEA_OK;
 }
 
-/* 进入临界区：未绑定锁或锁端口拒绝（ISR）时返回非 OK，调用方不得离开。 */
+/* Enter the critical section. Returns non-OK if the lock is unbound or the
+ * lock port refuses (ISR); the caller must not leave. */
 static entelea_result_t
 d12_enter(void)
 {
@@ -163,7 +170,8 @@ entelea_d12_boot_note(bool abnormal_reset)
 		d12_leave();
 		return;
 	}
-	/* 启动期尚未绑锁（单线程）：挂起，首次好读时起算 */
+	/* Lock not bound yet (single-threaded startup): pend the cooldown,
+	 * start it at the first good read. */
 	boot_cooldown_pending = true;
 }
 
@@ -184,13 +192,15 @@ in_cooldown(uint64_t t)
 static bool
 rate_ok(uint64_t t)
 {
-	/* 滚动窗：未满可纳；满则看最老槽是否出窗（t 已单调，无下溢）。 */
+	/* Sliding window: admit while not full; when full, check whether the
+	 * oldest slot has left the window (t is monotonic, no underflow). */
 	return window_used < D12_RATE_MAX_IN_WINDOW ||
 	       t - window[window_next] >= D12_RATE_WINDOW_MS;
 }
 
-/* 持久记录（12 字节，小端，KV 保留键）：magic "D12G"、version、flags=0、
- * reserved（当日已持久上限）u16、utc_day（UTC 日序号）u32。 */
+/* Persistent record (12 bytes, little-endian, reserved KV key): magic
+ * "D12G", version, flags=0, reserved (persisted ceiling for the day) u16,
+ * utc_day (UTC day number) u32. */
 static void
 rec_encode(uint8_t rec[ENTELEA_D12_REC_LEN], uint32_t day, uint16_t reserved)
 {
@@ -225,8 +235,10 @@ rec_decode(const uint8_t rec[ENTELEA_D12_REC_LEN], uint32_t *day,
 	return true;
 }
 
-/* 首次使用时读取持久记录。无记录 = 当日从零；读失败或记录损坏 = 拒绝，
- * 不以空状态放行。重启后 count 取 reserved：只会偏保守，不会超上限。 */
+/* Read the persistent record on first use. No record = start the day from
+ * zero; read failure or a corrupt record = refuse, never admit on empty
+ * state. After a restart, count takes reserved: this can only be
+ * conservative, never exceed the ceiling. */
 static entelea_result_t
 daily_load(uint32_t today)
 {
@@ -255,7 +267,8 @@ daily_load(uint32_t today)
 		day_reserved = 0;
 		day_count = 0;
 	} else {
-		/* 同日，或墙钟回退（存储日更晚）：沿用较晚日的上限，不放宽 */
+		/* Same day, or the wall clock went back (stored day is later):
+		 * keep the later day's ceiling; do not loosen it. */
 		day_utc = stored_day;
 		day_reserved = stored_reserved;
 		day_count = stored_reserved;
@@ -264,7 +277,8 @@ daily_load(uint32_t today)
 	return ENTELEA_OK;
 }
 
-/* 日额判定：余量耗尽时按步长预留，先写后放行；写失败即拒绝。 */
+/* Daily quota check: when headroom runs out, reserve in steps, writing
+ * before admitting; a failed write refuses. */
 static entelea_result_t
 daily_admit(void)
 {
@@ -277,7 +291,7 @@ daily_admit(void)
 	if (d12_wall == NULL || d12_store == NULL ||
 	    d12_wall->read_utc_s(d12_wall->user, &secs) != ENTELEA_OK ||
 	    secs / D12_SECS_PER_DAY > UINT32_MAX) {
-		return ENTELEA_E_STATE; /* 墙钟未知或日序号超出范围 */
+		return ENTELEA_E_STATE; /* Clock unknown or day out of range */
 	}
 	today = (uint32_t) (secs / D12_SECS_PER_DAY);
 	if (!day_loaded) {
@@ -287,7 +301,8 @@ daily_admit(void)
 		}
 	}
 	if (today > day_utc) {
-		/* 跨日：新日从零开始；回退（today < day_utc）沿用较晚日 */
+		/* New day: start from zero. On regression (today < day_utc),
+		 * keep the later day. */
 		day_utc = today;
 		day_reserved = 0;
 		day_count = 0;
@@ -297,7 +312,7 @@ daily_admit(void)
 		return ENTELEA_OK;
 	}
 	if (day_reserved >= ENTELEA_D12_DAILY_MAX) {
-		return ENTELEA_E_BUSY; /* 当日额用尽 */
+		return ENTELEA_E_BUSY; /* Daily quota exhausted */
 	}
 	next = (uint16_t) (day_reserved + ENTELEA_D12_RESERVE_STEP);
 	if (next > ENTELEA_D12_DAILY_MAX) {
@@ -305,7 +320,7 @@ daily_admit(void)
 	}
 	rec_encode(rec, day_utc, next);
 	if (d12_store->save(d12_store->user, rec) != ENTELEA_OK) {
-		return ENTELEA_E_STATE; /* 写失败：不放行，状态保持 */
+		return ENTELEA_E_STATE; /* Write failed: refuse, state kept */
 	}
 	day_reserved = next;
 	day_count++;
@@ -319,7 +334,7 @@ model_allow_locked(void)
 	entelea_result_t r;
 
 	if (!now_ms(&t)) {
-		return ENTELEA_E_STATE; /* 无单调时钟=闭锁（fail-closed） */
+		return ENTELEA_E_STATE; /* No monotonic clock: fail closed */
 	}
 	if (storm_latched) {
 		blocked_total++;
@@ -362,7 +377,7 @@ entelea_d12_model_note(entelea_result_t r)
 	uint64_t t;
 
 	if (d12_enter() != ENTELEA_OK) {
-		return; /* 未绑锁：闸已拒绝，无状态可更新 */
+		return; /* Lock not bound: refused earlier, no state */
 	}
 	if (r == ENTELEA_OK) {
 		fail_streak = 0;
@@ -372,7 +387,7 @@ entelea_d12_model_note(entelea_result_t r)
 			(void) now_ms(&t);
 		}
 		if (++fail_streak >= D12_STORM_FAILS) {
-			storm_latched = true; /* 不自动恢复（外部 clear） */
+			storm_latched = true; /* Cleared externally only */
 			fail_streak = 0;
 		}
 	}
@@ -385,7 +400,7 @@ entelea_d12_storm_latched(void)
 	bool latched;
 
 	if (d12_clock == NULL || d12_lock == NULL) {
-		return true; /* 未绑时钟或锁=保守闭锁 */
+		return true; /* Clock or lock unbound: conservatively latched */
 	}
 	if (d12_enter() != ENTELEA_OK) {
 		return true;

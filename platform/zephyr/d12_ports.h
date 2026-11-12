@@ -4,8 +4,10 @@
 
 #include <entelea/d12.h>
 
-/* 填充 D12 平台端口结构，由装配层经 entelea_d12_bind_* 绑定。持久端口
- * 仅在链接 d12_store.c 的目标中有强实现，其余目标经弱缺省返回 E_UNINIT。 */
+/* Fill the D12 platform port structures; the assembly layer binds them via
+ * entelea_d12_bind_*. The persistent port has a strong implementation only
+ * in targets linking d12_store.c; other targets return E_UNINIT through the
+ * weak default. */
 entelea_result_t
 entelea_platform_d12_lock_init(entelea_lock_t *lock);
 entelea_result_t

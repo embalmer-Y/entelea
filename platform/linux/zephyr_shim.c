@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* Linux 宿主垫片实现：events.c 的队列/工作面（单线程同步降级——
- * Linux 宿主无 ISR 发布，队列恒空；k_sys_work_q 为占位）。 */
+/* Linux host shim implementation: the events.c queue/work surface, degraded
+ * to single-threaded synchronous operation. The Linux host has no ISR
+ * publishing, so the queue is always empty; k_sys_work_q is a placeholder. */
 #include "zephyr_shim.h"
 #include <stddef.h>
 
@@ -19,7 +20,7 @@ k_msgq_get(struct k_msgq *q, void *data, int32_t timeout)
 	(void) q;
 	(void) data;
 	(void) timeout;
-	return -11; /* EAGAIN：队列恒空 */
+	return -11; /* EAGAIN: queue is always empty */
 }
 
 struct k_work_q k_sys_work_q;

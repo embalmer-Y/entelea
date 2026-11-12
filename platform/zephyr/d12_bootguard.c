@@ -1,14 +1,20 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* D12 平台启动防护（owner v1 保守方案 §9）。跨复位计数走 LP 域
- * retained RAM（r16 真机实证：__noinit 段变量在本板复位路径不可靠，
- * 风暴计数每次归零——见下 retained 注）。hwinfo 复位原因分类：
- * 非纯 POR（WDT/软件 fail-safe/panic/掉电/引脚）=异常；异常时①计
- * 风暴②通知 d12 60s 业务冷却窗。连续异常 ≥3（无 RTC 板：1 小时语义
- * 如实降级为连续计数，仅纯 POR 清零）→ 当次（POR 起第 4 次）启动
- * SAFE-HALT（输出安全起始态、不启业务、常驻喂狗、打印 [d12]
- * RESET-STORM——POR 出）。判定=entelea_d12_reset_guard（纯策略）。
- * 复位原因不可读或无法清除、留存设备不可用或读写失败均 fail-closed；
- * 仅纯 POR 可接受可读的未初始化留存记录。返回 true=SAFE-HALT。 */
+/* D12 platform boot guard (owner v1 conservative scheme, section 9). The
+ * cross-reset counter lives in LP-domain retained RAM (r16 hardware-verified:
+ * __noinit section variables are unreliable on this board's reset path, and
+ * the storm counter reset to zero on every boot; see the retained note below).
+ * Reset-cause classification via hwinfo: anything other than a pure POR (WDT,
+ * software fail-safe, panic, brown-out, pin) counts as abnormal. On an
+ * abnormal reset: (1) count the storm; (2) notify d12 to open its 60 s
+ * business cooldown window. Three or more consecutive abnormal resets (on
+ * boards without an RTC the one-hour semantics is honestly downgraded to a
+ * consecutive count, cleared only by a pure POR) -> on this boot (the 4th
+ * since POR), SAFE-HALT: outputs held at the safe initial state, no business
+ * started, watchdog fed continuously, print [d12] RESET-STORM (exit only via
+ * POR). The decision is entelea_d12_reset_guard (pure policy).
+ * An unreadable or uncleared reset cause, an unavailable retained device, or a
+ * failed read or write all fail closed; only a pure POR may accept a readable
+ * but uninitialized retained record. Returns true = SAFE-HALT. */
 #include <errno.h>
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -26,10 +32,12 @@ struct d12_rec {
 	uint32_t count;
 };
 
-/* LP 域 retained RAM 设备（app overlay d12retained 节点；跨 soft/WDT
- * 复位保留、POR 清=风暴窗自然出。r16 实证：__noinit 宏不达 noinit
- * 段、dram0.noinit 是 flash 装载恢复段、storage noinit 槽与
- * last_reset 留痕互踩——retained RAM 是唯一正解）。 */
+/* LP-domain retained RAM device (app overlay d12retained node; kept across
+ * soft/WDT resets, cleared by POR, so the storm window ends naturally). r16
+ * hardware evidence: the __noinit macro does not reach the noinit section,
+ * dram0.noinit is the flash-loader recovery section, and the storage noinit
+ * slot collides with the last_reset trace; retained RAM is the only viable
+ * option. */
 static const struct device *const retained =
 	DEVICE_DT_GET(DT_NODELABEL(d12retained));
 
@@ -57,7 +65,7 @@ reset_is_abnormal(uint32_t *cause, bool *known)
 	if (rc != 0) {
 		printk("[d12] reset cause read failed: %d\n", rc);
 		*known = false;
-		return true; /* 读不出=保守按异常 */
+		return true; /* unreadable: conservatively treat as abnormal */
 	}
 	rc = hwinfo_clear_reset_cause();
 	if (rc != 0) {

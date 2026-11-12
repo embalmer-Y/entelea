@@ -1,17 +1,22 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * 掉电安全 meta（迁自旧 store/meta.c，R03 合同见本目录 contract.md）：
- * 双副本 + 单调序号 + CRC16。撕裂恢复：活动 = 序号较大且 CRC 通过者；
- * 双副本皆损 → ENTELEA_E_IO（不伪造缺省成功）。写序：范围抹除非活动
- * 副本 → 写 → 回读校验 → 完成即成为新活动（撕裂时旧副本仍完整可读）。
- * 沿用旧 MD1.1b 修复：读取两副本体用独立缓冲（共用缓冲曾使 copy0 较新
- * 时读回 copy1 旧内容——第 3/5/… 次写后启动 100% 复现）。
+ * Power-fail-safe meta (migrated from the old store/meta.c; R03 contract
+ * in this directory's contract.md):
+ * two copies, monotonic sequence number, CRC16. Torn-write recovery: the
+ * active copy is the one with the larger sequence number whose CRC passes;
+ * if both copies are damaged, ENTELEA_E_IO is returned (no faked default
+ * success). Write order: erase the inactive copy's range, write, read back
+ * to verify, then it becomes the new active copy (a tear leaves the old copy
+ * fully readable).
+ * Carried over from the MD1.1b fix: the two copy bodies are read into
+ * independent buffers (with a shared buffer, a newer copy0 read back copy1's
+ * stale content; boot reproduced this 100% after the 3rd/5th/... write).
  */
 #include <string.h>
 #include <entelea/storage.h>
 #include "internal.h"
 
-#define REC_HDR 8 /* seq u32 | len u16 | crc16 u16（小端） */
+#define REC_HDR 8 /* seq u32 | len u16 | crc16 u16 (little-endian) */
 
 static uint32_t
 meta_stride(void)
@@ -63,8 +68,9 @@ write_rec(uint8_t copy, uint32_t seq, const void *buf, uint16_t len)
 	memcpy(rec + REC_HDR, buf, len);
 	uint32_t total = REC_HDR + len;
 
-	/* 擦-写之间撕裂 → 该副本损，另一副本仍完整（安全性保持）；
-	 * RAM 后端同序无害。 */
+	/* A tear between erase and write damages this copy, while the other
+	 * copy stays intact (safety preserved). The RAM backend is harmless
+	 * with the same ordering. */
 	if (entelea_store_backend.erase_off(ENTELEA_PART_META, copy * stride,
 					    stride) != ENTELEA_OK) {
 		return ENTELEA_E_IO;
@@ -73,7 +79,7 @@ write_rec(uint8_t copy, uint32_t seq, const void *buf, uint16_t len)
 					total) != ENTELEA_OK) {
 		return ENTELEA_E_IO;
 	}
-	/* 校验回读 */
+	/* Verify by read-back */
 	uint8_t back[REC_HDR + ENTELEA_STORAGE_META_MAX];
 
 	if (entelea_store_backend.read(ENTELEA_PART_META, copy * stride, back,
@@ -119,7 +125,8 @@ entelea_storage_meta_read(void *buf, uint16_t cap, uint16_t *len)
 	if (buf == NULL || len == NULL) {
 		return ENTELEA_E_PARAM;
 	}
-	/* 双副本独立缓冲（MD1.1b：共用缓冲在读 copy0 较新时返回 copy1 旧值）。 */
+	/* Independent buffers per copy (MD1.1b: with a shared buffer, a
+	 * newer copy0 read back copy1's old value). */
 	uint8_t data0[ENTELEA_STORAGE_META_MAX];
 	uint8_t data1[ENTELEA_STORAGE_META_MAX];
 	uint32_t s0, s1;
@@ -129,13 +136,13 @@ entelea_storage_meta_read(void *buf, uint16_t cap, uint16_t *len)
 	bool ok1 = read_rec(1, &s1, &l1, data1) == ENTELEA_OK;
 
 	if (!ok0 && !ok1) {
-		return ENTELEA_E_IO; /* 双副本皆损：缺省安全态/fail-safe（不伪造） */
+		return ENTELEA_E_IO; /* Both copies bad: fail-safe, no fake */
 	}
 	const bool use0 = ok0 && (!ok1 || s0 >= s1);
 	const uint16_t l = use0 ? l0 : l1;
 
 	if (l > cap) {
-		return ENTELEA_E_RANGE; /* 不截断、不写出（调用方按坏记录处置） */
+		return ENTELEA_E_RANGE; /* No truncation or copy-out */
 	}
 	memcpy(buf, use0 ? data0 : data1, l);
 	*len = l;

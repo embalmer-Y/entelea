@@ -2,19 +2,28 @@
 #ifndef ENTELEA_D12_H
 #define ENTELEA_D12_H
 
-/* D12 产品阈值运行时闸（owner 2026-11-10 批准 v1 保守方案——
- * docs/d12-threshold-proposal.md）。集中三面：
- *   冷却：E_BUSY 后 60s 冷却窗；异常复位后 60s 业务冷却窗
- *   频度：滚动 60s 窗 ≤6 次；UTC 日额 ≤200 次（持久，跨复位与掉电；
- *         预留式写入，见 d12.c）
- *   风暴：连续 3 次失败闩（不自动恢复——外部 storm_clear 命令面；
- *         重绑时钟不释放）
- * 计数单位=一次传输请求（model_ask 重试逐次过闸/上报——RF1 G5）。
- * 判定纯同步（无定时器）：调用方经 *_allow 前置问、*_note 后置报。
- * 时间经单调夹紧（回退沿用最后有效值，窗/冷却只延不缩）；上报冷却时
- * 时钟失明则挂起，首次好读起算（不丢）。日界取墙钟 UTC，日期回退不放宽；
- * 墙钟未知、持久读写失败或记录损坏均拒（E_STATE），不以空状态放行。
- * 入口经互斥端口串行化：未绑定锁即拒绝，ISR 不得调用。 */
+/* D12 product threshold runtime gate (owner-approved v1 conservative plan,
+ * 2026-11-10; see docs/d12-threshold-proposal.md). Three surfaces:
+ *   cooldown: 60s cooldown after E_BUSY; 60s business cooldown after an
+ *             abnormal reset
+ *   frequency: rolling 60s window of at most 6 calls; UTC daily quota of at
+ *             most 200 calls (persistent across resets and power loss;
+ *             reserve-style writes, see d12.c)
+ *   storm: latch after 3 consecutive failures (not cleared automatically;
+ *          released by the external storm_clear command; rebinding the
+ *          clock does not release it)
+ * The counting unit is one transport request (model_ask retries each pass the
+ * gate and are reported each time; RF1 G5). Decisions are purely synchronous
+ * (no timers): callers ask with *_allow first and report with *_note
+ * afterwards. Time is clamped monotonically: on a backward step, the last
+ * valid value is kept, so windows and cooldowns may only extend, never
+ * shrink. If the clock is blind when a cooldown is reported, the cooldown is
+ * suspended and starts at the first good reading (nothing is lost). Day
+ * boundaries use the UTC wall clock; a backward date change does not relax
+ * the limit. An unknown wall clock, a failed persistent read or write, or a
+ * corrupted record is refused (E_STATE), never allowed with empty state.
+ * Entry is serialized through the mutex port: an unbound lock refuses, and
+ * ISRs must not call this. */
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -25,27 +34,30 @@
 extern "C" {
 #endif
 
-/** 日额与持久记录参数。K 为预留步长：每次把已持久上限提前 K 次，
- * 每日写入约 MAX/K 次（再加跨日与重启后的首次预留）。 */
+/** Daily quota and persistent-record parameters. K is the reserve step: each
+ * time, the persisted limit is raised K calls ahead. Daily writes are about
+ * MAX/K (plus the first reservation after a day change or restart). */
 #define ENTELEA_D12_DAILY_MAX 200U
 #define ENTELEA_D12_RESERVE_STEP 10U
 #define ENTELEA_D12_REC_LEN 12U
 
-/** 墙钟端口（日界）：读 UTC 秒；未同步返回 E_STATE（闸门 fail-closed）。 */
+/** Wall-clock port (day boundary): reads UTC seconds. Returns E_STATE if the
+ * clock is not synchronized (the gate fails closed). */
 typedef struct {
 	entelea_result_t (*read_utc_s)(void *user, uint64_t *out);
 	void *user;
 } entelea_wallclock_t;
 
-/** 互斥端口：非递归；ISR 上下文中 lock 必须返回 E_STATE。 */
+/** Mutex port: non-recursive. In ISR context, lock must return E_STATE. */
 typedef struct {
 	entelea_result_t (*lock)(void *user);
 	void (*unlock)(void *user);
 	void *user;
 } entelea_lock_t;
 
-/** 日计数持久端口：记录固定 ENTELEA_D12_REC_LEN 字节（编码见 d12.c）。
- * load 无记录返回 E_NOTFOUND；其他错误均使闸拒绝，不视为空。 */
+/** Daily-count persistent port: each record is a fixed ENTELEA_D12_REC_LEN
+ * bytes (encoding in d12.c). load returns E_NOTFOUND if there is no record;
+ * any other error makes the gate refuse; it is not treated as empty. */
 typedef struct {
 	entelea_result_t (*load)(void *user, uint8_t rec[ENTELEA_D12_REC_LEN]);
 	entelea_result_t (*save)(void *user,
@@ -53,10 +65,11 @@ typedef struct {
 	void *user;
 } entelea_d12_store_t;
 
-/** 绑定时钟（判定依赖）。 */
+/** Binds the clock (the decision dependency). */
 entelea_result_t
 entelea_d12_bind_clock(const entelea_clock_t *clock);
-/** 绑定墙钟、互斥与持久端口（启动期调用；未绑定的端口使判定拒绝）。 */
+/** Binds the wall clock, mutex, and persistent ports (called at startup; an
+ * unbound port makes decisions refuse). */
 entelea_result_t
 entelea_d12_bind_wallclock(const entelea_wallclock_t *wall);
 entelea_result_t
@@ -64,44 +77,55 @@ entelea_d12_bind_lock(const entelea_lock_t *lock);
 entelea_result_t
 entelea_d12_bind_store(const entelea_d12_store_t *store);
 
-/** 平台启动上报：本次复位是否异常类（WDT/panic——决定冷却窗）。
- * 由平台启动防护调用；跨复位计数留存归平台（判定见 reset_guard）。 */
+/** Platform boot report: whether this reset is an abnormal class (WDT or
+ * panic), which decides the cooldown window. The platform boot guard calls
+ * this; keeping counts across resets is the platform's job (reset_guard). */
 void
 entelea_d12_boot_note(bool abnormal_reset);
 
-/** 异常复位风暴阈值：连续 ≥3 次异常复位 → 当次启动 SAFE-HALT
- * （POR 起算即"第 4 次启动"——D12 v1 §9）。 */
+/** Abnormal-reset storm threshold: 3 or more consecutive abnormal resets cause
+ * SAFE-HALT on the current boot. Counting from POR, this is the "4th boot"
+ * (D12 v1 section 9). */
 #define ENTELEA_D12_RESET_STORM_MAX 3U
 
-/** 跨复位风暴判定（纯策略，I/O 归平台）。abnormal=本次复位异常类；
- * history_ok=留存计数可读且有效。*count 入=留存值、出=应写回值。
- * 返回 true=SAFE-HALT。异常且历史不可知 → fail-closed；纯 POR 清零；
- * 计数饱和不回绕；count 为 NULL 时亦须 SAFE-HALT。平台复位原因不可知、
- * 留存设备不可用或读写失败时，无论复位类型均须 SAFE-HALT。 */
+/** Cross-reset storm decision (pure policy; I/O belongs to the platform).
+ * abnormal: whether this reset is an abnormal class. history_ok: the retained
+ * count is readable and valid. *count: the retained value on input, the
+ * value to write back on output. Returns true for SAFE-HALT. An abnormal
+ * reset with unknown history fails closed. A pure POR clears the count. The
+ * count saturates rather than wrapping. SAFE-HALT is also required when count
+ * is NULL. If the platform reset cause is unknown, or the retention device is
+ * unavailable or a read or write fails, SAFE-HALT is required regardless of
+ * reset type. */
 bool
 entelea_d12_reset_guard(bool abnormal, bool history_ok, uint32_t *count);
 
-/** 模型调用前置判定（冷却/频度/日额/风暴；依赖面归 model_ask）。
- * OK=允许；E_BUSY=冷却/频度/日额用尽；E_STATE=风暴闩、未绑定端口、
- * 墙钟未知、持久读写失败或记录损坏。 */
+/** Pre-call decision for a model call (cooldown, frequency, daily quota, and
+ * storm; the dependency side belongs to model_ask). OK = allowed; E_BUSY =
+ * cooldown, frequency, or daily quota exhausted; E_STATE = storm latch,
+ * unbound port, unknown wall clock, failed persistent read or write, or a
+ * corrupted record. */
 entelea_result_t
 entelea_d12_model_allow(void);
 
-/** 模型调用结果上报（成功清风暴计数；E_BUSY 触发冷却；失败累加风暴）。 */
+/** Reports a model call result. Success clears the storm count; E_BUSY
+ * triggers cooldown; failure accumulates toward the storm. */
 void
 entelea_d12_model_note(entelea_result_t r);
 
-/** 风暴闩状态与外部释放（命令面/到场）；未绑时钟或锁报闭锁。 */
+/** Storm latch state and external release (command surface or on-site); with
+ * the clock or lock unbound, reports latched. */
 bool
 entelea_d12_storm_latched(void);
 void
 entelea_d12_storm_clear(void);
 
-/** wasm 执行前置判定（冷却窗内拒——E_BUSY；风暴不影响 wasm）。 */
+/** Pre-execution decision for wasm. Refused with E_BUSY within the cooldown
+ * window; the storm does not affect wasm. */
 entelea_result_t
 entelea_d12_wasm_allow(void);
 
-/** 观测面：自启动调用次数 / 被闸拒绝次数。 */
+/** Observation surface: calls since start / calls refused by the gate. */
 uint32_t
 entelea_d12_model_calls(void);
 uint32_t

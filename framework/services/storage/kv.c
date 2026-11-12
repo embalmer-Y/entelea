@@ -1,16 +1,23 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * APP 业务状态 kv（迁自旧 store/kv.c，R03 合同见本目录 contract.md）：
- * 每 APP 一份有界 blob（≤250B），跨升级/回滚按 app_id 哈希归属保留。
- * 布局：8KB = 两页 × 4KB × 15 槽 × 264B（14B 头 + ≤250B）。
- * 页尾空隙存新写入槽的 CRC16 和独立提交标记；旧槽仍可读但无法校验。
- * 追加式写（同 app 重存 = 新槽，load 取两页最大 seq 有效槽）。
- * RF1（review P1-5/P1-6）：体、校验侧带、原 magic、侧带提交标记依次写；
- * 未提交槽跳过，已提交的损坏槽显式报错；写失败烧毁该槽
- * （NOR 不重写已编程槽）；压实先全部读入缓冲，再确认活动页已有所有
- * 保留记录的完整副本，才擦对页。副本保留原 seq、按 seq 升序写；
- * 提交标记部分写入时恢复会拒绝而非回退。
- * 容量：至多 14 个 app 跨压实保留（超出弃最久未写 app——有界语义）。
+ * APP business-state kv (migrated from the old store/kv.c; R03 contract in
+ * this directory's contract.md): one bounded blob per APP (<=250B), kept
+ * across upgrades and rollbacks by app_id hash ownership.
+ * Layout: 8KB = two pages x 4KB x 15 slots x 264B (14B header + <=250B).
+ * The page tail holds the CRC16 of each newly written slot and an independent
+ * commit tag; old slots remain readable but cannot be verified.
+ * Append-only writes (re-saving an app creates a new slot; load takes the
+ * valid slot with the largest seq across both pages).
+ * RF1 (review P1-5/P1-6): body, integrity side band, original magic and side
+ * band commit tag are written in that order. Uncommitted slots are skipped;
+ * committed but corrupt slots are reported explicitly. A failed write burns
+ * that slot (NOR does not rewrite programmed slots). Compaction first reads
+ * everything into a buffer and confirms that the active page holds a complete
+ * copy of every retained record before erasing the other page. Copies keep
+ * their original seq and are written in ascending seq order. If a partial
+ * commit tag is written, recovery rejects rather than rolling back.
+ * Capacity: at most 14 apps are retained across compaction (beyond that, the
+ * least recently written app is dropped; bounded semantics).
  */
 #include <string.h>
 #include <entelea/storage.h>
@@ -50,8 +57,8 @@ enum slot_kind {
 static struct {
 	bool ready;
 	uint8_t active_page;
-	uint8_t next_slot; /* KV_SLOTS = 页满：下次 save 先压实 */
-	uint32_t next_seq; /* 全局单调（1 起；0/0xFFFFFFFF 不用） */
+	uint8_t next_slot; /* KV_SLOTS = page full: compact before next save */
+	uint32_t next_seq; /* global monotonic (from 1; 0/0xFFFFFFFF unused) */
 } kv;
 
 static entelea_result_t
@@ -140,7 +147,8 @@ slot_commit(uint8_t page, uint8_t i, const struct kv_slot *s)
 	return ENTELEA_OK;
 }
 
-/* 页扫描：最大有效 seq + 已用槽数（末个非擦除槽 + 1；垃圾槽不复用）。 */
+/* Page scan: max valid seq plus used-slot count (last non-erased slot + 1;
+ * bad slots are not reused). */
 static entelea_result_t
 page_scan(uint8_t page, uint32_t *max_seq, uint8_t *used)
 {
@@ -192,7 +200,8 @@ struct kv_ref {
 	uint8_t slot;
 };
 
-/* 两页每 app 最新有效槽（≤14；超出弃 seq 最旧）。 */
+/* Latest valid slot per app across both pages (at most 14; beyond that,
+ * the oldest seq is dropped). */
 static entelea_result_t
 collect_latest(struct kv_ref *refs, size_t *count)
 {
@@ -261,7 +270,8 @@ collect_latest(struct kv_ref *refs, size_t *count)
 	return ENTELEA_OK;
 }
 
-/* 页满压实：先读后擦、先写后切。不得擦除目标页上唯一的保留记录。 */
+/* Compaction on full page: read before erase, write before switch. Never
+ * erase the only retained record on the target page. */
 static entelea_result_t
 compact(void)
 {
@@ -273,7 +283,7 @@ compact(void)
 	if (r != ENTELEA_OK) {
 		return r;
 	}
-	for (size_t i = 1; i < n; i++) { /* seq 升序：最大 seq 最后落 */
+	for (size_t i = 1; i < n; i++) { /* ascending seq: max lands last */
 		struct kv_ref k = refs[i];
 		size_t j = i;
 
@@ -338,7 +348,7 @@ compact(void)
 	return ENTELEA_OK;
 }
 
-/* 公共 API（信任表头文件独立；kv 面并入 storage.h）。 */
+/* Public API. The trust header is separate; kv is merged into storage.h. */
 #include <entelea/kv.h>
 
 int32_t
@@ -408,7 +418,7 @@ entelea_kv_load(uint32_t app_hash, uint8_t *out, uint16_t max)
 	uint16_t len = entelea_get_le16(s.data + KV_OFF_LEN);
 
 	if (len > max) {
-		return ENTELEA_E_RANGE; /* 容量不足如实 */
+		return ENTELEA_E_RANGE; /* Too small; reported as-is */
 	}
 	memcpy(out, s.data + KV_OFF_DATA, len);
 	return (int32_t) len;
@@ -438,7 +448,7 @@ entelea_kv_save(uint32_t app_hash, const uint8_t *data, uint16_t len)
 
 	slot_encode(&s, app_hash, data, len, kv.next_seq);
 	r = slot_commit(kv.active_page, kv.next_slot, &s);
-	kv.next_seq++; /* 失败亦烧毁槽与 seq：已编程字节不重写 */
+	kv.next_seq++; /* Failure also burns slot and seq (no rewrite) */
 	kv.next_slot++;
 	if (r != ENTELEA_OK) {
 		kv.ready = false;
@@ -454,7 +464,7 @@ entelea_kv_init(void)
 	}
 	if (entelea_store_backend.size(ENTELEA_PART_KV) <
 	    KV_PAGES * KV_PAGE_SZ) {
-		return ENTELEA_E_STATE; /* 分区未编入——如实降级 */
+		return ENTELEA_E_STATE; /* Partition not built; degraded */
 	}
 	uint32_t sa;
 	uint32_t sb;
@@ -463,9 +473,11 @@ entelea_kv_init(void)
 
 	if (page_scan(0, &sa, &ua) != ENTELEA_OK ||
 	    page_scan(1, &sb, &ub) != ENTELEA_OK) {
-		return ENTELEA_E_IO; /* 未就绪：下次调用重扫，不盲写 */
+		return ENTELEA_E_IO; /* Not ready: rescan next time */
 	}
-	/* 活动页 = 最大有效 seq 页；相等（压实恰写完/皆空）取已用较少页。 */
+	/* Active page = the one with the largest valid seq. On a tie
+	 * (compaction just finished, or both empty), take the page with
+	 * fewer used slots. */
 	kv.active_page = (sb > sa || (sb == sa && ub < ua)) ? 1U : 0U;
 	kv.next_slot = kv.active_page ? ub : ua;
 	kv.next_seq = ((sa > sb) ? sa : sb) + 1U;

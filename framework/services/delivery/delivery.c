@@ -1,11 +1,16 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * R12 试用状态机 + Forge 集成契约（新-only；合同见本目录 contract.md）。
- * 编程循环=OpenHands Software Agent SDK（owner 已确认）——SDK 侧循环
- * 不在固件内；本层=固件试用状态机（单候选/对象绑定确认/执行门/
- * fail-closed 超时与恢复）+ 工厂产物 intake（域外拒/未知 payload 拒）。
- * 工程通过≠用户验收：confirm 开启试用；真实用户授权由可信调用方负责。
- * 单线程假设：全部入口 [thread]，无内部锁（与 wasm 宿主同线程）。
+ * R12 trial state machine and Forge integration contract (new-only; see
+ * contract.md in this directory).
+ * The programming loop is the OpenHands Software Agent SDK (owner-approved);
+ * the SDK-side loop is not inside the firmware. This layer is the firmware
+ * trial state machine (single candidate, object-bound confirmation, execution
+ * gate, fail-closed timeout and recovery) plus factory artifact intake
+ * (out-of-domain and unknown payloads are refused).
+ * Engineering pass != user acceptance: confirm starts the trial; genuine user
+ * authorization is the responsibility of the trusted caller.
+ * Single-thread assumption: all entry points run on [thread] with no internal
+ * lock (same thread as the wasm host).
  */
 #include <string.h>
 #include <entelea/appstore.h>
@@ -15,7 +20,7 @@
 
 static entelea_trial_state_t state;
 static entelea_trial_candidate_t current;
-static uint32_t last_epoch; /* 最近一次 submit 赋出的纪元（0=从未） */
+static uint32_t last_epoch; /* Epoch assigned by the last submit (0 = never) */
 static bool initialized;
 
 static entelea_result_t
@@ -30,7 +35,7 @@ clear_candidate(void)
 	memset(&current, 0, sizeof(current));
 }
 
-/* 状态检查（不改变状态）：拒绝顺序与旧 submit 一致。 */
+/* State check (no state change): refusal order matches the old submit. */
 static entelea_result_t
 admit_check(uint8_t slot)
 {
@@ -44,18 +49,18 @@ admit_check(uint8_t slot)
 		return ENTELEA_E_STATE;
 	}
 	if (state == ENTELEA_TRIAL_ACTIVE) {
-		return ENTELEA_E_BUSY; /* 单候选：ACTIVE 期不受理新候选 */
+		return ENTELEA_E_BUSY; /* ACTIVE: no new candidates */
 	}
 	if (state == ENTELEA_TRIAL_PENDING_CONFIRM) {
-		return ENTELEA_E_BUSY; /* PENDING 期不受理：已展示的确认对象不可被替换 */
+		return ENTELEA_E_BUSY; /* PENDING: shown object is immutable */
 	}
 	if (state != ENTELEA_TRIAL_NONE &&
 	    current.slot != ENTELEA_TRIAL_SLOT_UNKNOWN &&
 	    slot != current.slot) {
-		return ENTELEA_E_BUSY; /* 槽保留：被拒/超时字节仍受门拒，重推须同槽 */
+		return ENTELEA_E_BUSY; /* Slot reserved: same slot only */
 	}
 	if (last_epoch == UINT32_MAX) {
-		return ENTELEA_E_RANGE; /* 禁止回绕复用旧确认对象 */
+		return ENTELEA_E_RANGE; /* No wraparound reuse of old objects */
 	}
 	return ENTELEA_OK;
 }
@@ -87,7 +92,8 @@ admit_commit(const entelea_trial_candidate_t *c)
 	state = ENTELEA_TRIAL_PENDING_CONFIRM;
 }
 
-/* 设备计算候选身份：验签后的整文件摘要；expect 非空时必须与之相等。 */
+/* Device computes the candidate identity: the whole-file digest after
+ * verification; when expect is non-NULL it must match. */
 static entelea_result_t
 admit_from_slot(const entelea_trial_request_t *req, const uint8_t *expect)
 {
@@ -108,7 +114,7 @@ admit_from_slot(const entelea_trial_request_t *req, const uint8_t *expect)
 	}
 	r = entelea_pkg_verify(req->slot, NULL, &v, NULL);
 	if (r != ENTELEA_OK) {
-		return r; /* 槽内无有效包：不改变状态 */
+		return r; /* No valid package in slot: no state change */
 	}
 	memset(&c, 0, sizeof(c));
 	r = entelea_pkg_file_digest(req->slot, v.pkg_len, c.digest);
@@ -116,7 +122,7 @@ admit_from_slot(const entelea_trial_request_t *req, const uint8_t *expect)
 		return r;
 	}
 	if (expect != NULL && memcmp(c.digest, expect, sizeof(c.digest)) != 0) {
-		return ENTELEA_E_INVALID_SIG; /* 包内容与工厂声明的摘要不符 */
+		return ENTELEA_E_INVALID_SIG; /* digest != factory declared */
 	}
 	memcpy(c.perm, req->perm, req->perm_len);
 	c.perm_len = req->perm_len;
@@ -133,7 +139,8 @@ entelea_trial_submit(const entelea_trial_request_t *req)
 	return admit_from_slot(req, NULL);
 }
 
-/* 展示对象与当前候选逐字段相等（确认与晋升共用）。 */
+/* Shown object must equal the current candidate field by field (shared by
+ * confirm and promote). */
 static bool
 candidate_matches(const entelea_trial_candidate_t *shown)
 {
@@ -161,9 +168,9 @@ entelea_trial_confirm(const entelea_trial_candidate_t *shown)
 		return ENTELEA_E_STATE;
 	}
 	if (!candidate_matches(shown)) {
-		return ENTELEA_E_PERM; /* 过期/不符的确认对象：保持 PENDING */
+		return ENTELEA_E_PERM; /* Stale/mismatch: stay PENDING */
 	}
-	state = ENTELEA_TRIAL_ACTIVE; /* 用户显式确认——唯一晋升路径 */
+	state = ENTELEA_TRIAL_ACTIVE; /* User confirm: only promotion path */
 	return ENTELEA_OK;
 }
 
@@ -178,7 +185,7 @@ entelea_trial_reject(void)
 	if (state != ENTELEA_TRIAL_PENDING_CONFIRM) {
 		return ENTELEA_E_STATE;
 	}
-	state = ENTELEA_TRIAL_REJECTED; /* 槽保留（可重推） */
+	state = ENTELEA_TRIAL_REJECTED; /* Slot kept (resubmittable) */
 	return ENTELEA_OK;
 }
 
@@ -193,7 +200,7 @@ entelea_trial_timeout(void)
 	if (state != ENTELEA_TRIAL_PENDING_CONFIRM) {
 		return ENTELEA_E_STATE;
 	}
-	state = ENTELEA_TRIAL_TIMEOUT; /* fail-closed 撤销（槽保留） */
+	state = ENTELEA_TRIAL_TIMEOUT; /* fail-closed revoke (slot kept) */
 	return ENTELEA_OK;
 }
 
@@ -208,7 +215,7 @@ entelea_trial_end(void)
 	if (state != ENTELEA_TRIAL_ACTIVE) {
 		return ENTELEA_E_STATE;
 	}
-	clear_candidate(); /* 纪元计数保留（跨候选单调） */
+	clear_candidate(); /* Epoch count kept (monotonic across candidates) */
 	state = ENTELEA_TRIAL_NONE;
 	return ENTELEA_OK;
 }
@@ -246,16 +253,17 @@ entelea_trial_gate(uint8_t slot, const uint8_t digest[32])
 	if (state == ENTELEA_TRIAL_NONE ||
 	    (current.slot != ENTELEA_TRIAL_SLOT_UNKNOWN &&
 	     slot != current.slot)) {
-		return ENTELEA_OK; /* 试用政策不管辖（稳定集准入=D05） */
+		return ENTELEA_OK; /* Not governed by trial (see D05) */
 	}
 	if (state == ENTELEA_TRIAL_ACTIVE &&
 	    memcmp(digest, current.digest, sizeof(current.digest)) == 0) {
-		return ENTELEA_OK; /* 仅用户已确认的那份字节 */
+		return ENTELEA_OK; /* Only the bytes the user confirmed */
 	}
 	return ENTELEA_E_PERM;
 }
 
-/* 授权查询：仅 ACTIVE 且槽与摘要均相符时授予确认的权限与步数。 */
+/* Grant lookup: grants the confirmed permissions and steps only when ACTIVE
+ * and both the slot and the digest match. */
 entelea_result_t
 entelea_trial_grant(uint8_t slot, const uint8_t digest[32],
 		    entelea_trial_grant_t *out)
@@ -279,7 +287,7 @@ entelea_trial_grant(uint8_t slot, const uint8_t digest[32],
 	return ENTELEA_OK;
 }
 
-/* ---- 工厂 intake（域外/未知 payload fail-closed） ---- */
+/* ---- Factory intake (out-of-domain/unknown payload fail-closed) ---- */
 
 entelea_result_t
 entelea_factory_intake(const entelea_factory_candidate_t *fc, uint8_t slot)
@@ -288,12 +296,12 @@ entelea_factory_intake(const entelea_factory_candidate_t *fc, uint8_t slot)
 		return ENTELEA_E_PARAM;
 	}
 	if (fc->payload_kind > 1) {
-		return ENTELEA_E_PARAM; /* 不默认解释为 wasm（后缀不推断权限） */
+		return ENTELEA_E_PARAM; /* No wasm default; no suffix guess */
 	}
 	if (fc->budget_steps == 0 || fc->budget_steps > 10000000U ||
 	    fc->mem_quota_kb == 0 || fc->mem_quota_kb > 512 ||
 	    fc->permissions_len > ENTELEA_TRIAL_PERM_MAX) {
-		return ENTELEA_E_RANGE; /* 预算/权限长度域外拒（R05 Lua 合同同域） */
+		return ENTELEA_E_RANGE; /* Budget/perm out of domain (R05) */
 	}
 	entelea_trial_request_t req;
 
@@ -306,15 +314,17 @@ entelea_factory_intake(const entelea_factory_candidate_t *fc, uint8_t slot)
 	return admit_from_slot(&req, fc->package_digest);
 }
 
-/* ---- 跨重启持久（板级批 A-4；RF1 v3）：记录布局（小端）
+/* ---- Cross-reboot persistence (board batch A-4; RF1 v3): record layout
+ * (little-endian):
  * u8 ver=3 | u8 state | u8 cand_version | u8 slot | u32 last_epoch |
- * u32 budget_steps | u8 perm_len | perm[96]（零填充）| digest[32]。
- * v1/v2 不迁移：按坏记录处置（fail-closed）。 */
+ * u32 budget_steps | u8 perm_len | perm[96] (zero-filled) | digest[32].
+ * v1/v2 are not migrated: treated as bad records (fail-closed). */
 #define TRIAL_PERSIST_VER 4U
 #define TRIAL_REC_PERM_OFF 13U
 #define TRIAL_REC_DIG_OFF (TRIAL_REC_PERM_OFF + ENTELEA_TRIAL_PERM_MAX)
 #define TRIAL_REC_LEN (TRIAL_REC_DIG_OFF + 32U)
-/* 同一双副本 meta 记录内追加每槽稳定项：present|digest|budget|plen|perm。 */
+/* Per-slot stable items are appended to the same dual-copy meta record:
+ * present|digest|budget|plen|perm. */
 #define STABLE_ITEM_LEN (1U + 32U + 4U + 1U + ENTELEA_TRIAL_PERM_MAX)
 #define PERSIST_REC_LEN \
 	(TRIAL_REC_LEN + ENTELEA_APP_SLOT_COUNT * STABLE_ITEM_LEN)
@@ -395,7 +405,8 @@ entelea_trial_flush(void)
 	return ENTELEA_OK;
 }
 
-/* ---- 稳定记录（D-E）：每槽一项，与试用同一双副本 meta 记录原子持久。 */
+/* ---- Stable records (D-E): one item per slot, persisted atomically with
+ * the trial in the same dual-copy meta record. */
 
 entelea_result_t
 entelea_trial_promote(const entelea_trial_candidate_t *shown)
@@ -425,7 +436,7 @@ entelea_trial_promote(const entelea_trial_candidate_t *shown)
 	memcpy(stable[slot].grant.perm, current.perm, current.perm_len);
 	clear_candidate();
 	state = ENTELEA_TRIAL_NONE;
-	r = entelea_trial_flush(); /* 试用结束与稳定项同一原子写入 */
+	r = entelea_trial_flush(); /* End + stable item: one atomic write */
 	if (r != ENTELEA_OK) {
 		current = keep;
 		stable[slot] = old;
@@ -444,13 +455,15 @@ entelea_stable_revoke(uint8_t slot)
 	}
 	r = ensure_initialized();
 	if (r != ENTELEA_OK) {
-		return r; /* 持久读取失败：状态已按 TIMEOUT 关闭，须维护恢复 */
+		return r; /* Persistent read failed: state closed as TIMEOUT;
+			   * maintenance recovery needed */
 	}
 	if (state == ENTELEA_TRIAL_ACTIVE && current.slot == slot) {
 		clear_candidate();
 		state = ENTELEA_TRIAL_NONE;
 	}
-	/* 内存先撤销（fail-closed）；写入失败则结果未知，须重试。 */
+	/* Revoke in memory first (fail-closed). If the write fails, the
+	 * outcome is unknown and must be retried. */
 	stable[slot].present = false;
 	memset(stable[slot].digest, 0, sizeof(stable[slot].digest));
 	memset(&stable[slot].grant, 0, sizeof(stable[slot].grant));
@@ -555,13 +568,14 @@ entelea_trial_restore(void)
 			     budget_valid(budget) && perm_ok));
 
 	if (!valid) {
-		/* 记录不自洽：候选槽不可知，两槽均受门拒。 */
+		/* Inconsistent record: the candidate slot is unknown, so
+		 * both slots are refused by the gate. */
 		state = ENTELEA_TRIAL_TIMEOUT;
 		current.slot = ENTELEA_TRIAL_SLOT_UNKNOWN;
 		return ENTELEA_E_IO;
 	}
 	if (ep > last_epoch) {
-		last_epoch = ep; /* 单调：恢复不回退纪元计数 */
+		last_epoch = ep; /* Monotonic: no epoch rollback */
 	}
 	state = (entelea_trial_state_t) rec[1];
 	if (state != ENTELEA_TRIAL_NONE) {
@@ -590,7 +604,8 @@ entelea_trial_restore(void)
 }
 
 #ifdef ENTELEA_TEST
-/* 状态机测试接缝：直接接受调用方摘要，不验签（生产路径不得使用）。 */
+/* State machine test seam: accepts the caller's digest directly without
+ * verification (must not be used on the production path). */
 entelea_result_t
 entelea_trial_submit_with_digest_for_test(const entelea_trial_candidate_t *cand)
 {

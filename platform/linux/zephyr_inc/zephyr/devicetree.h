@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* Linux 宿主桩：DT 宏面为空（无板级 DT——drivers.c 的 DT 分支全部
- * 关闭，仅 sim 后端参与）。 */
+/* Linux host stub: the DT macro surface is empty (no board-level DT; all
+ * DT branches in drivers.c are disabled, and only the sim backend takes
+ * part). */
 #ifndef ENTELEA_LINUX_DT_STUB
 #define ENTELEA_LINUX_DT_STUB
 #define DT_NODE_EXISTS(n) 0

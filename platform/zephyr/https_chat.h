@@ -2,28 +2,30 @@
 #ifndef ENTELEA_HTTPS_CHAT_ZEPHYR_H
 #define ENTELEA_HTTPS_CHAT_ZEPHYR_H
 
-/* r15 板上模型传输（与 platform/linux/https_chat.h 同源合同——F-2
- * host 面闭环后的 MCU 面移植；差异面：CA=嵌入根数组（板无文件系统）、
- * socket=Zephyr POSIX、RNG=Zephyr mbedtls 模块 PSA）。凭据经调用方
- * 注入（P4C2 串口协议），不落盘不打日志。 */
+/* r15 on-board model transport (same contract as platform/linux/https_chat.h;
+ * the MCU-side port after the F-2 host-side loop closed. Differences: CA = an
+ * embedded root array (the board has no filesystem), socket = Zephyr POSIX,
+ * RNG = Zephyr mbedtls module PSA). Credentials are injected by the caller
+ * (P4C2 serial protocol); they are never written to disk or logged. */
 
 #include <stddef.h>
 #include <stdint.h>
 #include <entelea/model.h>
 #include <entelea/result.h>
 
-#define ENTELEA_HTTPS_BODY_MAX 8192 /* 板上面（max_tokens 256 响应界） */
+#define ENTELEA_HTTPS_BODY_MAX 8192 /* board bound: max_tokens 256 response */
 
 typedef struct {
-	char host[64]; /* API 主机名（DNS 解析+SNI） */
+	char host[64]; /* API hostname (DNS resolution + SNI) */
 	char path_prefix[64];
 	char api_key[128];
 	char model[48];
-	int *touched; /* 调用计数（闸判据） */
+	int *touched; /* call counter (gate criterion) */
 } entelea_https_cfg_t;
 
-/** POST {path_prefix}/chat/completions，TLS1.3，值感知提取 content。
- * 合同与 host 版一致：401/403→E_PERM、429→E_BUSY、截断显式 E_RANGE。 */
+/** POST {path_prefix}/chat/completions over TLS 1.3, with value-aware
+ * content extraction. Matches the host version's contract: 401/403 -> E_PERM,
+ * 429 -> E_BUSY, truncation explicitly E_RANGE. */
 entelea_result_t
 entelea_https_chat(void *user, const entelea_model_msg_t *msgs, uint8_t n,
 		   char *out, size_t out_max, uint32_t timeout_ms,

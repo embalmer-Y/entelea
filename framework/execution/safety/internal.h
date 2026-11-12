@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* entelea safety 内部共享（不对外）：通道槽表/forced/link 原子与锁收口。 */
+/* entelea safety internal state (not exported): channel slot table,
+ * forced/link atomics, and lock consolidation. */
 #ifndef ENTELEA_SAFETY_INTERNAL_H
 #define ENTELEA_SAFETY_INTERNAL_H
 
@@ -11,40 +12,44 @@
 struct entelea_ch_slot {
 	const entelea_out_channel_t *desc;
 	entelea_ch_state_t state;
-	entelea_out_value_t shadow; /* 最后确认值（写失败不更新） */
-	bool have_last; /* slew 基线是否已建立 */
-	uint64_t last_t; /* 上次确认写时刻（slew Δt 锚点） */
-	bool fault_by_write_failure; /* 安全写失败所致 SAFE_FAULT：
-				      * 仅 channel_recover 可恢复（clear_fault
-				      * 跳过），物理效果未知 */
+	entelea_out_value_t shadow; /* Last confirmed value; kept on failure */
+	bool have_last; /* Whether slew baseline is established */
+	uint64_t last_t; /* Time of last confirmed write (slew dt anchor) */
+	bool fault_by_write_failure; /* SAFE_FAULT from a failed write:
+				      * only channel_recover can recover;
+				      * clear_fault skips it. Physical effect
+				      * unknown */
 	struct {
 		uint32_t head, count;
 		entelea_write_rec_t ring[ENTELEA_SAFETY_SIM_REC_PER_CH];
-	} sim_rec; /* 写序列记录（golden 数据源） */
+	} sim_rec; /* Write sequence record (golden data source) */
 };
 
 extern struct entelea_ch_slot entelea_ch_table[ENTELEA_SAFETY_MAX_CHANNELS];
 extern size_t entelea_ch_count;
 
-extern atomic_t entelea_forced; /* estop/fail 锁存标志（clear_fault 释放） */
+extern atomic_t entelea_forced; /* estop/fail latch (cleared by clear_fault) */
 extern atomic_t
-	entelea_system_failed; /* system_fail 已发生（一次性；clear_fault 拒绝） */
-extern atomic_t entelea_forced_at; /* forced 置位时刻（低 32 位，补发事件用） */
-extern atomic_t entelea_link_up; /* 全局链路标志 */
+	entelea_system_failed; /* system_fail occurred; clear_fault refuses */
+extern atomic_t entelea_forced_at; /* forced set time (low 32 bits) */
+extern atomic_t entelea_link_up; /* Global link flag */
 extern atomic_t
-	entelea_arb_owner; /* 控制源席位（R04；entelea_arb_owner_t 值） */
+	entelea_arb_owner; /* Control-source seat (R04; entelea_arb_owner_t) */
 extern const entelea_clock_t *entelea_safety_clock;
 
-/* 模块时钟读取（channel.c 实现）：读失败或回退沿用最后有效值（单调
- * 护栏——失败不得伪造 0 导致 slew 减法下溢放宽限制），失败计入
- * clock_faults；从未成功过返回 0。checked 变体返回 false=本次时间不可知
- * （slew 门与调用方据此拒绝依赖时间界的操作）。 */
+/* Module clock read (implemented in channel.c): on read failure or
+ * regression the last valid value is kept (monotonic guard: a failure must
+ * not fake 0, which would underflow the slew subtraction and loosen the
+ * limit). Failures are counted in clock_faults; returns 0 if it never
+ * succeeded. The checked variant returns false = time unknown for this call
+ * (the slew gate and callers reject time-bounded operations on that basis). */
 uint64_t
 entelea_safety_now_ms(void);
 bool
 entelea_safety_now_ms_checked(uint64_t *out);
 
-/* 模块私有驱动 ops 表（drivers.c 定义；模块外引用被架构检查拒绝）。 */
+/* Module-private driver ops table (defined in drivers.c; references from
+ * outside the module are rejected by the architecture check). */
 typedef struct {
 	int (*write)(const entelea_out_channel_t *ch,
 		     const entelea_out_value_t *v);
@@ -53,41 +58,48 @@ typedef struct {
 
 extern const entelea_driver_ops_t entelea_drivers[ENTELEA_CH_KIND_COUNT];
 
-/** 驱动写失败计数（channel.c 持有；commit/force 调用点登记）。 */
+/** Count a driver write failure (the counter lives in channel.c; called
+ * from commit and force paths). */
 void
 entelea_safety_count_write_failure(void);
 
-/** 审计落盘（channel.c）：异常类节流（首条立即，其后 1Hz 采样——旧
- * DEC-52① 语义；风暴丢弃计数可观）。persist 失败不反噬提交路径
- * （观测面降级）。 */
+/** Audit persist (channel.c): exception-class throttling (first entry
+ * immediate, then 1 Hz sampling; old DEC-52① semantics; drop counts during
+ * storms remain observable). A persist failure does not feed back into the
+ * commit path (observation surface degrades). */
 void
 entelea_safety_audit_persist(const void *entry, uint16_t evt);
 
 #ifdef ENTELEA_TEST
-/** 后端就绪位/失败计数复位（drivers.c；测试隔离）。 */
+/** Reset backend-ready flags and failure counters (drivers.c; test
+ * isolation). */
 void
 entelea_drv_test_reset(void);
-/** system_failed 一次性标志复位（force.c；仅测试隔离）。 */
+/** Reset the one-shot system_failed flag (force.c; test isolation only). */
 void
 entelea_safety_test_reset_system_failed(void);
 #endif
 
-/** estop 补发宣布位复位（clear_fault 调用；二次 estop 可再补发）。 */
+/** Reset the estop-announced flag (called by clear_fault; a second estop
+ * can announce again). */
 void
 entelea_safety_estop_announce_reset(void);
 
-/* ---- 锁收口（旧 DEC-43 方案 A 语义）---------------------------------------
- * write_lock = commit_lock 的受控暴露：安全态迁移路径（set_link / 单通道
- * force/recover / clear_fault）须与 commit 互斥。线程上下文专用（ISR 禁入）；
- * 已持锁方调用 commit 须走 commit_locked（k_mutex 非递归）。
- * 锁序：write_lock → 事件发布路径，单向无环。
- * R04 预算检查-提交原子化复用该锁；R02 无外部持有者。 */
+/* ---- Lock consolidation (old DEC-43 option A semantics) -----------------
+ * write_lock is the controlled exposure of commit_lock: safe-state transition
+ * paths (set_link / single-channel force/recover / clear_fault) must be
+ * mutually exclusive with commit. Thread context only (ISR entry forbidden);
+ * a caller that already holds the lock must call commit_locked (k_mutex is
+ * not recursive).
+ * Lock order: write_lock -> event publish path, one direction, no cycles.
+ * R04 budget check-and-commit atomicity reuses this lock; R02 has no external
+ * holders. */
 void
 entelea_safety_write_lock(void);
 void
 entelea_safety_write_unlock(void);
 
-/* 查找槽下标；未注册返回 -1 */
+/* Find slot index; returns -1 if not registered */
 static inline int
 entelea_ch_find(const char *uid)
 {

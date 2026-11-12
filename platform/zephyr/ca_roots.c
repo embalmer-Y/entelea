@@ -1,8 +1,11 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* r15 板上 TLS 信任根（嵌入面——板无 CA bundle 文件系统）。
- * 选根依据：F-2 host 面真云实测对端链=DigiCert（r08 验证记录，已删除，锚点见台账）
- * + ISRG Root X1（Let's Encrypt 备用，云厂商 CDN 常见）。
- * 共 ~3.2KB；增删根须随批记录（信任面变更=可审计事件）。 */
+/* r15 on-board TLS trust roots (embedded surface; the board has no CA bundle
+ * filesystem).
+ * Root selection: the peer chain measured in the F-2 host-side real-cloud run
+ * was DigiCert (r08 verification record, deleted; anchor in the ledger), plus
+ * ISRG Root X1 (Let's Encrypt fallback, common on cloud-vendor CDNs).
+ * About 3.2 KB in total; adding or removing roots must be recorded with the
+ * batch (a trust-surface change is an auditable event). */
 #include <stddef.h>
 
 const char ca_digicert_g2[] =

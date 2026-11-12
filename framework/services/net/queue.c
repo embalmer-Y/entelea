@@ -1,9 +1,12 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * R06 avq/pubq 有界传输队列实现（B-1；合同 net/contract.md）。
- * avq=drop-oldest 媒体帧环（拷贝入静态池——借用寿命不外泄）；
- * pubq=拒新发布环（满=E_BUSY；sink 回调后弹出，不确认传输结果）。
- * 无定时器——flush 由调用方驱动（确定性）。
+ * R06 avq/pubq bounded transport queue implementation (B-1; contract
+ * net/contract.md).
+ * avq = drop-oldest media frame ring (frames are copied into a static pool,
+ * so borrowed lifetimes never escape). pubq = reject-new publish ring (full =
+ * E_BUSY; an entry is popped after the sink callback, which does not confirm
+ * transport results).
+ * No timers: flush is driven by the caller (deterministic).
  */
 #include <string.h>
 #include <entelea/netqueue.h>
@@ -16,7 +19,7 @@ struct avq_slot {
 };
 
 static struct avq_slot avq_ring[ENTELEA_AVQ_FRAMES];
-static uint32_t avq_head; /* 弹出侧 */
+static uint32_t avq_head; /* Pop side */
 static uint32_t avq_count;
 static uint32_t avq_dropped;
 
@@ -27,10 +30,10 @@ entelea_avq_push(const uint8_t *frame, uint32_t len)
 		return ENTELEA_E_PARAM;
 	}
 	if (len > ENTELEA_AVQ_FRAME_MAX) {
-		return ENTELEA_E_RANGE; /* 整帧语义：不截断 */
+		return ENTELEA_E_RANGE; /* Whole frame: no truncation */
 	}
 	if (avq_count == ENTELEA_AVQ_FRAMES) {
-		avq_head = (avq_head + 1) % ENTELEA_AVQ_FRAMES; /* 丢最旧 */
+		avq_head = (avq_head + 1) % ENTELEA_AVQ_FRAMES; /* Evict */
 		avq_count--;
 		avq_dropped++;
 	}
@@ -49,10 +52,10 @@ entelea_avq_pop(uint8_t *out, uint32_t max, uint32_t *len)
 		return ENTELEA_E_PARAM;
 	}
 	if (avq_count == 0) {
-		return ENTELEA_E_BUSY; /* 空=非失败（重试面） */
+		return ENTELEA_E_BUSY; /* Empty: not a failure (retry) */
 	}
 	if (avq_ring[avq_head].len > max) {
-		return ENTELEA_E_RANGE; /* 调用方缓冲不足：整帧语义 */
+		return ENTELEA_E_RANGE; /* Buffer too small: whole frame */
 	}
 	*len = avq_ring[avq_head].len;
 	memcpy(out, avq_ring[avq_head].b, *len);
@@ -82,7 +85,7 @@ entelea_pubq_post(const char *topic, const uint8_t *payload, uint8_t len)
 		return ENTELEA_E_PARAM;
 	}
 	if (pubq_count == ENTELEA_PUBQ_ENTRIES) {
-		return ENTELEA_E_BUSY; /* 拒新：不静默丢 */
+		return ENTELEA_E_BUSY; /* Reject new; no silent drop */
 	}
 	uint32_t tail = (pubq_head + pubq_count) % ENTELEA_PUBQ_ENTRIES;
 	entelea_pubq_entry_t *e = &pubq_ring[tail];
@@ -123,7 +126,7 @@ entelea_pubq_depth(void)
 	return pubq_count;
 }
 
-/* ---- 传输面 ---- */
+/* ---- Transport surface ---- */
 
 static entelea_netqueue_sink_t sink;
 static void *sink_user;
@@ -154,7 +157,8 @@ entelea_netqueue_flush(void)
 			n++;
 		}
 	}
-	/* 无 sink 时 pubq 保持待处理；回调不提供送达确认。 */
+	/* Without a sink, pubq entries stay pending; the callback gives no
+	 * delivery acknowledgement. */
 	while (sink != NULL && pubq_count > 0) {
 		entelea_pubq_entry_t e;
 
@@ -164,7 +168,7 @@ entelea_netqueue_flush(void)
 		pub_delivered++;
 #endif
 		if (entelea_pubq_pop() != ENTELEA_OK) {
-			break; /* 不可达（单线程域）——防御 */
+			break; /* Unreachable (single thread): defensive */
 		}
 		n++;
 	}

@@ -1,17 +1,25 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * 通道注册表 + 三安全态状态机（迁自旧 safety/channel.c，R02 合同
- * framework/execution/safety/contract.md）。
- * 三安全态声明缺一不予注册；安全参数运行时只读（desc 指向注册期冻结数据）。
- * 相对旧实现调整（含 review 整改）：
- * - 控制源仲裁（set_arb/commit_src/ARB 事件）延至 R04；审计环形延至 R03。
- * - 写驱动 + 影子/状态迁移全部在 irq_lock 临界区内完成，estop ISR 抢入
- *   不再被临界区后的更新覆盖（缺陷 3）；SAFE_STATE_CHANGED 在解锁后发布
- *   且发布前复查 forced（estop 强制迁移不发逐通道事件，权威态以
- *   channel_state/summary 查询为准）。
- * - 驱动写返回值传播：poweron/断链/恢复写失败显式 E_IO，不更新成功
- *   状态（缺陷 2）。激活迁移（→ACTIVE）不落驱动（恢复不回写，DR-04）。
- * - 模块时钟单调护栏：读失败/回退沿用最后有效值并计数（缺陷 5）。
+ * Channel registry and three-safe-state state machine (migrated from the old
+ * safety/channel.c; R02 contract: framework/execution/safety/contract.md).
+ * A channel missing any of its three safe-state declarations is not
+ * registered. Safety parameters are read-only at runtime (desc points to data
+ * frozen at registration).
+ * Changes from the old implementation (including review remediation):
+ * - Control-source arbitration (set_arb/commit_src/ARB events) is deferred to
+ *   R04; the audit ring is deferred to R03.
+ * - Driver writes and shadow/state transitions all run inside the irq_lock
+ *   critical section, so an estop ISR that preempts is not overwritten by
+ *   updates made after the critical section (defect 3). SAFE_STATE_CHANGED is
+ *   published after unlock, with forced re-checked before publishing (forced
+ *   transitions from estop emit no per-channel events; the authoritative state
+ *   is the channel_state/summary query).
+ * - Driver write return values propagate: a failed poweron/link-loss/recover
+ *   write returns E_IO explicitly and does not update the state as successful
+ *   (defect 2). Activation transitions (-> ACTIVE) do not write the driver
+ *   (recovery does not write back; DR-04).
+ * - Module clock monotonic guard: on read failure or regression the last valid
+ *   value is kept and counted (defect 5).
  */
 #include <string.h>
 #include <entelea/safety.h>
@@ -19,39 +27,47 @@
 #include "internal.h"
 
 struct entelea_ch_slot
-	entelea_ch_table[ENTELEA_SAFETY_MAX_CHANNELS]; /* 容量 32（DEC-27） */
+	entelea_ch_table[ENTELEA_SAFETY_MAX_CHANNELS]; /* 32 slots (DEC-27) */
 size_t entelea_ch_count;
 
-atomic_t entelea_link_up = ATOMIC_INIT(0); /* 初值 down：boot 后链路未确立 */
+atomic_t entelea_link_up = ATOMIC_INIT(0); /* Initially down until boot */
 atomic_t entelea_arb_owner =
-	ATOMIC_INIT(ENTELEA_ARB_REMOTE); /* 缺省远程（本地席位空缺） */
+	ATOMIC_INIT(ENTELEA_ARB_REMOTE); /* Default remote; no local owner */
 atomic_t entelea_forced = ATOMIC_INIT(0);
 atomic_t entelea_forced_at = ATOMIC_INIT(0);
 const entelea_clock_t *entelea_safety_clock;
 
-/* 单调护栏状态：最后有效时钟值与失败计数（review 缺陷 5）。 */
+/* Monotonic guard state: last valid clock value and failure count
+ * (review defect 5). */
 static uint64_t clock_last_good;
 static uint32_t clock_fault_count;
 
-/* 驱动写失败累计（commit/poweron/迁移失败另经返回值传播；force 路径
- * ISR 内不可返回，此计数是唯一留痕面）。 */
+/* Cumulative driver write failures (commit, poweron and transition failures
+ * also propagate via return values; the force path cannot return from ISR
+ * context, so this counter is the only trace). */
 static uint32_t driver_write_failures;
 
-/* 受检时钟读取：返回 false = 本次时间不可知（读失败或回退；护栏介入，
- * *out 为最后有效值）。回退不得以最后有效值冒充已知时间——那会把
- * 其他通道推进的时刻借来立 slew 界（RF1 缺陷 4）。
- * 并发（二轮 review 缺陷 5）：commit/迁移（线程）与
- * force_all_fault/estop 补发（ISR）并发访问簿记；32 位目标 u64 可撕裂，
- * 比较/更新/计数入 irq_lock 微临界区（ISR 可嵌套）。 */
+/* Checked clock read: returns false = time unknown for this call (read
+ * failure or regression; the guard intervened and *out holds the last
+ * valid value). A regression must not pass the last valid value off as
+ * known time, since that would borrow a time advanced by other channels
+ * to set a slew bound (RF1 defect 4).
+ * Concurrency (second-round review defect 5): commit/transitions (thread)
+ * and force_all_fault/estop deferred publish (ISR) access the bookkeeping
+ * concurrently; u64 can tear on 32-bit targets, so the compare, update
+ * and count go inside an irq_lock micro critical section (ISR may nest). */
 bool
 entelea_safety_now_ms_checked(uint64_t *out)
 {
 	uint64_t ms = 0;
 	unsigned int key = irq_lock();
 
-	/* 读+比较+更新全程持锁（读取须短且不阻塞）：线程/ISR（force/
-	 * estop 补发）采样串行化，正常前进不被交错误记回退；真回退
-	 * 计故障并保守沿用最后有效值（slew 门据此拒绝）。 */
+	/* Read, compare and update all run under the lock (the read must be
+	 * short and non-blocking). Thread and ISR sampling (force/estop
+	 * deferred publish) is serialized, so normal progress is not
+	 * misrecorded as a regression; a real regression counts as a fault
+	 * and conservatively keeps the last valid value (the slew gate
+	 * rejects on this basis). */
 	bool ok = entelea_safety_clock != NULL &&
 		  entelea_safety_clock->read_ms != NULL &&
 		  entelea_safety_clock->read_ms(entelea_safety_clock->user,
@@ -90,8 +106,9 @@ entelea_safety_force_write_failures(void)
 	return driver_write_failures;
 }
 
-/* 审计落盘节流（旧 F1/DEC-52①：锁内零 flash；失败提交循环会把异常
- * 下沉放大为写/擦风暴——首条立即，其后 1Hz 采样）。 */
+/* Audit persist throttle (old F1/DEC-52①: no flash access under lock; a
+ * failing commit loop would amplify anomalies into write/erase storms:
+ * the first entry is persisted immediately, then 1 Hz sampling). */
 #define ENTELEA_SAFETY_AUDIT_MIN_MS 1000
 static uint32_t audit_last_persist_ms;
 static uint32_t audit_throttled_count;
@@ -115,11 +132,13 @@ entelea_safety_audit_persist(const void *entry, uint16_t evt)
 		return;
 	}
 	audit_last_persist_ms = now;
-	/* 失败不反噬提交路径（观测面降级——内存/读面另行可观）。 */
+	/* A persist failure does not feed back into the commit path (the
+	 * observation surface degrades; memory and read surfaces stay
+	 * observable). */
 	(void) entelea_storage_audit_append(e, evt);
 }
 
-/** 模块内调用点（commit/force 路径）登记驱动写失败。 */
+/** Record a driver write failure (called from commit and force paths). */
 void
 entelea_safety_count_write_failure(void)
 {
@@ -152,12 +171,13 @@ entelea_safety_register_channel(const entelea_out_channel_t *ch)
 		return ENTELEA_E_PARAM;
 	}
 	if (entelea_ch_find(ch->uid) >= 0) {
-		return ENTELEA_E_PARAM; /* uid 撞名 */
+		return ENTELEA_E_PARAM; /* uid already registered */
 	}
 	if (entelea_ch_count >= ENTELEA_SAFETY_MAX_CHANNELS) {
 		return ENTELEA_E_NOMEM;
 	}
-	/* 三安全态缺一拒绝；且安全态值本身必须落在 limits 内。 */
+	/* Reject if any of the three safe states is missing; each safe-state
+	 * value must also lie within limits. */
 	if (!value_within_limits(ch, ch->poweron) ||
 	    !value_within_limits(ch, ch->linkloss) ||
 	    !value_within_limits(ch, ch->fault)) {
@@ -180,7 +200,7 @@ entelea_result_t
 entelea_safety_bind_clock(const entelea_clock_t *clock)
 {
 	if (clock == NULL) {
-		entelea_safety_clock = NULL; /* 测试隔离恢复 */
+		entelea_safety_clock = NULL; /* Restore for test isolation */
 		return ENTELEA_OK;
 	}
 	if (clock->read_ms == NULL || clock->clock_id == 0) {
@@ -190,8 +210,9 @@ entelea_safety_bind_clock(const entelea_clock_t *clock)
 	return ENTELEA_OK;
 }
 
-/* 发布运行订阅者回调：只能在临界区外、且复查未 forced 时调用
- * （forced 窗口内不发布过期迁移事件）。 */
+/* Publish to running subscriber callbacks: only outside the critical
+ * section, and only after re-checking that forced is clear (no stale
+ * transition event is published inside a forced window). */
 static void
 publish_state_change(size_t i, entelea_ch_state_t next)
 {
@@ -209,11 +230,16 @@ publish_state_change(size_t i, entelea_ch_state_t next)
 	entelea_evt_publish(&evt);
 }
 
-/** 写驱动 + 影子/状态迁移，须持 irq_lock（estop 抢入窗口闭合）。
- * 返回 0=完成；1=forced 抢入（保持 SAFE_FAULT）；-1=后端写失败。
- * A2（owner 2026-11-08 定案）：安全态写失败 = 物理效果未知 → 通道进
- * SAFE_FAULT（撤销输出资格，后续 commit 拒绝；recover 显式恢复）。
- * 影子保留最后确认值（不伪称安全值已落驱）；恢复须 recover 重新写。 */
+/** Write driver + shadow/state transition; caller must hold irq_lock (this
+ * closes the window in which estop can preempt).
+ * Returns 0 = done; 1 = preempted by forced (stays SAFE_FAULT); -1 = backend
+ * write failure.
+ * A2 (owner-approved 2026-11-08): a safe-state write failure means the
+ * physical effect is unknown, so the channel enters SAFE_FAULT (output
+ * eligibility revoked; later commits are rejected; recover restores it
+ * explicitly). The shadow keeps the last confirmed value (a safe value is
+ * never claimed to have reached the driver); recovery must rewrite via
+ * recover. */
 static int
 write_transition_locked(struct entelea_ch_slot *s, entelea_out_value_t value,
 			entelea_ch_state_t next)
@@ -225,23 +251,27 @@ write_transition_locked(struct entelea_ch_slot *s, entelea_out_value_t value,
 		driver_write_failures++;
 		s->state = ENTELEA_ST_SAFE_FAULT;
 		s->fault_by_write_failure =
-			true; /* 仅 channel_recover 可恢复 */
-		/* 基线保留：失败=无确认写，锚点仍是最后一次确认值+时刻。 */
+			true; /* Only channel_recover can recover */
+		/* Baseline kept: a failed write is not a confirmed write; the
+		 * anchor stays at the last confirmed value and time. */
 		return -1;
 	}
 	s->shadow = value;
 	s->fault_by_write_failure = false;
-	/* 确认写刷新 slew 锚点（决定 C）：安全迁移不再重置基线——输出
-	 * 永远从最后确认值受控爬升；estop-clear 循环不再产生免跳。
-	 * now_ms 内部 irq_lock 可嵌套。 */
+	/* A confirmed write refreshes the slew anchor (decision C): safe-state
+	 * transitions no longer reset the baseline, so output always ramps
+	 * from the last confirmed value; estop-clear cycles no longer produce
+	 * a free jump. now_ms may nest irq_lock internally. */
 	s->last_t = entelea_safety_now_ms();
 	s->have_last = true;
 	s->state = next;
 	return 0;
 }
 
-/** 仅状态迁移（激活面：不落驱动——恢复不回写，DR-04），须持 irq_lock。
- * 基线不动（激活无物理写，最后确认值仍有效）。返回 0=完成；1=forced。 */
+/** State transition only (activation path: no driver write; recovery does
+ * not write back, DR-04). Caller must hold irq_lock.
+ * Baseline unchanged (activation performs no physical write, so the last
+ * confirmed value remains valid). Returns 0 = done; 1 = forced. */
 static int
 activate_locked(struct entelea_ch_slot *s)
 {
@@ -260,10 +290,13 @@ entelea_safety_poweron_init(void)
 	for (size_t i = 0; i < entelea_ch_count; i++) {
 		struct entelea_ch_slot *s = &entelea_ch_table[i];
 
-		/* 注册期 poweron 值落驱动：boot 步骤 2 时物理输出即达声明的
-		 * 上电安全态。estop 可在 estop_init（步骤 1）之后任意时刻抢入：
-		 * forced 则跳过，保持 ISR 置的 SAFE_FAULT（缺陷 3）；写失败
-		 * 聚合上报 → boot fail-safe（缺陷 2；物理未知由 fail-safe 收口）。 */
+		/* Write the registration-time poweron value to the driver: at
+		 * boot step 2 the physical output reaches the declared
+		 * power-on safe state. estop may preempt at any time after
+		 * estop_init (step 1): if forced is set, skip and keep
+		 * the ISR-set SAFE_FAULT (defect 3). Write failures are
+		 * aggregated and reported -> boot fail-safe (defect 2; the
+		 * unknown physical state is closed by fail-safe). */
 		unsigned int key = irq_lock();
 		int rc = write_transition_locked(s, s->desc->poweron,
 						 ENTELEA_ST_SAFE_POWERON);
@@ -281,7 +314,8 @@ entelea_safety_set_link(bool up)
 {
 	bool any_fail = false;
 
-	/* 锁收口：迁移路径与 commit/单通道迁移互斥（线程上下文）。 */
+	/* Serialize on write_lock: transition paths exclude commit and
+	 * single-channel transitions (thread context). */
 	entelea_safety_write_lock();
 	atomic_set(&entelea_link_up, up ? 1 : 0);
 	for (size_t i = 0; i < entelea_ch_count; i++) {
@@ -289,7 +323,8 @@ entelea_safety_set_link(bool up)
 
 		if (up && (s->state == ENTELEA_ST_SAFE_POWERON ||
 			   s->state == ENTELEA_ST_SAFE_LINKLOSS)) {
-			/* 激活：不落驱动（恢复不自动回写断链前的值）。 */
+			/* Activation: no driver write (recovery does
+			 * not rewrite the pre-link-loss value). */
 			unsigned int key = irq_lock();
 			int rc = activate_locked(s);
 
@@ -298,7 +333,8 @@ entelea_safety_set_link(bool up)
 				publish_state_change(i, ENTELEA_ST_ACTIVE);
 			}
 		} else if (!up && s->state == ENTELEA_ST_ACTIVE) {
-			/* 断链：声明值落驱动 + 迁移，全部在临界区内（缺陷 3）。 */
+			/* Link loss: write the declared value and transition,
+			 * all inside the critical section (defect 3). */
 			unsigned int key = irq_lock();
 			int rc = write_transition_locked(
 				s, s->desc->linkloss, ENTELEA_ST_SAFE_LINKLOSS);
@@ -324,16 +360,17 @@ entelea_safety_set_arb(entelea_arb_owner_t owner)
 		return ENTELEA_E_PARAM;
 	}
 	if (k_is_in_isr()) {
-		return ENTELEA_E_PERM; /* [thread] API（事件发布经总线） */
+		return ENTELEA_E_PERM; /* [thread] API (events via bus) */
 	}
 	entelea_arb_owner_t old =
 		(entelea_arb_owner_t) atomic_get(&entelea_arb_owner);
 
 	if (old == owner) {
-		return ENTELEA_OK; /* 幂等：零事件零输出 */
+		return ENTELEA_OK; /* Idempotent: no events, no output */
 	}
 	atomic_set(&entelea_arb_owner, owner);
-	/* 切换零输出（输出连续性由 APP 逻辑承载）；仅门控位+留痕事件。 */
+	/* Switching emits no output (output continuity is the APP's job);
+	 * only the gate bit and a logged event change. */
 	const entelea_arb_evt_t payload = {
 		.owner = (uint8_t) owner,
 		.old = (uint8_t) old,
@@ -382,7 +419,7 @@ entelea_safety_force_channel_fault(const char *uid)
 	if (i < 0) {
 		return ENTELEA_E_NOTFOUND;
 	}
-	/* 锁收口：与 commit/迁移互斥 */
+	/* Serialize with commit and transitions */
 	entelea_safety_write_lock();
 	struct entelea_ch_slot *s = &entelea_ch_table[i];
 	entelea_ch_state_t prev = s->state;
@@ -393,7 +430,7 @@ entelea_safety_force_channel_fault(const char *uid)
 	irq_unlock(key);
 	entelea_safety_write_unlock();
 	if (rc < 0) {
-		return ENTELEA_E_IO; /* 后端失败：状态未迁移，不伪造 detach 成功 */
+		return ENTELEA_E_IO; /* Backend failed; state unchanged */
 	}
 	if (rc == 0 && prev != ENTELEA_ST_SAFE_FAULT &&
 	    atomic_get(&entelea_forced) == 0) {
@@ -411,20 +448,21 @@ entelea_safety_channel_recover(const char *uid)
 		return ENTELEA_E_NOTFOUND;
 	}
 	if (atomic_get(&entelea_forced) != 0) {
-		return ENTELEA_E_STATE; /* estop/system_fail 锁存期不得单通道恢复 */
+		return ENTELEA_E_STATE; /* Latched by estop or system_fail */
 	}
-	/* 锁收口：与 commit/迁移互斥 */
+	/* Serialize with commit and transitions */
 	entelea_safety_write_lock();
 	if (atomic_get(&entelea_forced) != 0) {
 		entelea_safety_write_unlock();
-		return ENTELEA_E_STATE; /* 双检：持锁后复核 */
+		return ENTELEA_E_STATE; /* Double-check: recheck under lock */
 	}
 	struct entelea_ch_slot *s = &entelea_ch_table[i];
 	entelea_ch_state_t next = atomic_get(&entelea_link_up) ?
 					  ENTELEA_ST_ACTIVE :
 					  ENTELEA_ST_SAFE_POWERON;
 
-	/* 物理重附 = 重新上电语义：回 poweron 值（写+迁移在临界区内，缺陷 3）。 */
+	/* Physical reattach = power-on semantics: write the poweron value,
+	 * with write and transition inside the critical section (defect 3). */
 	unsigned int key = irq_lock();
 	int rc = write_transition_locked(s, s->desc->poweron, next);
 
@@ -442,27 +480,33 @@ entelea_safety_channel_recover(const char *uid)
 entelea_result_t
 entelea_safety_clear_fault(void)
 {
-	/* estop 锁存的唯一释放路径（运行期可达性归后续命令面；R02 直调仅供
-	 * 测试）。释放语义：状态条件恢复（link up → ACTIVE，否则
-	 * SAFE_LINKLOSS）+ 输出值不回写——物理输出保持 fault 安全值直至
-	 * 下一次显式 commit。estop 可在释放后任意时刻再抢入：逐通道在
-	 * 临界区内复查 forced（缺陷 3）。
-	 * 释放资格（三轮 review 发现 1）：system_fail 是终态（halt 一次性、
-	 * 停机语义），其后 clear_fault 拒绝；安全写失败所致 SAFE_FAULT 的
-	 * 通道（物理未知）不在本路径恢复——仅显式 channel_recover。 */
+	/* The only release path for the estop latch (runtime reachability
+	 * belongs to the later command surface; direct R02 calls are for
+	 * tests only). Release semantics: state recovers conditionally
+	 * (link up -> ACTIVE, otherwise SAFE_LINKLOSS), and output values
+	 * are not written back; the physical output keeps the fault safe
+	 * value until the next explicit commit. estop may preempt again at
+	 * any time after release: each channel re-checks forced inside the
+	 * critical section (defect 3).
+	 * Release eligibility (third-round review finding 1): system_fail is
+	 * terminal (one-shot halt, halt semantics), so clear_fault rejects
+	 * after it; channels in SAFE_FAULT due to a safe-state write failure
+	 * (physical state unknown) are not recovered on this path, only by
+	 * an explicit channel_recover. */
 	if (atomic_get(&entelea_system_failed) != 0) {
-		return ENTELEA_E_STATE; /* system_fail 后不得恢复输出 */
+		return ENTELEA_E_STATE; /* No recovery after system_fail */
 	}
 	atomic_set(&entelea_forced, 0);
 	entelea_safety_estop_announce_reset();
-	/* 锁收口：状态批量迁移与 commit/单通道迁移互斥 */
+	/* Serialize batch state transitions with commit and
+	 * single-channel transitions. */
 	entelea_safety_write_lock();
 	for (size_t i = 0; i < entelea_ch_count; i++) {
 		struct entelea_ch_slot *s = &entelea_ch_table[i];
 
 		if (s->state != ENTELEA_ST_SAFE_FAULT ||
 		    s->fault_by_write_failure) {
-			continue; /* 写失败通道仅 recover 可恢复 */
+			continue; /* Write-failed channels: recover only */
 		}
 		entelea_ch_state_t next = atomic_get(&entelea_link_up) ?
 						  ENTELEA_ST_ACTIVE :
@@ -470,7 +514,7 @@ entelea_safety_clear_fault(void)
 		unsigned int key = irq_lock();
 
 		if (atomic_get(&entelea_forced) == 0) {
-			s->state = next; /* 无物理写：基线保留（决定 C） */
+			s->state = next; /* No write, baseline kept (dec. C) */
 		}
 		irq_unlock(key);
 		if (atomic_get(&entelea_forced) == 0) {

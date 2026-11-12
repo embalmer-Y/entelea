@@ -1,10 +1,14 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * R06 网络机制面（迁自旧 net/linkmon.c + lease.c + cmd.c 幂等缓存语义；
- * 合同见本目录 contract.md）。假传输注入：依赖状态机消费调用方上报的
- * 观测（真实网络探测归后续真机批）；本文件不碰真实网络/云。
- * 数值出处：心跳 1000ms/6 失败/2 恢复（DEC-22/27）、租约 TTL 10s
- * （DEC-41）、幂等缓存 4 槽 LRU（DEC-40）、恢复防抖 2 连（D08 建议）。
+ * R06 network mechanism surface (migrated from the old net/linkmon.c,
+ * lease.c and cmd.c idempotent-cache semantics; see contract.md in this
+ * directory). Fake transport injection: the dependency state machine
+ * consumes observations reported by the caller (real network probing is
+ * deferred to later real-device batches); this file never touches the real
+ * network or cloud.
+ * Value sources: heartbeat 1000ms / 6 misses / 2 recoveries (DEC-22/27),
+ * lease TTL 10s (DEC-41), 4-slot LRU idempotent cache (DEC-40), recovery
+ * debounce of 2 consecutive (D08 advice).
  */
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -12,7 +16,7 @@
 #include <entelea/prov.h>
 #include <entelea/safety.h>
 
-/* ---- ① 心跳监视 ---- */
+/* ---- 1. Heartbeat monitor ---- */
 
 static bool up;
 static bool have_host_hb;
@@ -28,8 +32,9 @@ entelea_net_hb_host(uint64_t now_ms)
 	if (!up && streak >= ENTELEA_NET_HB_RECOVER) {
 		up = true;
 		streak = 0;
-		/* 部署模式守卫（CG2）：仅 orchestrated 把链路判定喂给安全态
-		 * 迁移；standalone 仅观测（本地逻辑照常）。 */
+		/* Deploy-mode guard (CG2): only orchestrated feeds link
+		 * decisions into safety-state transitions; standalone only
+		 * observes (local logic continues as usual). */
 		if (entelea_prov()->deploy_mode ==
 		    ENTELEA_DEPLOY_ORCHESTRATED) {
 			(void) entelea_safety_set_link(true);
@@ -58,7 +63,7 @@ entelea_net_link_up(void)
 	return up;
 }
 
-/* ---- ② 控制租约 ---- */
+/* ---- 2. Control lease ---- */
 
 struct lease_state {
 	uint32_t id;
@@ -82,13 +87,14 @@ entelea_net_lease_acquire(const char *holder, uint64_t now_ms, uint32_t *id,
 	    strlen(holder) >= ENTELEA_NET_LEASE_HOLDER_MAX) {
 		return ENTELEA_E_PARAM;
 	}
-	/* 本地席位激活期：强制失效视图（acquire 拒——不改在册状态）。 */
+	/* Local seat active: the view is forced invalid (acquire is refused;
+	 * the registered state is unchanged). */
 	if (entelea_safety_arb_owner() == ENTELEA_ARB_LOCAL) {
 		return ENTELEA_E_STATE;
 	}
 	if (lease_valid(now_ms)) {
 		if (strcmp(lease.holder, holder) == 0) {
-			/* 续期幂等：id 不变，窗口自 now 顺延。 */
+			/* Renewal idempotent: same id, window from now */
 			lease.expires_at_ms = now_ms + ENTELEA_NET_LEASE_TTL_MS;
 		} else {
 			if (id != NULL) {
@@ -97,10 +103,10 @@ entelea_net_lease_acquire(const char *holder, uint64_t now_ms, uint32_t *id,
 			if (expires_at_ms != NULL) {
 				*expires_at_ms = lease.expires_at_ms;
 			}
-			return ENTELEA_E_STATE; /* 他人持有（回填归因） */
+			return ENTELEA_E_STATE; /* Held by another party */
 		}
 	} else {
-		last_granted++; /* id 单调递增不复用 */
+		last_granted++; /* id: monotonic, never reused */
 		lease.id = last_granted;
 		lease.expires_at_ms = now_ms + ENTELEA_NET_LEASE_TTL_MS;
 		strcpy(lease.holder, holder);
@@ -121,12 +127,12 @@ entelea_net_lease_release(const char *holder, uint64_t now_ms)
 		return ENTELEA_E_PARAM;
 	}
 	if (!lease_valid(now_ms)) {
-		return ENTELEA_OK; /* 幂等空操作 */
+		return ENTELEA_OK; /* Idempotent no-op */
 	}
 	if (strcmp(lease.holder, holder) != 0) {
-		return ENTELEA_E_STATE; /* 他人租约 */
+		return ENTELEA_E_STATE; /* Another holder's lease */
 	}
-	lease.id = 0; /* 归还（过期/释放后重新授予必得新 id） */
+	lease.id = 0; /* Returned: re-grant always gets a new id */
 	lease.holder[0] = '\0';
 	return ENTELEA_OK;
 }
@@ -137,14 +143,15 @@ entelea_net_lease_held_by(const char *holder, uint64_t now_ms)
 	if (holder == NULL) {
 		return false;
 	}
-	/* 本地席位激活期：held_by 恒 false（gated 写命令拒——视图语义）。 */
+	/* Local seat active: held_by is always false (gated write
+	 * commands are refused; view semantics). */
 	if (entelea_safety_arb_owner() == ENTELEA_ARB_LOCAL) {
 		return false;
 	}
 	return lease_valid(now_ms) && strcmp(lease.holder, holder) == 0;
 }
 
-/* ---- ③ 幂等缓存（LRU；unknown 非幂等不自动重试） ---- */
+/* ---- 3. Idempotent cache (LRU; unknown non-idempotent: no retry) ---- */
 
 struct idem_slot {
 	bool used;
@@ -172,7 +179,7 @@ static void
 idem_insert(const char *key, const uint8_t *reply, size_t rlen)
 {
 	if (rlen > ENTELEA_NET_IDEM_REPLY_MAX) {
-		return; /* 回执预算即上限（不可达防御） */
+		return; /* Reply budget is the cap (unreachable guard) */
 	}
 	struct idem_slot *s = NULL;
 
@@ -182,7 +189,7 @@ idem_insert(const char *key, const uint8_t *reply, size_t rlen)
 			break;
 		}
 	}
-	if (s == NULL) { /* 满则驱逐最旧（定容 LRU） */
+	if (s == NULL) { /* Full: evict oldest (fixed-size LRU) */
 		s = &idem_cache[0];
 		for (int i = 1; i < ENTELEA_NET_IDEM_CACHE; i++) {
 			if (idem_cache[i].stamp < s->stamp) {
@@ -214,11 +221,11 @@ entelea_net_idem_run(const char *idem_key, const uint8_t *request,
 	struct idem_slot *hit = idem_find(idem_key);
 
 	if (hit != NULL) {
-		/* 命中：回放缓存回执不重执行。 */
+		/* Hit: replay the cached receipt, do not re-execute. */
 		size_t n = hit->rlen;
 
 		if (n > *reply_len) {
-			return ENTELEA_E_RANGE; /* 调用方缓冲不足（如实） */
+			return ENTELEA_E_RANGE; /* Buffer too small; reported */
 		}
 		memcpy(reply, hit->reply, n);
 		*reply_len = n;
@@ -231,9 +238,10 @@ entelea_net_idem_run(const char *idem_key, const uint8_t *request,
 	size_t n = *reply_len;
 	entelea_result_t r = exec(request, req_len, reply, &n);
 
-	/* 仅确定结果入缓存：PENDING/错误（含 unknown 效果）不缓存——
-	 * 下次同 idem 重执行（调用方决策重试与否；本层不静默重试
-	 * 也不把 unknown 冒充已确认）。 */
+	/* Only definite results are cached. PENDING and errors (including
+	 * unknown effects) are not cached: the same idem key re-executes
+	 * next attempt (the caller decides whether to retry; this layer neither
+	 * retries silently nor passes off unknown as confirmed). */
 	if (r == ENTELEA_OK && n <= ENTELEA_NET_IDEM_REPLY_MAX) {
 		idem_insert(idem_key, reply, n);
 	}
@@ -241,9 +249,9 @@ entelea_net_idem_run(const char *idem_key, const uint8_t *request,
 	return r;
 }
 
-/* ---- ④ 依赖状态机 ---- */
+/* ---- 4. Dependency state machine ---- */
 
-#define DEP_RECOVER_STREAK 2U /* 恢复防抖（D08 建议：2 连 good） */
+#define DEP_RECOVER_STREAK 2U /* Recovery debounce (D08: 2 good in a row) */
 
 static struct {
 	entelea_dep_state_t state;
@@ -314,10 +322,11 @@ entelea_dep_report(entelea_dep_kind_t kind, bool good, uint64_t now_ms)
 			}
 			break;
 		case ENTELEA_DEP_UP:
-			break; /* 已 UP（无变化） */
+			break; /* Already UP: no change */
 		}
 	} else {
-		/* 失败侧保守：立即 DOWN（防抖只在恢复侧——风暴抑制）。 */
+		/* Failures are conservative: go DOWN at once (debounce only
+		 * applies on recovery, to suppress storms). */
 		if (deps[kind].state != ENTELEA_DEP_DOWN) {
 			deps[kind].last_change_ms = now_ms;
 			deps[kind].last_change_known = true;

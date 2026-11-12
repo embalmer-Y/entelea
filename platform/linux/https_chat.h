@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #ifndef ENTELEA_HTTPS_CHAT_H
 #define ENTELEA_HTTPS_CHAT_H
-/* F-2 host 面模型传输（entelea_model_transport_t.chat 的真实现）。 */
+/* F-2 host surface model transport: the real implementation of
+ * entelea_model_transport_t.chat. */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -11,11 +12,11 @@
 
 typedef struct {
 	char host[64];
-	char path_prefix[64]; /* 如 "/api/v1" */
+	char path_prefix[64]; /* e.g. "/api/v1" */
 	char api_key[128];
 	char model[48];
-	char ca_bundle[96]; /* 空=系统缺省 bundle */
-	int *touched; /* 传输触碰计数（联动拒的"不触传输"证据） */
+	char ca_bundle[96]; /* Empty = system default bundle */
+	int *touched; /* Transport touch count (refusal leaves it unchanged) */
 } entelea_https_cfg_t;
 
 entelea_result_t

@@ -1,14 +1,18 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * 包事实层（迁自旧 appmgr/pkg.c+slot.c+verify.c 的 R05 子集；合同见
- * framework/services/package/contract.md）。
- * 分步安装链（MA3.1）：stage_begin（擦）→ stage_chunk（顺序写+回读）→
- * verify（全量管线）→ activate（meta 记录 active）。
- * 验签：TSAP v2 头 + sha256(manifest‖wasm) 对拍 + COSE_Sign1 ed25519
- * （tweetnacl cr.yp.to 20140427 逐字节未改——crypto/PROVENANCE.md）+
- * 内嵌 payload 副本逐块比对（签 A 装 B 防御）。多根信任集（EC2）：
- * 工厂根（TEST=固定测试根 / 生产=prov pk0+pk1）∪ R03 信任表，任一过即过。
- * v1/未知 flags/域外 = fail-closed 拒收。active 事实经 meta 双副本。
+ * Package fact layer (migrated from the R05 subset of the old appmgr/pkg.c,
+ * slot.c and verify.c; see framework/services/package/contract.md).
+ * Staged install chain (MA3.1): stage_begin (erase) -> stage_chunk (sequential
+ * write plus read-back) -> verify (full pipeline) -> activate (meta records
+ * active).
+ * Signature verification: TSAP v2 header + sha256(manifest || wasm)
+ * cross-check + COSE_Sign1 ed25519 (tweetnacl cr.yp.to 20140427, unmodified
+ * byte for byte; see crypto/PROVENANCE.md) + block-by-block comparison of the
+ * embedded payload copy (defends against signing A while installing B).
+ * Multi-root trust set (EC2): the factory root (TEST = fixed test root;
+ * production = prov pk0+pk1) union the R03 trust table; any one passing is
+ * enough. v1, unknown flags or out-of-domain values = fail-closed rejection.
+ * The active fact is kept in the dual-copy meta.
  */
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -22,10 +26,12 @@
 
 #define SLOT_SZ ENTELEA_APP_SLOT_SIZE
 
-/* 顺序写游标（stage_begin 复位；chunk 乱序拒——appstore.h 合同）。 */
+/* Sequential write cursor (reset by stage_begin; out-of-order chunks are
+ * refused per the appstore.h contract). */
 static uint32_t staged_until[ENTELEA_APP_SLOT_COUNT];
 
-/* ENTELEA_PART_SLOT_A/B 在存储端口（part.c）——本层经公共端口访问。 */
+/* ENTELEA_PART_SLOT_A/B live in the storage port (part.c); this layer
+ * accesses them through the public port. */
 
 entelea_result_t
 entelea_pkg_slot_read(uint8_t slot, uint32_t off, void *buf, uint32_t len)
@@ -56,7 +62,7 @@ entelea_pkg_stage_begin(uint8_t slot)
 	if (slot >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_PARAM;
 	}
-	staged_until[slot] = 0; /* 游标复位 */
+	staged_until[slot] = 0; /* Reset cursor */
 	return entelea_storage_erase(
 		(entelea_store_part_t) (ENTELEA_PART_SLOT_A + slot));
 }
@@ -68,9 +74,10 @@ entelea_pkg_stage_chunk(uint8_t slot, uint32_t off, const void *buf,
 	if (buf == NULL || off > SLOT_SZ || len > SLOT_SZ - off) {
 		return ENTELEA_E_RANGE;
 	}
-	/* review P2 修复：顺序写纪律（乱序拒——appstore.h 合同承诺）。 */
+	/* review P2 fix: sequential write discipline; out-of-order writes are
+	 * refused, as the appstore.h contract promises. */
 	if (slot >= ENTELEA_APP_SLOT_COUNT || off != staged_until[slot]) {
-		return ENTELEA_E_RANGE; /* 乱序/跳写拒 */
+		return ENTELEA_E_RANGE; /* Out-of-order/skipped: refused */
 	}
 	if (entelea_pkg_slot_write(slot, off, buf, len) != ENTELEA_OK) {
 		return ENTELEA_E_IO;
@@ -86,22 +93,23 @@ entelea_pkg_stage_chunk(uint8_t slot, uint32_t off, const void *buf,
 		if (entelea_pkg_slot_read(slot, off + done, back, n) !=
 			    ENTELEA_OK ||
 		    memcmp(back, (const uint8_t *) buf + done, n) != 0) {
-			return ENTELEA_E_IO; /* 回读校验（RAM 后端不触发；flash 语义） */
+			return ENTELEA_E_IO; /* Read-back (flash semantics) */
 		}
 	}
-	staged_until[slot] = off + len; /* 顺序游标推进 */
+	staged_until[slot] = off + len; /* Advance cursor */
 	return ENTELEA_OK;
 }
 
-/* 固定测试根（旧 Q-29④ 公开材料；私钥在旧 Forge fixtures——测试信任
- * ≠生产信任）。 */
+/* Fixed test root (public material from old Q-29 item 4; the private key
+ * lives in the old Forge fixtures). Test trust is not production trust. */
 const uint8_t entelea_pkg_test_root_pub[32] = {
 	0xf0, 0x84, 0xa4, 0xe5, 0x6f, 0x68, 0xb6, 0xab, 0x5c, 0xbe, 0xe8,
 	0x60, 0x3c, 0x59, 0xa4, 0x2a, 0xc2, 0xef, 0x26, 0x51, 0xc4, 0x93,
 	0x94, 0xa7, 0x03, 0x5c, 0xd5, 0xdb, 0x52, 0xdb, 0x47, 0x7a,
 };
 
-/* 有效信任集：工厂根（TEST=固定测试根/生产=prov 双钥）∪ 信任表。 */
+/* Effective trust set: factory root (TEST = fixed test root; production =
+ * prov dual keys) union the trust table. */
 static uint8_t
 trust_effective(const uint8_t *keys_out[ENTELEA_TRUST_SET_MAX])
 {
@@ -131,7 +139,8 @@ trust_effective(const uint8_t *keys_out[ENTELEA_TRUST_SET_MAX])
 	return n;
 }
 
-/* definite 头元素（bstr/map）；短头/1B/2B/4B 扩展；不定长拒。 */
+/* Definite-length header item (bstr/map): short form or a 1B/2B/4B
+ * extension; indefinite length is refused. */
 static entelea_result_t
 read_head(uint8_t slot, uint32_t off, uint8_t want_maj, uint32_t *data_len,
 	  uint8_t *hdr_len)
@@ -155,7 +164,7 @@ read_head(uint8_t slot, uint32_t off, uint8_t want_maj, uint32_t *data_len,
 	uint8_t nb = (info == 24) ? 1 : (info == 25) ? 2 : (info == 26) ? 4 : 0;
 
 	if (nb == 0) {
-		return ENTELEA_E_INVALID_SIG; /* 8B 扩展超 u32 容器域 */
+		return ENTELEA_E_INVALID_SIG; /* 8B extension exceeds u32 */
 	}
 	uint8_t lb[4] = { 0, 0, 0, 0 };
 
@@ -172,8 +181,9 @@ read_head(uint8_t slot, uint32_t off, uint8_t want_maj, uint32_t *data_len,
 	return ENTELEA_OK;
 }
 
-/* boot 快校验：头 v2 + 摘要重哈希（不含 ed25519——安装已全量验签，
- * boot 只防持久化位腐）。 */
+/* Quick boot check: v2 header plus digest rehash (no ed25519; install already
+ * did full signature verification, so boot only guards against stored bit
+ * rot). */
 static entelea_result_t
 check_digest(uint8_t slot, entelea_tsap_view_t *v)
 {
@@ -186,7 +196,7 @@ check_digest(uint8_t slot, entelea_tsap_view_t *v)
 		return ENTELEA_E_INVALID_SIG;
 	}
 	if ((uint64_t) v->cose_off + 2 > (uint64_t) SLOT_SZ) {
-		return ENTELEA_E_PARAM; /* 段布局越出 slot 物理面 */
+		return ENTELEA_E_PARAM; /* Segment layout exceeds slot */
 	}
 	uint8_t digest[ENTELEA_TSAP_DIGEST_SIZE];
 	uint8_t buf[512];
@@ -285,8 +295,9 @@ entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
 		return ENTELEA_E_IO;
 	}
 
-	/* COSE_Sign1 精确子集：tag18 + array4。读失败 = E_IO，格式不符 =
-	 * E_INVALID_SIG（RF1：介质故障不得改写为包坏）。 */
+	/* COSE_Sign1 exact subset: tag 18 + array 4. Read failure = E_IO;
+	 * format mismatch = E_INVALID_SIG (RF1: media faults must not be
+	 * rewritten as a bad package). */
 	uint8_t tag[2];
 
 	if (entelea_pkg_slot_read(slot, v->cose_off, tag, 2) != ENTELEA_OK) {
@@ -348,7 +359,7 @@ entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
 	const uint32_t payload_len = v->manifest_len + v->wasm_len;
 
 	if (payload_len > 4096) {
-		return ENTELEA_E_PARAM; /* 超本构建验签缓冲（档位随板调） */
+		return ENTELEA_E_PARAM; /* Over verify buffer (per-board) */
 	}
 	static uint8_t scratch[VERIFY_SCRATCH];
 	uint8_t *sm = scratch;
@@ -375,7 +386,7 @@ entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
 			return ENTELEA_E_IO;
 		}
 		if (memcmp(raw, sm + tail, n) != 0) {
-			return ENTELEA_E_INVALID_SIG; /* 内嵌≠裸段（签 A 装 B） */
+			return ENTELEA_E_INVALID_SIG; /* embedded != raw */
 		}
 		coff += n;
 		roff += n;
@@ -397,8 +408,10 @@ entelea_pkg_verify(uint8_t slot, const uint8_t root_pubkey[32],
 	if (!verified) {
 		return ENTELEA_E_INVALID_SIG;
 	}
-	/* 规范包长 = 签名 bstr 末尾（COSE_Sign1 末元素；Forge package_digest
-	 * 的输入域）。签名读已受 slot 界约束，此处显式再界。 */
+	/* Canonical package length = end of the signature bstr (last
+	 * COSE_Sign1 element; the input domain of Forge package_digest).
+	 * The signature read is already bounded by the slot; bound it again
+	 * here explicitly. */
 	if ((uint64_t) sig_off + 64U > (uint64_t) SLOT_SZ) {
 		return ENTELEA_E_INVALID_SIG;
 	}
@@ -454,10 +467,12 @@ entelea_pkg_file_digest_capture(uint8_t slot, uint32_t len, uint8_t out[32],
 	return ENTELEA_OK;
 }
 
-/* active 事实：KV 记录（app_hash 键空间="PAGA"，1B=slot）。
- * 板级批 review P1-1 修复：原与 trial_flush 共用 meta 单槽——两消费者
- * 互相销毁持久事实（activate 后 trial_flush 顶掉激活记录/反向亦然）。
- * KV=R03 多消费者面（键空间=app_hash）；meta 单槽归 R12 trial 独占。 */
+/* Active fact: a KV record (app_hash key space "PAGA", 1 byte = slot).
+ * Board batch review P1-1 fix: it used to share the single meta slot with
+ * trial_flush, so the two consumers destroyed each other's persistent facts
+ * (after activate, trial_flush overwrote the activation record, and vice
+ * versa). KV is the R03 multi-consumer surface (key space = app_hash); the
+ * single meta slot belongs exclusively to the R12 trial. */
 #define PKG_ACTIVE_KV_TAG 0x50414741U /* "PAGA" */
 
 entelea_result_t
@@ -481,7 +496,7 @@ entelea_pkg_active(uint8_t *slot)
 	int32_t n = entelea_kv_load(PKG_ACTIVE_KV_TAG, &rec, 1);
 
 	if (n < 0 && n != (int32_t) ENTELEA_E_NOTFOUND) {
-		return (entelea_result_t) n; /* 介质错误≠无 active（RF1） */
+		return (entelea_result_t) n; /* Media error != none (RF1) */
 	}
 	if (n != 1 || rec >= ENTELEA_APP_SLOT_COUNT) {
 		return ENTELEA_E_UNINIT;
@@ -494,7 +509,7 @@ entelea_pkg_active(uint8_t *slot)
 entelea_result_t
 entelea_pkg_test_reset(void)
 {
-	entelea_kv_test_reset(); /* review P1-1：active 事实迁 KV——重置连键空间态 */
+	entelea_kv_test_reset(); /* review P1-1: active fact is in KV */
 	for (uint8_t s = 0; s < ENTELEA_APP_SLOT_COUNT; s++) {
 		entelea_result_t r = entelea_storage_erase(
 			(entelea_store_part_t) (ENTELEA_PART_SLOT_A + s));

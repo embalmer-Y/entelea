@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* R07 Linux 最小宿主：同源合同矩阵主机面验证（D02：最小原生宿主——
- * 公共合同 + 时间适配 + 安全机制（模拟后端）在 Linux 编译运行；
- * 不移植 Zephyr 内核面、不附带完整 Linux 伴侣）。 */
+/* R07 Linux minimal host: host-surface verification of the same-source
+ * contract matrix (D02: minimal native host; the common contract, time
+ * adapter, and safety mechanisms (simulated backend) build and run on Linux.
+ * The Zephyr kernel surface is not ported and no full Linux companion is
+ * included). */
 #define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <string.h>
@@ -41,7 +43,7 @@ sub_b(const entelea_event_t *e, void *u)
 int
 main(void)
 {
-	/* ① 实例时钟（Linux 适配）。 */
+	/* 1. Instance clock (Linux adapter). */
 	entelea_clock_t clk;
 
 	CHECK(entelea_platform_clock_init(&clk) == ENTELEA_OK);
@@ -53,9 +55,9 @@ main(void)
 	uint64_t first = now.ms;
 
 	CHECK(entelea_clock_now(&clk, &now) == ENTELEA_OK);
-	CHECK(now.ms >= first); /* 单调（CLOCK_MONOTONIC） */
+	CHECK(now.ms >= first); /* Monotonic (CLOCK_MONOTONIC) */
 
-	/* ② 事件总线（静态序/容量）。 */
+	/* 2. Event bus (static order/capacity). */
 	CHECK(entelea_evt_bind_clock(&clk) == ENTELEA_OK);
 	CHECK(entelea_evt_subscribe(ENTELEA_EVT_BOOT_STEP, sub_a, NULL) ==
 	      ENTELEA_OK);
@@ -65,9 +67,10 @@ main(void)
 	const entelea_event_t e = { .id = ENTELEA_EVT_BOOT_STEP };
 
 	entelea_evt_publish(&e);
-	CHECK(order_n == 2); /* 同步分发 */
+	CHECK(order_n == 2); /* Synchronous dispatch */
 
-	/* ③ 安全机制（模拟后端）：注册/三态/唯一写路径/读回。 */
+	/* 3. Safety mechanisms (simulated backend): registration, three-state
+	 * machine, sole write path, and readback. */
 	CHECK(entelea_safety_bind_clock(&clk) == ENTELEA_OK);
 	static const entelea_out_channel_t ch = {
 		.uid = "led",
@@ -79,7 +82,7 @@ main(void)
 	CHECK(entelea_safety_register_channel(&ch) == ENTELEA_OK);
 	CHECK(entelea_safety_commit("led",
 				    (entelea_out_value_t) { .b = true }) ==
-	      ENTELEA_E_STATE); /* SAFE_POWERON 拒 */
+	      ENTELEA_E_STATE); /* Refused in SAFE_POWERON */
 	CHECK(entelea_safety_set_link(true) == ENTELEA_OK);
 	CHECK(entelea_safety_commit("led", (entelea_out_value_t) {
 						   .b = true }) == ENTELEA_OK);
@@ -94,11 +97,12 @@ main(void)
 	CHECK(st == ENTELEA_ST_SAFE_FAULT);
 	CHECK(entelea_safety_commit("led",
 				    (entelea_out_value_t) { .b = false }) ==
-	      ENTELEA_E_STATE); /* 锁存期拒 */
+	      ENTELEA_E_STATE); /* Refused while latched */
 
-	/* ④ fail reason 留痕钩（弱桩路径——Linux 宿主无存储）。 */
+	/* 4. Fail reason trace hook (weak stub path; the Linux host has no
+	 * storage). */
 	entelea_safety_system_fail(ENTELEA_FAIL_BOOT(1));
-	CHECK(1); /* 测试构建返回（非 halt）*/
+	CHECK(1); /* Test builds return instead of halting */
 
 	printf(failures == 0 ? "HOST SUITE PASS (linux minimal host)\n" :
 			       "HOST SUITE FAIL (%d)\n",

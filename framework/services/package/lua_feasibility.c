@@ -1,29 +1,42 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * D03 Lua 接入合同——关键可行性验证（R05，合同见本目录 contract.md）。
- * 目标（规划原文）：载荷/版本识别、宿主调用与可信身份、内存预算、执行
- * 预算与有界中断/停止、错误/回执、数据隔离及工厂产物描述。用代表性验证
- * 检验资源与停止约束；验证可发现不适用的平台/能力，必须明确记录。
+ * D03 Lua integration contract: key feasibility validation (R05; see
+ * contract.md in this directory).
+ * Goals (plan wording): payload/version identification, host calls and
+ * trusted identity, memory budget, execution budget with bounded interrupt
+ * and stop, errors/receipts, data isolation, and factory artifact
+ * description. Representative validation checks resource and stop
+ * constraints. Validation may find platforms or capabilities that do not
+ * apply; these must be recorded explicitly.
  *
- * 本文件 = 机制验证（无 Lua 解释器依赖——未批准新依赖）：
- *  - 载荷/版本识别：Lua 载荷头部 "\x1bLua" + version 0x53/0x54（5.3/5.4）
- *    字节识别（对拍 luaL_checkheader 语义子集）。
- *  - 可信身份：natives 只信宿主注入的 principal（R04 面；VM 内输入整数
- *    不可转 principal——与 Wasm 同纪律）。
- *  - 内存预算：每实例配额 + 分配闸（超配额拒——代表 lua_Allocator 的
- *    预算钩子点；真解释器接入时挂 allocator）。
- *  - 执行预算与有界停止：指令计数闸（代表 lua_sethook count 模式的
- *    预算语义：超限 → 停止并回错误，不静默续跑）。
- *  - 数据隔离：实例间内存不共享（配额独立 + 无共享 blob 面）。
- *  - 工厂产物描述：接入合同结构体（供 R12 Forge 生成/对拍）。
+ * This file is mechanism validation with no Lua interpreter dependency
+ * (no new dependency has been approved):
+ *  - Payload/version identification: Lua header "\x1bLua" plus version
+ *    0x53/0x54 (5.3/5.4), byte-level (cross-checked against a subset of
+ *    luaL_checkheader semantics).
+ *  - Trusted identity: natives trust only the principal injected by the host
+ *    (R04 surface; integers input inside the VM cannot become a principal,
+ *    the same discipline as Wasm).
+ *  - Memory budget: per-instance quota plus an allocation gate (over-quota
+ *    requests are refused; this stands in for the lua_Allocator hook point,
+ *    to be attached to the allocator when a real interpreter is integrated).
+ *  - Execution budget and bounded stop: instruction-count gate (stands in for
+ *    lua_sethook count-mode budget semantics: over limit means stop and
+ *    return an error, never silently continue).
+ *  - Data isolation: memory is not shared between instances (independent
+ *    quota and no shared blob surface).
+ *  - Factory artifact description: integration contract struct (for R12 Forge
+ *    generation and cross-check).
  *
- * 如实边界：不装 Lua 解释器、不证明真实 Lua VM 的停止延迟（挂点语义
- * 已定，实测归正式支持批次）；本验证证明的是**接入合同的机制可行性**。
+ * Honest boundary: no Lua interpreter is installed, and the stop latency of a
+ * real Lua VM is not proven (hook point semantics are fixed; measurement is
+ * deferred to the formal support batch). This validation proves the
+ * **mechanism feasibility of the integration contract**.
  */
 #include <string.h>
 #include <entelea/lua_contract.h>
 
-/* ---- 载荷/版本识别（字节级，fail-closed） ---- */
+/* ---- Payload/version identification (byte level, fail-closed) ---- */
 
 entelea_result_t
 entelea_lua_payload_ident(const uint8_t *data, uint32_t len,
@@ -34,19 +47,19 @@ entelea_lua_payload_ident(const uint8_t *data, uint32_t len,
 	}
 	if (data[0] != 0x1b || data[1] != 'L' || data[2] != 'u' ||
 	    data[3] != 'a') {
-		return ENTELEA_E_INVALID_SIG; /* 非 Lua 载荷（fail-closed，
-						 * 不得默认解释为 Wasm 或按
-						 * 后缀推断）。 */
+		return ENTELEA_E_INVALID_SIG; /* non-Lua payload (fail-closed;
+					       * must not default to Wasm or
+					       * infer from suffix). */
 	}
 	if (len < 5) {
 		return ENTELEA_E_INVALID_SIG;
 	}
 	out->format = ENTELEA_LUA_FMT_BINARY;
-	out->version = data[4]; /* 0x53=5.3 / 0x54=5.4（字节码） */
+	out->version = data[4]; /* 0x53=5.3 / 0x54=5.4 (bytecode) */
 	return ENTELEA_OK;
 }
 
-/* ---- 内存预算（分配闸——lua_Allocator 挂点语义） ---- */
+/* ---- Memory budget (allocation gate; lua_Allocator hook semantics) ---- */
 
 entelea_result_t
 entelea_lua_mem_init(entelea_lua_mem_budget_t *b, uint32_t quota_bytes)
@@ -61,8 +74,9 @@ entelea_lua_mem_init(entelea_lua_mem_budget_t *b, uint32_t quota_bytes)
 	return ENTELEA_OK;
 }
 
-/* 代表 allocator 的 alloc/realloc/free 钩子：超配额 = 拒（NULL）+计数；
- * 实例隔离 = 每实例独立 budget（无共享池旁路）。 */
+/* Stand-in for the allocator's alloc/realloc/free hooks: over-quota
+ * requests are refused (NULL) and counted. Instance isolation: each
+ * instance has its own budget (no shared-pool bypass). */
 bool
 entelea_lua_mem_alloc(entelea_lua_mem_budget_t *b, uint32_t old_n,
 		      uint32_t new_n)
@@ -74,7 +88,7 @@ entelea_lua_mem_alloc(entelea_lua_mem_budget_t *b, uint32_t old_n,
 		uint32_t grow = new_n - old_n;
 
 		if (grow > b->quota_bytes - b->used_bytes) {
-			b->denied++; /* 超配额：拒（VM 内 OOM 错误路径） */
+			b->denied++; /* Over quota: refuse (VM OOM path) */
 			return false;
 		}
 		b->used_bytes += grow;
@@ -87,7 +101,7 @@ entelea_lua_mem_alloc(entelea_lua_mem_budget_t *b, uint32_t old_n,
 	return true;
 }
 
-/* ---- 执行预算与有界停止（指令计数闸——sethook count 语义） ---- */
+/* ---- Execution budget and bounded stop (sethook count gate) ---- */
 
 entelea_result_t
 entelea_lua_exec_init(entelea_lua_exec_budget_t *b, uint32_t step_budget)
@@ -101,8 +115,9 @@ entelea_lua_exec_init(entelea_lua_exec_budget_t *b, uint32_t step_budget)
 	return ENTELEA_OK;
 }
 
-/* 每步调用：超预算 → false（调用方必须停止执行并返回 E_TIMEOUT——
- * 不静默续跑；deadline 语义见 R01 app.h：deadline 不替代执行预算）。 */
+/* Called per step. Over budget returns false: the caller must stop and
+ * return E_TIMEOUT, never silently continue. For deadline semantics see
+ * R01 app.h: a deadline does not replace the execution budget. */
 bool
 entelea_lua_exec_step(entelea_lua_exec_budget_t *b)
 {
@@ -110,16 +125,16 @@ entelea_lua_exec_step(entelea_lua_exec_budget_t *b)
 		return false;
 	}
 	if (b->steps_used >= b->step_budget) {
-		b->aborted = true; /* 有界停止：此后一切 step 拒 */
+		b->aborted = true; /* Bounded stop: all later steps refused */
 		return false;
 	}
 	b->steps_used++;
 	return true;
 }
 
-/* ---- 工厂产物描述（接入合同结构体——R12 Forge 对拍面） ---- */
+/* ---- Factory artifact description (contract struct for R12 Forge) ---- */
 
-/* CBOR 无符号整数（RFC 8949 首选序列化：最短编码）。 */
+/* CBOR unsigned integer (RFC 8949 preferred serialization: shortest form). */
 static uint32_t
 put_uint(uint8_t *out, uint32_t v)
 {
@@ -146,8 +161,9 @@ put_uint(uint8_t *out, uint32_t v)
 	return 5;
 }
 
-/* 与 Forge packer build_manifest 逐字节一致：map(4){0:version, 1:mem_kb,
- * 2:steps, 3:fmt}，int 键按数值升序（RFC 8949 确定性编码）。 */
+/* Byte-for-byte identical to the Forge packer build_manifest:
+ * map(4) {0:version, 1:mem_kb, 2:steps, 3:fmt}, int keys in ascending
+ * numeric order (RFC 8949 deterministic encoding). */
 entelea_result_t
 entelea_lua_contract_encode(const entelea_lua_contract_t *c,
 			    uint8_t out[ENTELEA_LUA_CONTRACT_CBOR_MAX],
@@ -157,12 +173,12 @@ entelea_lua_contract_encode(const entelea_lua_contract_t *c,
 		return ENTELEA_E_PARAM;
 	}
 	if (c->version != 1 || c->format != ENTELEA_LUA_FMT_BINARY) {
-		return ENTELEA_E_PARAM; /* 未知合同版本/载荷格式 fail-closed */
+		return ENTELEA_E_PARAM; /* Bad version/format: fail-closed */
 	}
 	if (c->mem_quota_kb == 0 || c->mem_quota_kb > 512 ||
 	    c->exec_budget_steps == 0 || c->exec_budget_steps > 10000000U) {
-		return ENTELEA_E_PARAM; /* 域外（建议上限：内存 512KB/步
-					 * 1e7——工厂生成侧约束面） */
+		return ENTELEA_E_PARAM; /* out of domain: suggested limits are
+					 * 512KB memory, 1e7 steps (factory) */
 	}
 	const uint32_t val[4] = { c->version, c->mem_quota_kb,
 				  c->exec_budget_steps, (uint32_t) c->format };
@@ -173,6 +189,6 @@ entelea_lua_contract_encode(const entelea_lua_contract_t *c,
 		out[n++] = (uint8_t) k;
 		n += put_uint(out + n, val[k]);
 	}
-	*out_len = n; /* 上限 1(map)+4(键)+1+3+5+1 = 15 ≤ CBOR_MAX */
+	*out_len = n; /* Max 1(map)+4(keys)+1+3+5+1 = 15 <= CBOR_MAX */
 	return ENTELEA_OK;
 }

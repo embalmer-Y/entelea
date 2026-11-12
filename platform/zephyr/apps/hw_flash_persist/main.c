@@ -1,17 +1,23 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* R03 板级批 A-3 硬件闸镜像：真机 flash 跨复位持久化（无人值守）。
- * 相位账本=kv（flash 持久）；复位走生产路径（system_fail → task_wdt
- * 通道到期 → sys_reboot——同 hw_fault_stop P1）。
- *  P1（无 kv 记录/上电进入）：meta 写模式串+回读；kv 存 P1；audit 追加
- *     一条；system_fail(FAIL_BOOT(7)) → SW 复位（system_fail 同时经
- *     noinit 落复位原因——本身即 noinit flash 持久化的一环）。
- *  P2（kv=P1 进入，即复位后）：meta 回读==P1 模式串；kv 最新==P1；
- *     audit 计数≥1；last_reset 原因=FAIL_BOOT(7)（noinit 经 flash 跨
- *     SW 复位存活并在本启被一次性消费）→ kv 存 P2 → 常驻收官。
- *  P3（kv=P2）：幂等安全常驻（重复上电不再动状态面）。
- * 无测试钩子：只走公共生产 API（supervision_boot/meta/kv/audit/
- * system_fail）。真断电（VBUS）属到场项——本镜像证明 SW/MWDT 复位
- * 域的 flash 持久化。 */
+/* R03 board batch A-3 hardware-gate image: unattended flash persistence
+ * across resets on real hardware.
+ * Phase ledger = kv (flash-persistent). Resets take the production path
+ * (system_fail -> task_wdt channel expiry -> sys_reboot, as in hw_fault_stop
+ * P1).
+ *  P1 (no kv record, i.e. power-on entry): write the meta pattern string and
+ *     read it back; store P1 in kv; append one audit entry; then
+ *     system_fail(FAIL_BOOT(7)) -> SW reset (system_fail also records the
+ *     reset cause through noinit, which is itself part of the flash
+ *     persistence chain).
+ *  P2 (kv = P1 entry, i.e. after the reset): meta readback == P1 pattern;
+ *     latest kv == P1; audit count >= 1; last_reset cause = FAIL_BOOT(7)
+ *     (noinit survives the SW reset via flash and is consumed once in this
+ *     boot) -> store P2 in kv -> park resident and finish.
+ *  P3 (kv = P2): idempotent safe resident state (repeated power-on does not
+ *     touch the state surface again).
+ * No test hooks: only the public production APIs are used (supervision_boot,
+ * meta, kv, audit, system_fail). Real power loss (VBUS) is a field item; this
+ * image proves flash persistence in the SW/MWDT reset domain. */
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
@@ -26,7 +32,8 @@
 
 #define PHASE_APP 0x50484631U /* "PHF1" */
 
-/* 闸内检点打印（PASS/FAIL 逐条落串口——证据面；不中断执行）。 */
+/* In-gate checkpoint printing: each PASS/FAIL goes to the serial port
+ * (evidence surface); execution is not aborted. */
 #define CHK(cond, msg) \
 	printk("[hw-flash] %s: %s\n", (cond) ? "PASS" : "FAIL", msg)
 
@@ -73,12 +80,14 @@ main(void)
 	int32_t kvn = entelea_kv_load(PHASE_APP, kvb, sizeof(kvb));
 
 	if (kvn == 2 && memcmp(kvb, "P1", 2) == 0) {
-		/* ---- P2：复位后验证 ---- */
+		/* ---- P2: post-reset verification ---- */
 		uint8_t rb[ENTELEA_STORAGE_META_MAX];
 		uint16_t rlen = 0;
 
-		/* meta 面跨复位：P1 写入的诊断模式串须原样回读。试用持久化闸已移出本
-		 * 应用（包路径超出其 SRAM 预算；由 native delivery 套件覆盖）。 */
+		/* Meta across reset: the diagnostic pattern written by P1 must
+		 * read back unchanged. The trial-persistence gate moved out
+		 * of this app (the package path exceeds its SRAM budget; the
+		 * native delivery suite covers it). */
 		CHK(entelea_storage_meta_read(rb, sizeof(rb), &rlen) ==
 				    ENTELEA_OK &&
 			    rlen == sizeof(META_PAT) &&
@@ -102,7 +111,7 @@ main(void)
 	} else if (kvn == 2 && memcmp(kvb, "P2", 2) == 0) {
 		printk("[hw-flash] P3: already verified; parking resident\n");
 	} else {
-		/* ---- P1：写入面 ---- */
+		/* ---- P1: write phase ---- */
 		CHK(entelea_storage_meta_write(META_PAT, sizeof(META_PAT)) ==
 			    ENTELEA_OK,
 		    "P1 meta write");

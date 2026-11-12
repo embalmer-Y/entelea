@@ -2,10 +2,14 @@
 #ifndef ENTELEA_DELIVERY_H
 #define ENTELEA_DELIVERY_H
 
-/* R12 工厂/试用/晋升合同见 framework/services/delivery/contract.md。
- * 编程循环=OpenHands Software Agent SDK（owner 已确认决策）——SDK 侧
- * 循环不在固件内；Forge 侧集成契约（窄接口）与固件试用状态机在此。
- * 单候选、内容绑定试用确认与稳定集准入（D-E）已有；试用数据晋升（D05 细节）尚未闭合。 */
+/* R12 factory / trial / promotion contract: see
+ * framework/services/delivery/contract.md.
+ * The programming loop is the OpenHands Software Agent SDK (an owner-confirmed
+ * decision); the SDK-side loop is not inside the firmware. The Forge-side
+ * integration contract (a narrow interface) and the firmware trial state
+ * machine live here. Single-candidate, content-bound trial confirmation and
+ * stable-set admission (D-E) are implemented; promotion of trial data (D05
+ * details) is not yet closed. */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -16,36 +20,38 @@
 extern "C" {
 #endif
 
-/* ---- 试用状态机（单候选槽——D05 已批方向） ---- */
+/* ---- Trial state machine (single candidate slot; D05 direction) ---- */
 
 typedef enum {
 	ENTELEA_TRIAL_NONE = 0,
-	ENTELEA_TRIAL_PENDING_CONFIRM, /* 包已就位：待用户 hash/权限确认 */
-	ENTELEA_TRIAL_ACTIVE, /* 用户已确认：试用运行中 */
-	ENTELEA_TRIAL_REJECTED, /* 用户拒绝：槽保留可重推 */
-	ENTELEA_TRIAL_TIMEOUT, /* 确认窗超时：fail-closed 撤销 */
-	ENTELEA_TRIAL_UNINITIALIZED, /* 尚未读取持久状态 */
+	ENTELEA_TRIAL_PENDING_CONFIRM, /* awaiting user hash/perm confirm */
+	ENTELEA_TRIAL_ACTIVE, /* user confirmed; trial running */
+	ENTELEA_TRIAL_REJECTED, /* user rejected; slot kept for re-submit */
+	ENTELEA_TRIAL_TIMEOUT, /* confirm timed out; revoked (fail-closed) */
+	ENTELEA_TRIAL_UNINITIALIZED, /* persistent state not yet read */
 } entelea_trial_state_t;
 
-#define ENTELEA_TRIAL_SLOT_UNKNOWN 0xFFU /* 坏记录恢复：候选槽不可知 */
-#define ENTELEA_TRIAL_PERM_MAX 96U /* 权限列表字节上限（分号分隔，不含 NUL） */
+#define ENTELEA_TRIAL_SLOT_UNKNOWN 0xFFU /* bad-record recovery: slot unknown */
+#define ENTELEA_TRIAL_PERM_MAX 96U /* ';'-separated list, bytes excl. NUL */
 #define ENTELEA_TRIAL_STEPS_MAX \
-	100000000U /* 确认步数上限 = 设备 Wasm 配额上限 */
+	100000000U /* confirmed step limit = device Wasm quota limit */
 
-/* 用户确认的对象：展示 = 确认 = 执行绑定。digest 只由设备计算。 */
+/* The object the user confirms: display = confirmation = execution binding.
+ * Only the device computes the digest. */
 typedef struct {
-	uint8_t digest[32]; /* 验签后整文件 sha256（设备计算） */
+	uint8_t digest[32]; /* whole-file sha256 after verify (device) */
 	char perm
-		[ENTELEA_TRIAL_PERM_MAX]; /* 权限列表，如 "gpio:read:0"；空 = 无权限 */
+		[ENTELEA_TRIAL_PERM_MAX]; /* e.g. "gpio:read:0"; empty = none */
 	uint8_t perm_len;
 	uint32_t
-		budget_steps; /* 确认步数（执行配额 = min(请求, 此值, 设备上限)） */
+		budget_steps; /* confirmed steps; quota = min(req, this, cap) */
 	uint8_t version;
-	uint8_t slot; /* 候选所在 app slot */
-	uint32_t epoch; /* 提交纪元：submit 赋值（输入忽略），确认须回显 */
+	uint8_t slot; /* app slot holding the candidate */
+	uint32_t epoch; /* submit epoch (set by submit; confirm echoes it) */
 } entelea_trial_candidate_t;
 
-/* 提交请求：宿主只提出权限、步数与版本，不能指定摘要。 */
+/* Submit request: the host proposes only permissions, steps, and version.
+ * It cannot specify the digest. */
 typedef struct {
 	uint8_t slot;
 	uint8_t version;
@@ -54,127 +60,163 @@ typedef struct {
 	uint8_t perm_len;
 } entelea_trial_request_t;
 
-/* 执行门授予的权限与步数（仅 ACTIVE 且槽与摘要相符时有效）。 */
+/* Permissions and steps granted by the execution gate. Valid only when
+ * ACTIVE and the slot and digest match. */
 typedef struct {
 	char perm[ENTELEA_TRIAL_PERM_MAX];
 	uint8_t perm_len;
 	uint32_t budget_steps;
 } entelea_trial_grant_t;
 
-/** [thread] 提交候选（进入 PENDING_CONFIRM）。设备先验签槽内包，再以该包的
- * 整文件摘要作为候选身份；宿主无法指定摘要。权限列表须符合
- * entelea_perm_parse_list 文法（否则 E_PARAM），步数须在 1..ENTELEA_TRIAL_
- * STEPS_MAX（否则 E_RANGE）。ACTIVE/PENDING 期=BUSY（单候选，已展示对象
- * 不可被替换）；REJECTED/TIMEOUT 期换槽=BUSY（槽保留，重推须同槽）。槽内
- * 无有效包时返回验签错误且不改变状态。纪元耗尽=E_RANGE 且不改变候选。
- * 首次操作先恢复持久状态。 */
+/** [thread] Submits a candidate (enters PENDING_CONFIRM). The device first
+ * verifies the package in the slot, then uses that package's whole-file digest
+ * as the candidate identity; the host cannot specify the digest. The permission
+ * list must follow the entelea_perm_parse_list grammar (otherwise E_PARAM), and
+ * the steps must be in 1..ENTELEA_TRIAL_STEPS_MAX (otherwise E_RANGE). In the
+ * ACTIVE or PENDING state the result is BUSY (single candidate; the displayed
+ * object cannot be replaced). In the REJECTED or TIMEOUT state, changing the
+ * slot returns BUSY (the slot is kept, and re-submission must use the same
+ * slot). If the slot has no valid package, returns the verification error and
+ * leaves the state unchanged. If the epoch is exhausted, returns E_RANGE and
+ * leaves the candidate unchanged. The first operation restores persistent
+ * state first. */
 entelea_result_t
 entelea_trial_submit(const entelea_trial_request_t *req);
 
-/** [thread] 用户确认（PENDING→ACTIVE）。shown=向用户展示并获其确认的
- * 对象（取自 trial_current）：digest/权限列表/步数/version/slot/epoch
- * 任一不符=E_PERM 且保持 PENDING（旧展示/重推后的过期确认不生效）。
- * 调用方负责真实用户授权，本 API 不验证用户身份或交互。 */
+/** [thread] User confirmation (PENDING -> ACTIVE). shown is the object
+ * displayed to the user and confirmed by them (taken from trial_current).
+ * If any of the digest, permission list, steps, version, slot, or epoch
+ * differs, returns E_PERM and stays PENDING. A stale display, or a
+ * confirmation given after re-submission, has no effect. The caller is
+ * responsible for real user authorization; this API does not verify user
+ * identity or interaction. */
 entelea_result_t
 entelea_trial_confirm(const entelea_trial_candidate_t *shown);
 
-/** [thread] 用户拒绝（PENDING→REJECTED；槽保留可重推）。 */
+/** [thread] User rejects (PENDING -> REJECTED). The slot is kept for
+ * re-submission. */
 entelea_result_t
 entelea_trial_reject(void);
 
-/** [thread] 超时撤销（PENDING→TIMEOUT；fail-closed）。 */
+/** [thread] Timeout revocation (PENDING -> TIMEOUT; fail-closed). */
 entelea_result_t
 entelea_trial_timeout(void);
 
-/** [thread] 结束试用（ACTIVE→NONE；候选槽清空——晋升或放弃后）。 */
+/** [thread] Ends the trial (ACTIVE -> NONE). The candidate slot is cleared
+ * after promotion or abandonment. */
 entelea_result_t
 entelea_trial_end(void);
 
-/** [any] 状态/当前候选（观测）。首次恢复前状态为 UNINITIALIZED，候选槽
- * 为 UNKNOWN；查询本身不读取存储。调用方须串行化状态机及存储操作。 */
+/** [any] State and current candidate (for observation). Before the first
+ * restore, the state is UNINITIALIZED and the candidate slot is UNKNOWN. The
+ * query itself does not read storage. The caller must serialize the state
+ * machine and storage operations. */
 entelea_trial_state_t
 entelea_trial_state(void);
 void
 entelea_trial_current(entelea_trial_candidate_t *out);
 
-/** [thread] 执行门（装载/调用前由 wasm 宿主查询）：digest=该 slot 当前
- * 整文件 sha256。NONE 或非候选 slot=OK（试用政策不管辖；纯计算不授予
- * natives 权限，natives 授权见 grant，含稳定记录）；候选 slot（或候选
- * slot 不可知）仅 ACTIVE 且 digest 相符=OK，否则 E_PERM（PENDING/
- * REJECTED/TIMEOUT/确认后换字节均拒）。 */
+/** [thread] Execution gate (queried by the wasm host before load or call).
+ * digest is the slot's current whole-file sha256. A NONE state or a
+ * non-candidate slot returns OK: the trial policy does not govern it, and this
+ * pure check grants no native permissions (native grants are in grant, which
+ * includes stable records). A candidate slot (or a candidate slot that is
+ * unknown) returns OK only if ACTIVE and the digest matches; otherwise E_PERM
+ * (PENDING, REJECTED, TIMEOUT, and bytes changed after confirmation are all
+ * refused). */
 entelea_result_t
 entelea_trial_gate(uint8_t slot, const uint8_t digest[32]);
 
-/** [thread] 授权查询（执行时逐次调用，不缓存）：仅当 ACTIVE 且槽与摘要
- * 均与确认对象相符时返回 OK 并填入确认的权限列表与步数；否则 E_PERM，
- * 调用方不得授予任何 natives 权限。试用结束后下一次查询即失效。 */
+/** [thread] Grant query (called on every execution; not cached). Returns OK and
+ * fills in the confirmed permission list and steps only when ACTIVE and both
+ * the slot and digest match the confirmed object. Otherwise returns E_PERM, and
+ * the caller must not grant any native permission. The grant becomes invalid at
+ * the next query after the trial ends. */
 entelea_result_t
 entelea_trial_grant(uint8_t slot, const uint8_t digest[32],
 		    entelea_trial_grant_t *out);
 
-/** [thread] 晋升稳定（D-E）：仅 ACTIVE 且 shown 与当前候选全字段一致时执行。试用
- * 结束与该槽稳定项（同一字节的摘要、权限列表与步数）经同一次双副本 meta 写入原子
- * 持久化。写入失败 = 错误码且内存保持 ACTIVE；返回错误时持久结果以重启读取为准，
- * 调用方须重新确认或撤销。调用方须取得第二次用户确认。 */
+/** [thread] Promotes to stable (D-E). Runs only when ACTIVE and shown matches
+ * every field of the current candidate. Ending the trial and the slot's stable
+ * entry (the digest of the same bytes, the permission list, and the steps) are
+ * persisted atomically in one two-copy meta write. On a write failure, returns
+ * an error code and memory stays ACTIVE; when an error is returned, the
+ * persistent result is whatever a restart reads, so the caller must re-confirm
+ * or revoke. The caller must obtain a second user confirmation. */
 entelea_result_t
 entelea_trial_promote(const entelea_trial_candidate_t *shown);
 
-/** [thread] 显式撤销该槽的稳定项；该槽 ACTIVE 试用同样结束。撤销先于内存生效
- * （fail-closed），与持久化经同一次 meta 写入。非 OK = 持久结果未知，重启后该槽
- * 可能仍有 natives 授权，须重试直至 OK。 */
+/** [thread] Explicitly revokes the slot's stable entry. An ACTIVE trial in that
+ * slot also ends. Revocation takes effect in memory first (fail-closed), and is
+ * persisted in the same meta write. A result other than OK means the persistent
+ * result is unknown; after a restart the slot may still hold native grants, so
+ * retry until OK. */
 entelea_result_t
 entelea_stable_revoke(uint8_t slot);
 
-/** [any] 稳定记录授权（执行时逐次查询）：该槽稳定记录存在且摘要相符时授予其
- * 权限与步数；未存、撤销或摘要不符 = E_PERM（输出清零）；持久读取失败 = E_IO
- * （不授予）。 */
+/** [any] Stable-record grant (queried on every execution). If the slot's stable
+ * record exists and the digest matches, grants its permissions and steps.
+ * If the record is absent or revoked, or the digest differs, returns E_PERM and
+ * zeroes the output. A persistent read failure returns E_IO and grants
+ * nothing. */
 entelea_result_t
 entelea_stable_grant(uint8_t slot, const uint8_t digest[32],
 		     entelea_trial_grant_t *out);
 
-/* ---- Forge 集成契约（窄接口——SDK 侧循环消费；固件消费产物） ---- */
+/* ---- Forge integration contract (narrow interface) ---- */
 
 typedef struct {
 	uint8_t package_digest
-		[32]; /* TSAP 包整文件 sha256（须与设备计算值相等） */
+		[32]; /* whole-file sha256 of TSAP package (= device) */
 	char permissions
-		[ENTELEA_TRIAL_PERM_MAX]; /* 申请权限列表（同 request） */
+		[ENTELEA_TRIAL_PERM_MAX]; /* permission list (as in request) */
 	uint8_t permissions_len;
-	uint8_t runtime_version; /* Wasm/Lua 载荷版本 */
+	uint8_t runtime_version; /* Wasm/Lua payload version */
 	uint8_t payload_kind; /* 0=wasm 1=lua */
-	uint32_t budget_steps; /* 执行预算（工厂域 1..10^7） */
-	uint32_t mem_quota_kb; /* 内存配额（工厂域 1..512） */
-	char description[48]; /* 候选说明（用户读） */
+	uint32_t budget_steps; /* execution budget (factory range 1..10^7) */
+	uint32_t mem_quota_kb; /* memory quota (factory range 1..512 KB) */
+	char description[48]; /* candidate description (user-visible) */
 } entelea_factory_candidate_t;
 
-/** 固件侧对工厂产物的验收面：slot 上的包经设备验签并计算整文件摘要后，
- * 须与 package_digest 相等（否则 E_INVALID_SIG，不提交）；权限列表/预算
- * 域外拒；payload_kind 未知拒（不默认解释）；slot 域外=E_PARAM。只到
- * PENDING——不代用户确认。预算与权限未与签名 manifest 对拍（D-D：首期
- * 不入签，由用户确认与持久记录约束）。 */
+/** Firmware-side acceptance check for the factory artifact. After the device
+ * verifies the package in the slot and computes its whole-file digest, the
+ * digest must equal package_digest (otherwise E_INVALID_SIG, and nothing is
+ * submitted). Out-of-range permission lists or budgets are refused. An unknown
+ * payload_kind is refused (it is not interpreted by default). A slot out of
+ * range returns E_PARAM. This only reaches PENDING and does not confirm on the
+ * user's behalf. Budgets and permissions are not cross-checked against the
+ * signed manifest (D-D: not signed in the first phase; constrained by user
+ * confirmation and persistent records). */
 entelea_result_t
 entelea_factory_intake(const entelea_factory_candidate_t *fc, uint8_t slot);
 
-/* ---- 跨重启持久（板级批 A-4；经 R03 meta 双副本） ---- */
+/* ---- Restart persistence (board-level batch A-4; R03 meta) ---- */
 
-/** [thread] 状态落盘（含 NONE 态——清槽也持久）；两副本分别写入
- * 并校验一致，任一步失败报错。调用时机归装配层；磨损策略随 D05。 */
+/** [thread] Flushes state to persistent storage, including the NONE state, so
+ * that clearing a slot is also persisted. Both copies are written and verified
+ * to match; a failure at any step is reported. The assembly layer decides when
+ * to call this; wear policy follows D05. */
 entelea_result_t
 entelea_trial_flush(void);
 
-/** [boot] 恢复：两副本均有效且内容一致才接受；全逻辑区可读且
- * 全擦除视为无记录；否则 E_IO、TIMEOUT + UNKNOWN（两槽均受门拒）。
- * 已初始化时幂等不覆盖内存状态；UNKNOWN 时可显式重试读取。
- * 首次 submit/执行门/flush 也会先恢复；普通 submit 不解除 UNKNOWN，
- * 维护恢复方式尚待确定。写入后须显式 flush。 */
+/** [boot] Restore: accepted only when both copies are valid and identical. If
+ * the whole logical area is readable and fully erased, it counts as no record.
+ * Otherwise, returns E_IO and sets state TIMEOUT and slot UNKNOWN (both slots
+ * are refused by the gate). Once initialized, it is idempotent and does not
+ * overwrite in-memory state. In UNKNOWN, an explicit retry of the read is
+ * allowed. The first submit, execution gate, or flush also restores first; a
+ * normal submit does not clear UNKNOWN, and the maintenance recovery method is
+ * yet to be determined. A write must be followed by an explicit flush. */
 entelea_result_t
 entelea_trial_restore(void);
 
 #ifdef ENTELEA_TEST
 void
 entelea_trial_test_reset(void);
-/* 状态机测试接缝：直接接受调用方摘要且不验签，只供状态机用例使用；
- * 生产路径（wasm 套件）以签名包验证设备计算的摘要。字段校验与 submit 一致。 */
+/* State-machine test seam: accepts the caller's digest directly, without
+ * verification, for state-machine test cases only. The production path (the
+ * wasm suite) verifies the device-computed digest with a signed package. Field
+ * validation is the same as submit. */
 entelea_result_t
 entelea_trial_submit_with_digest_for_test(
 	const entelea_trial_candidate_t *cand);

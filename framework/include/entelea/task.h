@@ -2,27 +2,30 @@
 #ifndef ENTELEA_TASK_H
 #define ENTELEA_TASK_H
 
-/* R04 任务状态机合同见 framework/execution/capability/contract.md。
- * accepted≠completed；取消不撤回已发生效果；unknown 非幂等动作禁止
- * 自动重试；无模型也可由受限测试调用完整闭环。有界任务表。 */
+/* R04 task state machine contract: see
+ * framework/execution/capability/contract.md.
+ * accepted is not completed; cancellation does not undo effects that already
+ * happened; an unknown outcome of a non-idempotent action must not be retried
+ * automatically. A full closed loop can run without a model, through restricted
+ * test calls. The task table is bounded. */
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <entelea/app.h> /* receipt effect 语义 */
+#include <entelea/app.h> /* receipt effect semantics */
 #include <entelea/principal.h>
 #include <entelea/result.h>
-#include <entelea/time.h> /* deadline 时基（实例时钟注入） */
+#include <entelea/time.h> /* deadline time base (instance clock injection) */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define ENTELEA_TASK_MAX 4 /* 有界（DEC-27 #15 语义面） */
+#define ENTELEA_TASK_MAX 4 /* bounded (DEC-27 #15 semantics) */
 #define ENTELEA_TASK_NAME_MAX 16
 
 typedef enum {
-	ENTELEA_TASK_ACCEPTED = 0, /* 已受理（未开始执行） */
+	ENTELEA_TASK_ACCEPTED = 0, /* accepted (not yet started) */
 	ENTELEA_TASK_RUNNING,
 	ENTELEA_TASK_SUCCEEDED,
 	ENTELEA_TASK_FAILED,
@@ -30,65 +33,78 @@ typedef enum {
 	ENTELEA_TASK_STATE_COUNT,
 } entelea_task_state_t;
 
-/* 效果域复用 R01 app.h 的 entelea_receipt_effect_t（单一语义源）。 */
+/* The effect domain reuses entelea_receipt_effect_t from R01 app.h, the single
+ * semantic source. */
 
-typedef uint8_t entelea_task_id_t; /* 0=无效，1..MAX */
+typedef uint8_t entelea_task_id_t; /* 0 = invalid, 1..MAX */
 
 typedef struct {
 	entelea_task_id_t id;
 	entelea_task_state_t state;
 	entelea_effect_t effect;
-	entelea_principal_t owner; /* 受理时的 principal（副本） */
-	uint16_t seq; /* 受理序（重复请求可检测） */
-	uint64_t deadline_ms; /* 截止（实例时钟绝对毫秒；0=无截止） */
+	entelea_principal_t owner; /* principal at acceptance (copy) */
+	uint16_t seq; /* acceptance sequence (detects duplicates) */
+	uint64_t deadline_ms; /* absolute ms (instance clock); 0 = none */
 	char name[ENTELEA_TASK_NAME_MAX];
 } entelea_task_t;
 
-/** [boot] 绑定实例时钟（deadline 判定与受理门时基；deadline=0 路径
- * 不依赖）。deadline 语义（计划步骤"截止时间"条目，owner A1 决议补
- * 交付）：受理时已过期=E_RANGE；时钟未绑/读失败/回退且带 deadline=
- * E_STATE（时间不可知不受理、不开始）；带截止的非终态任务存在时
- * 拒绝绑定不同 clock_id（E_BUSY）。ACCEPTED 期过期=惰性
- * 自动 CANCELLED（效果 NONE——未开始无副作用；无定时器，线程入口
- * 检查——确定性纪律同 R06）；RUNNING 期过期**不**自动迁移（效果
- * 未知不代决——调用方经 task_get 观察 deadline 后显式 cancel）。 */
+/** [boot] Binds the instance clock, the time base for deadline checks and the
+ * acceptance gate. The deadline=0 path does not depend on it. Deadline
+ * semantics (plan step "deadline" item; owner decision A1, delivered as a
+ * supplement): a deadline already expired at acceptance returns E_RANGE. If
+ * the clock is unbound, a read fails, or time goes backwards for a task with a
+ * deadline, returns E_STATE (unknown time means no acceptance and no start).
+ * While a non-terminal task with a deadline exists, binding a different
+ * clock_id is refused (E_BUSY). Expiry during ACCEPTED lazily becomes
+ * CANCELLED with effect NONE (nothing started, so no side effects). There is
+ * no timer; the check runs at thread entry, per the same determinism
+ * discipline as R06. Expiry during RUNNING does **not** transition
+ * automatically: the outcome is unknown and must not be decided on the
+ * caller's behalf. The caller observes the deadline via task_get and then
+ * cancels explicitly. */
 entelea_result_t
 entelea_task_bind_clock(const entelea_clock_t *clock);
 
-/** [thread] 受理（idempotency：同一 principal+同 seq 未终态 = E_BUSY——
- * 重复受理拒绝，不静默合并）。槽满 = E_NOMEM。deadline_ms：绝对
- * 毫秒截止（0=无截止）。 */
+/** [thread] Accepts a task (idempotency: the same principal with the same seq
+ * and a non-terminal state returns E_BUSY; duplicate acceptance is refused,
+ * not silently merged). A full table returns E_NOMEM. deadline_ms is an
+ * absolute deadline in ms (0 = none). */
 entelea_result_t
 entelea_task_submit(entelea_principal_t ctx, const char *name, uint16_t seq,
 		    uint64_t deadline_ms, entelea_task_id_t *out);
 
-/** [thread] 开始执行（ACCEPTED→RUNNING；他者/终态/不存在 = E_STATE）。 */
+/** [thread] Starts execution (ACCEPTED -> RUNNING). A task owned by another
+ * principal, in a terminal state, or missing returns E_STATE. */
 entelea_result_t
 entelea_task_start(entelea_principal_t ctx, entelea_task_id_t id);
 
-/** [thread] 终态：成功（effect=CONFIRMED 由调用方据真实回执给出——
- * 本层不伪造确认）。 */
+/** [thread] Terminal state: success. The caller supplies effect = CONFIRMED
+ * from the real receipt; this layer does not fabricate confirmation. */
 entelea_result_t
 entelea_task_succeed(entelea_principal_t ctx, entelea_task_id_t id,
 		     bool effect_confirmed);
 
-/** [thread] 失败。effect_unknown=true 当且仅当失败点在副作用之后
- * （调用方判定；unknown 非幂等动作禁止自动重试——本层置位并如实呈现）。 */
+/** [thread] Failure. effect_unknown=true if and only if the failure point is
+ * after the side effect (the caller decides; an unknown non-idempotent action
+ * must not be retried automatically; this layer sets the flag and reports it
+ * as is). */
 entelea_result_t
 entelea_task_fail(entelea_principal_t ctx, entelea_task_id_t id,
 		  bool effect_unknown);
 
-/** [thread] 取消：ACCEPTED 期取消 = 效果 NONE；RUNNING 期取消 =
- * 效果 UNKNOWN（已发生效果不撤回——调用方不得以取消替代回滚）。
- * 终态后取消 = E_STATE。 */
+/** [thread] Cancels a task. Cancelling during ACCEPTED gives effect NONE;
+ * cancelling during RUNNING gives effect UNKNOWN (effects that already happened
+ * are not undone; the caller must not use cancellation in place of rollback).
+ * Cancelling after a terminal state returns E_STATE. */
 entelea_result_t
 entelea_task_cancel(entelea_principal_t ctx, entelea_task_id_t id);
 
-/** [any] 查询（含 effect 域）。 */
+/** [any] Queries a task (including the effect domain). */
 entelea_result_t
 entelea_task_get(entelea_task_id_t id, entelea_task_t *out);
 
-/** [thread] 终态任务回收（槽复用；RUNNING/ACCEPTED 拒绝）。 */
+/** [thread] Releases a terminal task so its slot can be reused. RUNNING and
+ * ACCEPTED tasks are refused. */
 entelea_result_t
 entelea_task_release(entelea_principal_t ctx, entelea_task_id_t id);
 

@@ -1,10 +1,14 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* F-2 真云闸（Linux host 面）：model transport 真实现绑定 → 依赖
- * 联动 UP → 真调用 router（TLS+chat）→ content/usage 断言 →
- * 失联对照（NET DOWN → ask 拒 E_STATE 且**不触传输**——touched
- * 计数证明）→ 恢复面。凭据经 ENTELEA_CLOUD_CRED（0600 json，仓库外）
- * 运行时读取——不入二进制不入日志（打印仅键名与长度）。
- * C5 阻塞的 MCU 面见 r06 验证记录 F 批节（已删除，锚点见台账；到场项）。 */
+/* F-2 real cloud gate (Linux host surface): bind the real model transport
+ * implementation -> dependency linkage UP -> real router call (TLS+chat)
+ * -> content/usage assertions -> connectivity-loss control (NET DOWN: ask
+ * is refused with E_STATE and does **not** touch the transport, as shown by
+ * the touched counter) -> recovery surface. Credentials are read at runtime
+ * from ENTELEA_CLOUD_CRED (0600 json, outside the repository); they are
+ * never embedded in the binary or logged (only key names and lengths are
+ * printed).
+ * The MCU surface blocked by C5 is in the r06 validation record, F batch
+ * section (deleted; anchor in the ledger; on-site items). */
 #define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
@@ -69,7 +73,7 @@ parse_base_url(const char *url, char *host, size_t hn, char *prefix, size_t pn)
 		if (prefix_len < 0 || (size_t) prefix_len >= pn)
 			return false;
 	}
-	/* 去尾斜杠（路径前缀归一）。 */
+	/* Strip the trailing slash (normalize the path prefix). */
 	size_t l = strlen(prefix);
 	if (l > 1 && prefix[l - 1] == '/')
 		prefix[l - 1] = '\0';
@@ -179,8 +183,10 @@ main(int argc, char **argv)
 	static entelea_wallclock_t d12_wall;
 	static entelea_d12_store_t d12_store;
 
-	/* RF1 G5：model_ask 逐尝试过 D12 闸（r16 起依赖——未绑任一端口即闭锁）。
-	 * 宿主持久为进程内存，进程退出后日计数不保留（见 d12_ports.c）。 */
+	/* RF1 G5: model_ask passes the D12 gate on each attempt (since r16;
+	 * any unbound port fails closed).
+	 * Host persistence is in-process memory: the daily count is not kept
+	 * after the process exits (see d12_ports.c). */
 	CHECK(entelea_platform_clock_init(&d12_clock) == ENTELEA_OK);
 	CHECK(entelea_d12_bind_clock(&d12_clock) == ENTELEA_OK);
 	CHECK(entelea_platform_d12_lock_init(&d12_lock) == ENTELEA_OK);
@@ -195,7 +201,8 @@ main(int argc, char **argv)
 		goto cleanup;
 	}
 
-	/* 两次恢复探测加一次普通调用；实际费用以累计用量及调用次数记录。 */
+	/* Two recovery probes plus one normal call. Actual cost is recorded
+	 * in cumulative usage and call count. */
 	const entelea_model_msg_t msgs[] = {
 		{ .role = "user",
 		  .content = "Reply with exactly the word: ok. "
@@ -204,7 +211,8 @@ main(int argc, char **argv)
 	entelea_model_usage_t usage = { 0 };
 	entelea_result_t r;
 
-	/* 两次真实、逐次过闸的探测才产生两条 MODEL 恢复观测。 */
+	/* Only two real probes, each passing the gate, yield two MODEL
+	 * recovery observations. */
 	for (int i = 0; i < 2; i++) {
 		int before = touched;
 
@@ -229,12 +237,13 @@ main(int argc, char **argv)
 	       (int) r, out, usage.prompt_tokens, usage.completion_tokens,
 	       touched);
 	CHECK(r == ENTELEA_OK);
-	CHECK(out[0] != '\0'); /* 非空 content（字面不设硬断——模型面） */
+	CHECK(out[0] != '\0'); /* Non-empty content (model-dependent text) */
 	CHECK(touched >= 3);
-	CHECK(entelea_d12_model_calls() == (uint32_t) touched); /* 逐尝试过闸 */
+	CHECK(entelea_d12_model_calls() == (uint32_t) touched); /* Per try */
 	CHECK(usage.prompt_tokens > 0);
 
-	/* 模拟失联对照：NET DOWN → ask 拒 E_STATE 且不触传输。 */
+	/* Simulated connectivity-loss control: with NET DOWN, ask is refused
+	 * with E_STATE and does not touch the transport. */
 	int before = touched;
 	CHECK(report_observation(&d12_clock, ENTELEA_DEP_NET, false));
 	CHECK(!entelea_model_ready());
@@ -242,7 +251,7 @@ main(int argc, char **argv)
 	CHECK(r == ENTELEA_E_STATE);
 	CHECK(touched == before);
 
-	/* 恢复面：两次实际网络观察。 */
+	/* Recovery surface: two real network observations. */
 	CHECK(report_network_pair(&d12_clock, cfg.host));
 	CHECK(entelea_model_ready());
 

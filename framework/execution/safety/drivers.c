@@ -1,12 +1,16 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * 驱动分发（迁自旧 safety/driver_dispatch.c，R02 合同
- * framework/execution/safety/contract.md）——全库**唯一**出现 Zephyr
- * 输出驱动调用的文件（build-support/source-policy.json 保护门；
- * 架构机械检查的批准写路径）。写函数只依赖注册期冻结数据
- * （可重入/无锁）；失败进计数观测（void 写函数不报告成功与否的失败面）。
- * 相对旧实现调整：通用 GPIO 输入后端（hal/input 用）未迁入——estop 输入
- * 保留；prov 化 estop 边沿配置归 R03（R02 固定缺省上升沿）。
+ * Driver dispatch (migrated from the old safety/driver_dispatch.c; R02
+ * contract: framework/execution/safety/contract.md). This is the **only**
+ * file in the whole tree that calls Zephyr output drivers (guarded by the
+ * build-support/source-policy.json gate; the approved write path checked by
+ * the architecture mechanical check). Write functions depend only on
+ * registration-time frozen data (reentrant, lock-free). Failures go to
+ * counters, since void write functions cannot report success or failure.
+ * Changes from the old implementation: the generic GPIO input backend (used
+ * by hal/input) is not migrated, but the estop input is kept. Making the
+ * estop edge configuration prov-driven is deferred to R03 (R02 fixes the
+ * default rising edge).
  */
 #include <errno.h>
 #include <string.h>
@@ -38,9 +42,10 @@ sim_record(struct entelea_ch_slot *s, const entelea_out_value_t *v)
 static int
 sim_write(const entelea_out_channel_t *ch, const entelea_out_value_t *v)
 {
-	/* 桩路径：真机后端同样先记录（golden 连续性）再写寄存器。
-	 * 桩本身不失败——后端失败语义经真机路径返回值承担（ztest 用
-	 * 假 PWM 设备注入）。 */
+	/* Stub path: the hardware backend also records first (golden
+	 * continuity) before writing the register. The stub itself never
+	 * fails; backend failure semantics come from return values on the
+	 * hardware path (ztest injects a fake PWM device). */
 	sim_record(slot_of(ch), v);
 	return 0;
 }
@@ -57,11 +62,12 @@ sim_read(const entelea_out_channel_t *ch, entelea_out_value_t *out)
 	return 0;
 }
 
-/* ---- 真机 GPIO 输出后端（板级替换面） ----------------------------------
- * DT 绑定：zephyr,user 节点（uid = 通道 uid 串匹配；io-gpios = 输出脚）。
- * 写路径 = sim 记录 + 真寄存器写；uid 不匹配仍只记录。
- * init 由板级装配显式调用（entelea_drv_gpio_init）。缺 DT 属性 = -ENODEV
- * （配置错误如实上报）。 */
+/* ---- Hardware GPIO output backend (board-level replacement point) -----------
+ * DT binding: zephyr,user node (uid = channel uid string match; io-gpios =
+ * output pin). Write path = sim record + real register write; a uid mismatch
+ * still records only. init is called explicitly by board assembly
+ * (entelea_drv_gpio_init). A missing DT property yields -ENODEV
+ * (configuration errors are reported as they are). */
 #if defined(ENTELEA_DRV_GPIO) && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), uid)
 static const struct gpio_dt_spec real_io =
 	GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), io_gpios);
@@ -85,25 +91,28 @@ static int
 gpio_real_write(const entelea_out_channel_t *ch, const entelea_out_value_t *v)
 {
 	if (strcmp(ch->uid, real_io_uid) == 0) {
-		/* 绑定通道：后端未就绪（未 init/init 失败/设备不 ready）=
-		 * 配置/设备故障，显式失败——不得静默退化为软件成功
-		 * （二轮 review 发现 2）。 */
+		/* Bound channel: a backend that is not ready (not
+		 * initialized, init failed, or device not ready) is a
+		 * configuration or device fault. Fail explicitly; never
+		 * silently degrade to software success (second-round review
+		 * finding 2). */
 		if (!real_io_ready) {
 			return -ENODEV;
 		}
-		int rc = gpio_pin_set_dt(&real_io, v->b); /* 失败传播 */
+		int rc = gpio_pin_set_dt(&real_io, v->b); /* Propagate error */
 
 		if (rc != 0) {
-			return rc; /* 失败不写 golden 记录（环形=已执行写） */
+			return rc; /* Not recorded: ring = executed writes */
 		}
 	}
-	/* 未绑定通道 = 纯软件通道（A3，owner 定案）：写成功仅指软件事实。 */
+	/* Unbound channel = pure software channel (A3, owner-approved): a
+	 * successful write only attests a software-level fact. */
 	sim_record(slot_of(ch), v);
 	return 0;
 }
 
 #define ENTELEA_GPIO_WRITE gpio_real_write
-#else /* 未启用/无 DT 绑定：桩路径（init 报错） */
+#else /* Disabled or no DT binding: stub path (init reports error) */
 int
 entelea_drv_gpio_init(void)
 {
@@ -113,11 +122,13 @@ entelea_drv_gpio_init(void)
 #define ENTELEA_GPIO_WRITE sim_write
 #endif
 
-/* ---- 真机 PWM 输出后端（板级替换面） ------------------------------------
- * DT 绑定：zephyr,user 节点（pwm-uid = 通道 uid；pwms 三元胞）。
- * 写路径 = sim 记录 + pwm_set（值域：u 低 16 = permille [0,1000]、
- * 高 16 = hz/100）。唯一写路径调用点：pwm_set 限定本文件。
- * 失败进 pwm_err 计数（观测面；无锁单写者递增）。 */
+/* ---- Hardware PWM output backend (board-level replacement point) ------------
+ * DT binding: zephyr,user node (pwm-uid = channel uid; pwms three-cell
+ * specifier). Write path = sim record + pwm_set (value range: low 16 bits of
+ * u = permille [0,1000], high 16 bits = hz/100). The only write-path call
+ * site is pwm_set, restricted to this file. Failures go to the pwm_err
+ * counter (observation surface; incremented by the single lock-free
+ * writer). */
 #if defined(ENTELEA_DRV_PWM) && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), pwm_uid)
 #include <zephyr/drivers/pwm.h>
 static const struct pwm_dt_spec real_pwm =
@@ -142,10 +153,11 @@ entelea_drv_pwm_err_count(void)
 	return pwm_err;
 }
 
-/* PWM 打包解码（合同）：u 低 16 = permille [0,1000]、高 16 = hz/100。
- * u==0（hz==0 且 permille==0）= 停止：占空 0（固定 1s 周期、脉宽 0），
- * 保证故障/安全态零值物理停止输出（缺陷 2）。hz==0 且 permille>0 或
- * permille>1000 = 非法编码。 */
+/* PWM packing decode (contract): low 16 bits of u = permille [0,1000],
+ * high 16 bits = hz/100. u==0 (hz==0 and permille==0) means stop: duty 0
+ * (fixed 1 s period, pulse width 0), guaranteeing that a zero value
+ * physically stops the output in fault and safe states (defect 2).
+ * hz==0 with permille>0, or permille>1000, is an illegal encoding. */
 static int
 pwm_decode(uint32_t u, uint32_t *period_ns, uint32_t *pulse_ns)
 {
@@ -174,7 +186,8 @@ static int
 pwm_real_write(const entelea_out_channel_t *ch, const entelea_out_value_t *v)
 {
 	if (strcmp(ch->uid, real_pwm_uid) == 0) {
-		/* 绑定通道：后端未就绪 = 显式失败（二轮 review 发现 2）。 */
+		/* Bound channel: backend not ready = explicit failure
+		 * (second-round review finding 2). */
 		if (!real_pwm_ready) {
 			pwm_err++;
 			return -ENODEV;
@@ -184,15 +197,16 @@ pwm_real_write(const entelea_out_channel_t *ch, const entelea_out_value_t *v)
 
 		if (pwm_decode(v->u, &period_ns, &pulse_ns) != 0) {
 			pwm_err++;
-			return -EINVAL; /* 打包域外：显式失败，不静默不写 */
+			return -EINVAL; /* Out of range: explicit failure */
 		}
 		if (pwm_set(real_pwm.dev, real_pwm.channel, period_ns, pulse_ns,
 			    real_pwm.flags) != 0) {
-			pwm_err++; /* 后端失败传播：commit 不因此变 OK */
-			return -EIO; /* 失败不写 golden 记录（环形=已执行写） */
+			pwm_err++; /* Backend failure: commit not OK */
+			return -EIO; /* Not recorded: ring = executed writes */
 		}
 	}
-	/* 未绑定通道 = 纯软件通道（A3）：写成功仅指软件事实。 */
+	/* Unbound channel = pure software channel (A3): success attests only
+	 * a software-level fact. */
 	sim_record(slot_of(ch), v);
 	return 0;
 }
@@ -241,11 +255,12 @@ entelea_driver_sim_writes(const char *uid, entelea_write_rec_t *out, size_t max)
 	return n;
 }
 
-/* estop DT 绑定与 ISR 粘合。绑定机制（r14 真机首次落地面）：/zephyr,user
- * 具名属性 estop-gpios（类型推断 phandle-array，无需自写 binding；原
- * aliases ts-estop-gpio 方案在 v4.5 实测不生成裸节点 gpios 宏——无
- * compatible 的节点不发射 phandle-array 属性）。无属性板（native_sim/
- * 测试）空操作。 */
+/* estop DT binding and ISR glue. Binding mechanism (first hardware landing
+ * on r14): the named property estop-gpios on /zephyr,user (type inferred as
+ * phandle-array, so no custom binding is needed; the earlier aliases
+ * ts-estop-gpio approach did not generate a bare gpios macro in v4.5,
+ * since nodes without a compatible emit no phandle-array properties).
+ * Boards without the property (native_sim/tests) are a no-op. */
 #define ESTOP_GPIO_NODE DT_PATH(zephyr_user)
 
 #if DT_NODE_HAS_PROP(ESTOP_GPIO_NODE, estop_gpios)
@@ -253,7 +268,8 @@ static const struct gpio_dt_spec estop_spec =
 	GPIO_DT_SPEC_GET(ESTOP_GPIO_NODE, estop_gpios);
 static struct gpio_callback estop_cb;
 
-/* estop ISR：直达安全态，不经协议栈/调度排队（调用图纪律见 force.c）。 */
+/* estop ISR: go straight to the safe state, without protocol stack or
+ * scheduler queuing (call-graph discipline: see force.c). */
 static void
 estop_isr(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
 {
@@ -271,9 +287,10 @@ entelea_safety_estop_init(void)
 	if (!gpio_is_ready_dt(&estop_spec)) {
 		return ENTELEA_E_IO;
 	}
-	/* 输入+上拉先于中断配置（r14 首次真机绑定前补：dt_flags 携带
-	 * overlay 的 ACTIVE_LOW|PULL_UP；未配置输入直接使能中断在部分
-	 * 驱动上行为未定义）。 */
+	/* Configure the input with pull-up before the interrupt (added before
+	 * the first r14 hardware binding: dt_flags carries the overlay's
+	 * ACTIVE_LOW|PULL_UP; enabling interrupts on an unconfigured input is
+	 * undefined on some drivers). */
 	if (gpio_pin_configure_dt(&estop_spec, GPIO_INPUT) != 0) {
 		return ENTELEA_E_IO;
 	}
@@ -281,13 +298,17 @@ entelea_safety_estop_init(void)
 	if (gpio_add_callback_dt(&estop_spec, &estop_cb) != 0) {
 		return ENTELEA_E_IO;
 	}
-	/* 触发边沿：R02 固定缺省=按下沿（逻辑上升；prov 化配置面归 R03；
-	 * 边沿映射纯函数另经 entelea_safety_estop_edge_of 供测试守卫）。
-	 * r14 真机实证（GPIO20 按压不触发）：Zephyr 中断标志缺省按
-	 * **物理**电平解释——仅显式 GPIO_INT_LEVELS_LOGICAL 才按引脚
-	 * ACTIVE_LOW 翻账（gpio.h z_impl 只翻 LEVELS_LOGICAL 面）。
-	 * 故在此按 spec 的 ACTIVE_LOW 把逻辑沿翻译成物理沿（按下=物理
-	 * falling）；EDGE_BOTH 双沿对称不翻。 */
+	/* Trigger edge: R02 fixes the default to press edge (logical rising);
+	 * provider-driven configuration is deferred to R03. The pure
+	 * edge-mapping function is exposed as entelea_safety_estop_edge_of
+	 * for test guards.
+	 * r14 hardware evidence (a GPIO20 press did not trigger): Zephyr
+	 * interrupt flags interpret physical levels by default. Only an
+	 * explicit GPIO_INT_LEVELS_LOGICAL applies the pin's ACTIVE_LOW
+	 * inversion (gpio.h z_impl inverts only the LEVELS_LOGICAL case).
+	 * So the logical edge is translated into a physical edge per the
+	 * spec's ACTIVE_LOW (press = physical falling); EDGE_BOTH is
+	 * symmetric and is not inverted. */
 	{
 		int trig = entelea_safety_estop_edge_of(0);
 
@@ -300,10 +321,11 @@ entelea_safety_estop_init(void)
 		}
 	}
 #endif
-	return ENTELEA_OK; /* 无节点板（native_sim/测试）空操作；生产板必须提供 */
+	return ENTELEA_OK; /* No-op without node; production must provide */
 }
 
-/* estop 引脚原始电平（0/1；-1=未绑定）——接线诊断/现场观测面。 */
+/* Raw estop pin level (0/1; -1 = unbound), for wiring diagnostics and
+ * field observation. */
 int
 entelea_safety_estop_level_raw(void)
 {
@@ -314,9 +336,11 @@ entelea_safety_estop_level_raw(void)
 #endif
 }
 
-/* estop 边沿映射——**逻辑**边沿语义（0=上升缺省=按下沿/1=下降=松开沿
- * /2=双沿；未知 fail-safe 上升）。物理沿翻译归 drivers.c 装配点
- * （r14：ACTIVE_LOW 下逻辑上升=物理下降）。 */
+/* estop edge mapping: **logical** edge semantics (0 = rising, default,
+ * i.e. press edge; 1 = falling, i.e. release edge; 2 = both; unknown values
+ * fail safe to rising). The physical-edge translation happens at the
+ * drivers.c setup point (r14: under ACTIVE_LOW, logical rising = physical
+ * falling). */
 int
 entelea_safety_estop_edge_of(uint8_t flags)
 {
@@ -349,7 +373,8 @@ slot_of(const entelea_out_channel_t *ch)
 void
 entelea_drv_test_reset(void)
 {
-	/* 测试隔离：后端就绪位/失败计数复位（配合未就绪负测）。 */
+	/* Test isolation: reset backend-ready flags and failure counters
+	 * (paired with the not-ready negative test). */
 #if defined(ENTELEA_DRV_GPIO) && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), uid)
 	real_io_ready = false;
 #endif

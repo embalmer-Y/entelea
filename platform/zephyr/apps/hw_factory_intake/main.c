@@ -1,14 +1,19 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* D-3 最小工厂闭环硬件闸（D 批；RF1 #9 修订）：Forge（wasm_gen 确定性
- * 组装 → tsap_pack.py 测试根签名）→ 设备（stage → verify → digest 对拍
- * → factory_intake → PENDING → 未确认装载被试用门拒）。产物字节经构建
- * 期注入（factory_pkg.h——USB 烧录交付路径；真网交付随 F 批）。
- * 默认构建无用户确认 UI（D04/D09/D10 未决）：不代用户确认，确认窗按
- * 超时 fail-closed 收尾（TIMEOUT 落盘，候选槽持续门拒）。
- * FACTORY_DEV_AUTOCONFIRM=ON（仅开发）：以展示对象自动确认后执行
- * run/spin/hang 夹具——工程证据，无产品用户验收效力。
- * 任一环节失败 → system_fail。trial 跨复位持久面由 hw_flash_persist
- * A-4 证明，本闸不重复。 */
+/* D-3 minimal factory closed-loop hardware gate (D batch; RF1 #9 revision):
+ * Forge (deterministic wasm_gen assembly -> tsap_pack.py test root signature)
+ * -> device (stage -> verify -> digest cross-check -> factory_intake ->
+ * PENDING -> an unconfirmed load is refused by the trial gate). Artifact
+ * bytes are injected at build time (factory_pkg.h; the USB flashing delivery
+ * path; network delivery follows in batch F).
+ * The default build has no user confirmation UI (D04/D09/D10 open): it does
+ * not confirm on the user's behalf, and the confirmation window ends
+ * fail-closed on timeout (TIMEOUT is persisted; the candidate slot stays
+ * refused).
+ * FACTORY_DEV_AUTOCONFIRM=ON (development only): auto-confirms the shown
+ * object, then runs the run/spin/hang fixtures. This is engineering evidence
+ * with no product user-acceptance effect.
+ * Any failing step -> system_fail. The trial's cross-reset persistence is
+ * proven by hw_flash_persist A-4 and is not repeated here. */
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
@@ -51,8 +56,9 @@ main(void)
 	entelea_supervision_boot(entelea_platform_boot_steps,
 				 ENTELEA_PLATFORM_BOOT_STEP_COUNT);
 	if (entelea_platform_d12_safe_halt()) {
-		/* RF1 G5：复位风暴 SAFE-HALT——不启业务，输出保持安全起始
-		 * 态，WDT 巡检照常喂狗（POR 出）。 */
+		/* RF1 G5: reset-storm SAFE-HALT; business is not started,
+		 * outputs stay at the safe initial state, and WDT patrol keeps
+		 * feeding (exit via POR). */
 		printk("[hw-fact] D12 SAFE-HALT: business disabled\n");
 		k_sleep(K_FOREVER);
 		return 0;
@@ -69,9 +75,11 @@ main(void)
 		     prior.slot == 0),
 	    "slot not occupied by a pending or active candidate");
 
-	/* 0) 工厂 provisioning：维护通道注入工厂根 pk0（prov CBOR v1
-	 *    最小 9 对——真实产线=烧录窗注入，闸走同一 API 面：校验
-	 *    先行 + per-boot 一次窗）。pk1=零（不可伪造）。*/
+	/* 0) Factory provisioning: inject the factory root pk0 over the
+	 *    maintenance channel (prov CBOR v1, minimal 9 pairs). On a real
+	 *    line this happens in a flashing window; the gate uses the same
+	 *    API: validate first, then one window per boot. pk1 = zero
+	 *    (unforgeable). */
 	static const uint8_t FACTORY_ROOT_PUB[32] = {
 		0xf0, 0x84, 0xa4, 0xe5, 0x6f, 0x68, 0xb6, 0xab,
 		0x5c, 0xbe, 0xe8, 0x60, 0x3c, 0x59, 0xa4, 0x2a,
@@ -82,14 +90,14 @@ main(void)
 		static uint8_t pcb[192];
 		uint32_t n = 0;
 
-		pcb[n++] = 0xA9; /* map(9)——prov CBOR v1 最小集 */
+		pcb[n++] = 0xA9; /* map(9): minimal prov CBOR v1 set */
 #define PUT(lit)                                               \
 	do {                                                   \
 		if (n + sizeof(lit) - 1 <= sizeof(pcb)) {      \
 			memcpy(pcb + n, lit, sizeof(lit) - 1); \
 		}                                              \
 		n += sizeof(lit) - 1;                          \
-	} while (0) /* 溢出跳写+n 继续增长——末尾统一护栏拒 */
+	} while (0) /* overflow: skip copy, still count n; guard rejects */
 		PUT("\x61"
 		    "v");
 		pcb[n++] = 0x01; /* v:1 */
@@ -116,7 +124,7 @@ main(void)
 		    "pk1");
 		pcb[n++] = 0x58;
 		pcb[n++] = 32;
-		n += 32; /* pcb 零初始化——pk1=零根（不可伪造） */
+		n += 32; /* pcb is zeroed: pk1 = zero root (unforgeable) */
 		PUT("\x64"
 		    "cred");
 		PUT("\x62"
@@ -128,7 +136,7 @@ main(void)
 		    "estop");
 		pcb[n++] = 0x01;
 #undef PUT
-		CHK(n <= sizeof(pcb) && /* 组装护栏（review P3-3） */
+		CHK(n <= sizeof(pcb) && /* assembly guard (review P3-3) */
 			    entelea_prov_write_maint(pcb, n) == ENTELEA_OK &&
 			    entelea_prov_load() == ENTELEA_OK &&
 			    memcmp(entelea_prov()->root_pubkeys[0],
@@ -136,7 +144,7 @@ main(void)
 		    "factory provisioning pk0 (maint channel)");
 	}
 
-	/* 1) 分步暂存工厂包（staging 链生产 API）。 */
+	/* 1) Stage the factory package in steps (production staging API). */
 	ok &= entelea_pkg_stage_begin(0) == ENTELEA_OK;
 	uint32_t off = 0;
 
@@ -155,16 +163,18 @@ main(void)
 	}
 	CHK(ok, "stage factory package (begin+chunks)");
 
-	/* 2) 验签（显式工厂根=prov pk0 同源；比默认信任集更精确：设备
-	 *    验证"包由 Forge 声明的工厂根签名"）。 */
+	/* 2) Verify the signature against the explicit factory root (same
+	 *    source as prov pk0). It is stricter than the default trust set:
+	 *    the device checks that the package is signed by the factory root
+	 *    declared by Forge. */
 	entelea_tsap_view_t v;
 
 	CHK(entelea_pkg_verify(0, FACTORY_ROOT_PUB, &v, NULL) == ENTELEA_OK &&
 		    v.wasm_len > 0 && v.manifest_len > 0,
 	    "verify signature (explicit factory root)");
 
-	/* 3) Forge/设备字节对拍（D-4 设备半边）：slot 内容 sha256 ==
-	 *    Forge candidate.package_digest（构建注入）。 */
+	/* 3) Forge/device byte cross-check (D-4 device side): slot content
+	 *    sha256 == Forge candidate.package_digest (injected at build). */
 	{
 		static uint8_t rd[2048];
 		uint32_t st[8];
@@ -197,7 +207,8 @@ main(void)
 		}
 		CHK(ok && memcmp(dg, FACTORY_DIGEST, 32) == 0,
 		    "slot bytes == forge digest (D-4 device side)");
-		/* 试用门摘要域（规范包长=签名末尾）== Forge package_digest 域。 */
+		/* Gate digest span (canonical length up to end of signature)
+		 * must equal Forge package_digest. */
 		CHK(v.pkg_len == FACTORY_TSAP_LEN &&
 			    entelea_pkg_file_digest(0, v.pkg_len, dg) ==
 				    ENTELEA_OK &&
@@ -205,15 +216,18 @@ main(void)
 		    "gate digest domain == forge package_digest");
 	}
 
-	/* 4) 工厂 intake → PENDING_CONFIRM（元数据经构建注入=Forge 侧
-	 *    声明；digest/permissions/version 即用户确认对象）。 */
+	/* 4) Factory intake -> PENDING_CONFIRM (metadata injected at build
+	 *    from the Forge-side declaration; digest, permissions, version
+	 *    are the objects the user confirms). */
 	{
 		entelea_factory_candidate_t fc;
 
 		memset(&fc, 0, sizeof(fc));
 		memcpy(fc.package_digest, FACTORY_DIGEST, 32);
-		/* Forge 位图 FACTORY_PERMISSIONS 尚无到权限列表的映射（待 owner 决定）：
-		 * 本诊断以空列表提交，即无 natives 授权；计算型产物不受影响。 */
+		/* The Forge bitmap FACTORY_PERMISSIONS has no mapping to the
+		 * permission list yet (owner decision pending). This
+		 * diagnostic submits an empty list (no natives grant);
+		 * compute-only artifacts are unaffected. */
 		fc.permissions_len = 0;
 		fc.runtime_version = FACTORY_VERSION;
 		fc.payload_kind = FACTORY_KIND;
@@ -233,8 +247,9 @@ main(void)
 	return 0;
 #endif
 
-	/* 5) 确认前不可执行：试用门拒装载且零副作用。owner=未绑定（无导入
-	 *    模块——natives 不触发）。 */
+	/* 5) Not executable before confirmation: the trial gate refuses
+	 *    the load with no side effects. owner unbound (no imported
+	 *    modules; natives do not fire). */
 	entelea_principal_t ctx = { 0 };
 	uint32_t app = 0;
 	entelea_result_t wl = entelea_wasm_init() == ENTELEA_OK ?
@@ -247,7 +262,8 @@ main(void)
 	    "load before user confirm -> E_PERM (trial gate)");
 
 #ifndef FACTORY_DEV_AUTOCONFIRM
-	/* 6) 产品路径：无用户确认 → 确认窗超时 fail-closed（不代用户确认）。 */
+	/* 6) Product path: no user confirmation; the confirmation window
+	 *    times out fail-closed (the gate never confirms for the user). */
 	CHK(entelea_trial_timeout() == ENTELEA_OK &&
 		    entelea_trial_flush() == ENTELEA_OK &&
 		    entelea_wasm_load(0, ctx, &app) == ENTELEA_E_PERM,
@@ -257,7 +273,8 @@ main(void)
 	       "(no auto-confirm in product build)\n");
 	return 0;
 #else
-	/* 6) 开发自动确认：确认对象=展示对象（trial_current）。 */
+	/* 6) Dev auto-confirm: the confirmed object is the shown candidate
+	 *    (trial_current). */
 	{
 		entelea_trial_candidate_t shown;
 
@@ -277,8 +294,9 @@ main(void)
 	    "call run -> 2*0+1 == 1 (factory artifact executes)");
 	ret = -1;
 	{
-		/* spin(3)：3 次空转后返回 0（run003 的 spin(N>=1) 死循环缺陷
-		 * 在此暴露为 E_TIMEOUT——RF1 #10）。 */
+		/* spin(3): returns 0 after three idle iterations (the run003
+		 * spin(N>=1) infinite-loop defect surfaces here as E_TIMEOUT;
+		 * RF1 #10). */
 		entelea_result_t sr =
 			entelea_wasm_call(app, ctx, "spin", 3, 2000, &ret);
 
@@ -286,14 +304,16 @@ main(void)
 		CHK(sr == ENTELEA_OK && ret == 0, "call spin(3) -> 0");
 	}
 
-	/* 7) 真死循环有界停止（R-V1 夹具：hang 无条件循环，步预算到期 →
-	 *    E_TIMEOUT + 实例销毁——替代 wasm 测试"预算 0"技巧证据）。 */
+	/* 7) Bounded stop of a real infinite loop (R-V1 fixture: hang loops
+	 *    unconditionally; step budget expiry -> E_TIMEOUT and instance
+	 *    destruction, replacing the wasm test "budget 0" trick as
+	 *    evidence). */
 	CHK(entelea_wasm_call(app, ctx, "hang", 0, 50, &ret) ==
 			    ENTELEA_E_TIMEOUT &&
 		    entelea_wasm_instance_count() == 0,
 	    "call hang (real infinite loop) -> E_TIMEOUT bounded stop");
 
-	/* 8) 收尾：结束试用 + 槽清空 + 落盘（安全常驻态）。 */
+	/* 8) Wrap up: end trial, clear slot, flush (safe steady state). */
 	CHK(entelea_trial_end() == ENTELEA_OK &&
 		    entelea_trial_state() == ENTELEA_TRIAL_NONE &&
 		    entelea_trial_flush() == ENTELEA_OK,

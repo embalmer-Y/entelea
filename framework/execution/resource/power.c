@@ -1,10 +1,14 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * 功率预算记账与受控供电提交（迁自旧 power/budget.c + slots 检查-提交
- * 原子化语义，R04 合同见本目录 contract.md）。
- * 预算源 = prov（运行时只读，合同 10）；测试注入仅 ENTELEA_TEST。
- * 记账单源 = safety readback（不设影子账本——与物理声明一致优先）。
- * 检查-提交原子化：与 safety commit 同一 write_lock（锁序复用，无新锁）。
+ * Power budget accounting and controlled power supply commit (migrated from
+ * the old power/budget.c and the slots check-then-commit atomicity semantics;
+ * R04 contract in contract.md of this directory).
+ * Budget source = prov (read-only at runtime, contract 10); test injection is
+ * only under ENTELEA_TEST.
+ * Accounting source = safety readback (no shadow ledger; the physical
+ * declaration takes precedence).
+ * Check-then-commit atomicity: shares the same write_lock as safety commit
+ * (lock order reused, no new lock).
  */
 #include <string.h>
 #include "internal.h"
@@ -15,7 +19,7 @@
 static uint32_t peak_ma;
 
 #ifdef ENTELEA_TEST
-static uint32_t test_budget_ma; /* prod 不编译——prov 是唯一预算源 */
+static uint32_t test_budget_ma; /* Not built in prod; prov is the only source */
 #endif
 
 uint32_t
@@ -23,7 +27,7 @@ entelea_power_budget_ma(void)
 {
 #ifdef ENTELEA_TEST
 	if (test_budget_ma != 0) {
-		return test_budget_ma; /* 测试注入（显式覆盖 prov） */
+		return test_budget_ma; /* Test injection (overrides prov) */
 	}
 #endif
 	return entelea_prov()->power_budget_ma;
@@ -68,7 +72,8 @@ entelea_power_snapshot(entelea_power_snapshot_t *out)
 	}
 }
 
-/* SET 门：R04 受控供电要求 power:write 声明（实例 0——单预算面）。 */
+/* SET gate: R04 controlled power requires a power:write declaration
+ * (instance 0; single budget surface). */
 static entelea_result_t
 power_gate(entelea_principal_t ctx)
 {
@@ -88,8 +93,10 @@ entelea_power_request(entelea_principal_t ctx, const char *safety_uid,
 	if (r != ENTELEA_OK) {
 		return r;
 	}
-	/* 原子检查-提交（review P1 修复）：预算检查与 commit 同一
-	 * write_lock 临界区——并发 power_request 不再能双过检查超预算。 */
+	/* Atomic check-then-commit (review P1 fix): the budget check and
+	 * commit share one write_lock critical section, so concurrent
+	 * power_request calls can no longer both pass the check and exceed
+	 * the budget. */
 	entelea_safety_write_lock();
 	if (v.pwr.en && v.pwr.ma > 0) {
 		uint32_t budget = entelea_power_budget_ma();
@@ -99,11 +106,11 @@ entelea_power_request(entelea_principal_t ctx, const char *safety_uid,
 
 		if (entelea_safety_readback(safety_uid, &rb) == ENTELEA_OK &&
 		    rb.pwr.en) {
-			current = rb.pwr.ma; /* 本通道替换语义：先扣自身 */
+			current = rb.pwr.ma; /* Replace: subtract own first */
 		}
 		if (v.pwr.ma > budget || used - current > budget - v.pwr.ma) {
 			entelea_safety_write_unlock();
-			return ENTELEA_E_RANGE; /* 超预算整笔拒绝（无在线降额） */
+			return ENTELEA_E_RANGE; /* Reject all; no derating */
 		}
 	}
 	r = entelea_safety_commit_locked(safety_uid, v, NULL);

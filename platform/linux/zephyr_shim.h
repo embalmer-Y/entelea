@@ -1,11 +1,13 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #ifndef ENTELEA_LINUX_ZEPHYR_SHIM_H
 #define ENTELEA_LINUX_ZEPHYR_SHIM_H
-/* Linux 宿主的 Zephyr 内核面最小垫片：framework 机制源无修改地在
- * Linux 编译（D02"同源合同"纪律——一套源码、两侧平台适配）。
- * 提供：k_mutex/k_spinlock、k_sleep、k_is_in_isr、irq_lock/unlock、atomic_t、
- * K_MSGQ/sysworkq 面（事件 ISR 队列在 Linux 宿主降级为同步分发——
- * 无 ISR 上下文；k_work 不上机：wdt 巡检经测试直调）。 */
+/* Minimal Zephyr kernel-surface shim for the Linux host. Framework mechanism
+ * sources compile unmodified on Linux (D02 "same-source contract" discipline:
+ * one source set, platform adaptation on both sides).
+ * Provides: k_mutex/k_spinlock, k_sleep, k_is_in_isr, irq_lock/unlock,
+ * atomic_t, and the K_MSGQ/sysworkq surface. On the Linux host, the event ISR
+ * queue degrades to synchronous dispatch (no ISR context); k_work is not
+ * brought up on target: the wdt patrol is invoked directly by tests. */
 #define _POSIX_C_SOURCE 200809L
 #include <pthread.h>
 #include <sched.h>
@@ -97,7 +99,7 @@ irq_unlock(unsigned int k)
 #define __weak __attribute__((weak))
 #define __ASSERT_NO_MSG(cond) ((void) (cond))
 
-/* events.c 队列/工作面（单线程同步降级）。 */
+/* events.c queue/work surface (single-threaded synchronous degradation). */
 struct k_work {
 	char _pad[8];
 };
@@ -118,7 +120,8 @@ extern struct k_work_q k_sys_work_q;
 int
 k_work_submit_to_queue(struct k_work_q *q, struct k_work *w);
 
-/* wdt.c 工作面（Linux 宿主：巡检经测试直调 patrol_once——调度 no-op）。 */
+/* wdt.c work surface (Linux host: patrol_once is called directly by tests;
+ * scheduling is a no-op). */
 struct k_work_sync {
 	char _pad[8];
 };

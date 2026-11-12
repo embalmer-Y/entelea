@@ -2,14 +2,17 @@
 #ifndef ENTELEA_WASM_HOST_H
 #define ENTELEA_WASM_HOST_H
 
-/* R05 Wasm 执行闭环合同见 framework/services/package/contract.md（§Wasm
- * 宿主）。WAMR pinned 25bd7eb；fast 解释器 + 指令配额 + WASI 关 +
- * 池模式（旧 DEC-17/25/31/48③ 语义）。实例在 load 时绑定 R04 owner
- * principal，此后不可替换：natives 只按 owner 裁决（Wasm 传入整数不可转
- * principal）；owner={0} 未绑定 = natives 一律拒）。natives 授权取交集：
- * 试用确认的权限列表（仅 ACTIVE 且字节相符）与 owner 的宿主授权须同时允许；
- * 未经确认的包（NONE/非候选）无任何 natives 权限。执行配额 = min(请求,
- * 确认步数, 1e8)。 */
+/* R05 Wasm execution loop contract: see framework/services/package/contract.md
+ * (section: Wasm host). WAMR pinned at 25bd7eb; fast interpreter, instruction
+ * quota, WASI off, and pool mode (legacy DEC-17/25/31/48 #3 semantics). The
+ * instance is bound to the R04 owner principal at load and cannot be replaced
+ * afterwards. Natives decide only by owner: an integer passed in from Wasm
+ * cannot be turned into a principal. owner={0} means unbound; natives are
+ * always refused. Native authorization is an intersection: the trial-confirmed
+ * permission list (only ACTIVE and byte-matching) and the owner's host
+ * authorization must both allow it. A package without confirmation (NONE or
+ * non-candidate) has no native permissions at all. The execution quota is
+ * min(request, confirmed steps, 1e8). */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -21,53 +24,66 @@
 extern "C" {
 #endif
 
-#define ENTELEA_WASM_HEAP_SIZE 262144U /* 池（旧 DEC-27 256KB 基线） */
+#define ENTELEA_WASM_HEAP_SIZE 262144U /* pool; legacy DEC-27 256KB baseline */
 #define ENTELEA_WASM_STACK_SIZE 4096U
 #define ENTELEA_WASM_INSTRUCTIONS_PER_MS 1000U
 #define ENTELEA_WASM_DEFAULT_INSTRUCTIONS 100000000U
 
-/** [boot] WAMR 进程级单次 init（池模式注入）。重复调用幂等。natives 注册
- * 失败 = E_IO 且回滚运行时（保持未初始化，可重试）。 */
+/** [boot] Process-level WAMR init, once (pool mode injection). Repeated calls
+ * are idempotent. If native registration fails, returns E_IO and rolls back
+ * the runtime (it stays uninitialized and can be retried). */
 entelea_result_t
 entelea_wasm_init(void);
 
-/** 验签并装载 slot 的模块，绑定 owner（V1 单实例）。已有活实例 =
- * E_BUSY 且零副作用（先 stop）；验签/读错误原样传播（E_INVALID_SIG /
- * E_IO 不互相改写）；R12 试用门（整文件 sha256）拒 = E_PERM 且零副作用；
- * 模块超装载缓冲 = E_RANGE。失败不写 app_id_out。 */
+/** Verifies and loads the module in slot, binding the owner (V1: single
+ * instance). If a live instance already exists, returns E_BUSY with no side
+ * effects (stop it first). Verification and read errors propagate unchanged
+ * (E_INVALID_SIG and E_IO do not overwrite each other). If the R12 trial gate
+ * (whole-file sha256) refuses, returns E_PERM with no side effects. A module
+ * that exceeds the load buffer returns E_RANGE. A failure does not write
+ * app_id_out. */
 entelea_result_t
 entelea_wasm_load(uint8_t slot, entelea_principal_t owner,
 		  uint32_t *app_id_out);
 
-/** 调用导出函数 fn。ctx 必须等于 load 绑定的 owner，否则 E_PERM；试用门
- * 按装载时 slot+摘要复核，拒 = E_PERM（之后 D12 门）。导出
- * ABI 仅 ()->i32 与 (i32)->i32：前者 arg 必须为 0，后者收到 arg；其余
- * 签名 = E_PARAM。上述拒绝均不执行、不销毁实例。超时 ms 经步预算近似，
- * 到期 → E_TIMEOUT 有界停止（判别=WAMR 异常串 "instruction limit"）；
- * 其余 trap → E_IO；两者都销毁实例。预算按 1000 指令/ms 近似换算，
- * 封顶 1e8；显式传 0 表示零指令，不是默认值，也不表示实际墙钟期限。 */
+/** Calls exported function fn. ctx must equal the owner bound at load,
+ * otherwise E_PERM. The trial gate is re-checked against the slot and digest
+ * recorded at load; if it refuses, returns E_PERM (followed by the D12 gate).
+ * The export ABI is only ()->i32 and (i32)->i32: the former requires arg to be
+ * 0, and the latter receives arg. Any other signature returns E_PARAM. The
+ * refusals above neither execute nor destroy the instance. The timeout in ms
+ * is approximated by a step budget; on expiry, returns E_TIMEOUT after a
+ * bounded stop (identified by the WAMR exception string "instruction limit").
+ * Other traps return E_IO. Both destroy the instance. The budget is converted
+ * at about 1000 instructions per ms and capped at 1e8. An explicit 0 means zero
+ * instructions, not the default, and does not mean an actual wall-clock
+ * deadline. */
 entelea_result_t
 entelea_wasm_call(uint32_t app_id, entelea_principal_t ctx, const char *fn,
 		  int32_t arg, uint32_t timeout_ms, int32_t *ret_out);
 
-/** 使用默认 1e8 指令预算调用；其余语义与 entelea_wasm_call 相同。 */
+/** Calls with the default 1e8 instruction budget. Other semantics are the same
+ * as entelea_wasm_call. */
 entelea_result_t
 entelea_wasm_call_default(uint32_t app_id, entelea_principal_t ctx,
 			  const char *fn, int32_t arg, int32_t *ret_out);
 
-/** 停止并销毁实例（模块保留——WAMR 换包重启路径语义）。 */
+/** Stops and destroys the instance. The module is kept, following the WAMR
+ * package-swap restart path. */
 entelea_result_t
 entelea_wasm_stop(uint32_t app_id);
 
-/** 已装载实例数（观测）。 */
+/** Number of loaded instances (for observation). */
 uint8_t
 entelea_wasm_instance_count(void);
 
 #ifdef ENTELEA_TEST
-/* 停止实例、卸载模块并销毁运行时（下次 init 从零开始）。 */
+/* Stops the instance, unloads the module, and destroys the runtime; the next
+ * init starts from scratch. */
 void
 entelea_wasm_test_reset(void);
-/* 代表 native 裁决直达钩子：grant=确认权限列表（NULL = 无确认授权）。 */
+/* Direct hook to the native decision, acting for the owner: grant is the
+ * confirmed permission list (NULL = no confirmed grant). */
 int32_t
 entelea_wasm_test_probe_decide(entelea_principal_t owner, const char *grant);
 #endif

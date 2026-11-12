@@ -1,10 +1,13 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* F-2 模型传输真实现（Linux host 面）：TLS（mbedtls 4.1，pin 同源
- * dependencies.json）+ HTTP/1.1 POST chat/completions + 值感知最小
- * JSON 提取（模型可在 reasoning 文本写字面 "content":——纯 strstr 会
- * 命中字符串值内部；状态机跟踪引号配对）。框架纪律：platform 装配面
- * （框架不含网络栈/TLS）；MCU 面 BLOCKED 于 C5（r06 F 批节）。凭据
- * 经调用方注入，不落盘不打日志。 */
+/* F-2 real model transport implementation (Linux host surface): TLS
+ * (mbedtls 4.1, pinned to the same dependencies.json), HTTP/1.1 POST
+ * chat/completions, and minimal value-aware JSON extraction. The model may
+ * write a literal "content": in its reasoning text, and a plain strstr would
+ * match inside string values, so a state machine tracks quote pairing.
+ * Framework discipline: platform assembly surface (the framework has no
+ * network stack or TLS). The MCU surface is BLOCKED on C5 (r06 F batch
+ * section). Credentials are injected by the caller and are never written to
+ * disk or logged. */
 #define _POSIX_C_SOURCE 200809L
 #include <errno.h>
 #include <stdio.h>
@@ -95,7 +98,7 @@ entelea_https_chat(void *user, const entelea_model_msg_t *msgs, uint8_t n,
 	if (msgs == NULL || n != 1 || msgs[0].content == NULL ||
 	    msgs[0].role == NULL || strcmp(msgs[0].role, "user") != 0 ||
 	    out == NULL || out_max == 0) {
-		return ENTELEA_E_PARAM; /* 多消息面显式拒（不静默丢） */
+		return ENTELEA_E_PARAM; /* Multi-msg: reject, no silent drop */
 	}
 	out[0] = '\0';
 	if (usage != NULL) {
@@ -117,7 +120,7 @@ entelea_https_chat(void *user, const entelea_model_msg_t *msgs, uint8_t n,
 	mbedtls_x509_crt ca;
 	char req[512 + ENTELEA_HTTPS_BODY_MAX];
 	static char
-		body[ENTELEA_HTTPS_BODY_MAX]; /* 16K 静态（host 单线程闸） */
+		body[ENTELEA_HTTPS_BODY_MAX]; /* 16K static (single-thread) */
 	entelea_result_t r = ENTELEA_E_IO;
 	const char *stage = "init";
 
@@ -127,7 +130,7 @@ entelea_https_chat(void *user, const entelea_model_msg_t *msgs, uint8_t n,
 	mbedtls_x509_crt_init(&ca);
 	if (psa_crypto_init() != PSA_SUCCESS) {
 		stage = "psa_init";
-		goto cleanup; /* 4.x RNG 面=PSA（mini_client 同款） */
+		goto cleanup; /* 4.x RNG surface = PSA (as in mini_client) */
 	}
 	if (mbedtls_x509_crt_parse_file(
 		    &ca, cfg->ca_bundle[0] ? cfg->ca_bundle : CA_BUNDLE) != 0) {
@@ -169,7 +172,7 @@ entelea_https_chat(void *user, const entelea_model_msg_t *msgs, uint8_t n,
 		r = ENTELEA_E_NOT_SENT;
 		goto cleanup;
 	}
-	{ /* 1s 量子轮询（整体界=deadline——review P2-1）。 */
+	{ /* 1s poll slice (overall bound = deadline; review P2-1). */
 		struct timeval tv = { .tv_sec = 1 };
 
 		if (setsockopt(net.fd, SOL_SOCKET, SO_RCVTIMEO, &tv,
@@ -209,11 +212,11 @@ entelea_https_chat(void *user, const entelea_model_msg_t *msgs, uint8_t n,
 			mbedtls_strerror(hs, eb, sizeof(eb));
 			fprintf(stderr, "[https] handshake: %s (-0x%x)\n", eb,
 				(unsigned) -hs);
-			goto cleanup; /* TLS 失败（含证书验证拒）=E_IO */
+			goto cleanup; /* TLS fail (incl. cert reject) = E_IO */
 		}
 	}
 
-	/* HTTP POST 组包。 */
+	/* Build the HTTP POST request. */
 	char esc[512];
 	char model_esc[sizeof(cfg->model) * 6];
 
@@ -305,7 +308,7 @@ entelea_https_chat(void *user, const entelea_model_msg_t *msgs, uint8_t n,
 		if (rd == MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET ||
 		    rd == MBEDTLS_ERR_SSL_WANT_READ ||
 		    rd == MBEDTLS_ERR_SSL_WANT_WRITE) {
-			continue; /* ticket/WANT_*：量子轮询（计入 deadline） */
+			continue; /* ticket/WANT_*: poll, within deadline */
 		}
 		if (rd < 0) {
 			if (rd == MBEDTLS_ERR_SSL_TIMEOUT) {
@@ -358,12 +361,12 @@ entelea_https_chat(void *user, const entelea_model_msg_t *msgs, uint8_t n,
 
 	if (ec == -1) {
 		stage = "no_content";
-		r = ENTELEA_E_RANGE; /* 无 content 字段（B-2 合同面） */
+		r = ENTELEA_E_RANGE; /* No content field (B-2 contract) */
 		goto cleanup;
 	}
 	if (ec != 0) {
 		stage = ec == -2 ? "content_truncated" : "content_overflow";
-		r = ENTELEA_E_RANGE; /* 截断显式（不冒充成功） */
+		r = ENTELEA_E_RANGE; /* Truncation is explicit, not success */
 		goto cleanup;
 	}
 	if (usage != NULL) {

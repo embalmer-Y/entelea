@@ -1,12 +1,15 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * R09 可选媒体接口（新-only；合同见本目录 contract.md）。
- * 独立可选：每类媒体（图像/PCM/显示）独立绑定后端槽——停止后可
- * 重绑同类、不影响他类（计划 L165：不得经单全局绑定串权；计划符合性审查 P2 修复：
- * 原实现是单 static 后端，二次 bind 覆盖他类）。
- * 采集≠保存/外发/记忆（权限分离）。假后端（ENTELEA_TEST，按类独立
- * 状态）验证接口/生命周期/取消/失败语义；真后端（S3 es8311/PDM/
- * P4 显示）随板级批接入同一 ops 形状。
+ * R09 optional media interface (new-only; see contract.md in this
+ * directory). Optional and independent: each media class (image/PCM/display)
+ * binds its own backend slot, so after a stop the same class can be rebound
+ * without affecting other classes (plan L165: no permission crossing through
+ * a single global binding; plan conformance review P2 fix: the original was a
+ * single static backend, so a second bind overwrote other classes).
+ * Capture is not save/egress/memory (permission separation). The fake backend
+ * (ENTELEA_TEST, with independent per-class state) validates interface,
+ * lifecycle, cancellation and failure semantics. Real backends (S3 es8311/PDM/
+ * P4 display) attach to the same ops shape with the board batch.
  */
 #include <string.h>
 #include <entelea/media.h>
@@ -52,14 +55,14 @@ entelea_media_capture_start(entelea_media_class_t cls, entelea_principal_t ctx)
 	if (!bounds[cls]) {
 		return ENTELEA_E_UNINIT;
 	}
-	/* 权限门：av:read（采集——不是保存/外发权限）。 */
+	/* Permission gate: av:read (capture, not save/egress permission). */
 	if (entelea_perm_check(ctx, ENTELEA_PERM_AV, ENTELEA_PERM_READ, 0) !=
 	    ENTELEA_OK) {
 		return ENTELEA_E_PERM;
 	}
 	if (backends[cls].state(backend_users[cls]) ==
 	    ENTELEA_MEDIA_CAPTURING) {
-		return ENTELEA_E_BUSY; /* 重复启动拒（显式） */
+		return ENTELEA_E_BUSY; /* Duplicate start refused */
 	}
 	return backends[cls].start(backend_users[cls]);
 }
@@ -78,7 +81,7 @@ entelea_media_poll(entelea_media_class_t cls, entelea_media_frame_t *out)
 	}
 	if (backends[cls].state(backend_users[cls]) !=
 	    ENTELEA_MEDIA_CAPTURING) {
-		return ENTELEA_E_STATE; /* 未采集/已停——不复活 */
+		return ENTELEA_E_STATE; /* Not capturing: no revival */
 	}
 	return backends[cls].poll(backend_users[cls], out);
 }
@@ -87,7 +90,7 @@ void
 entelea_media_capture_stop(entelea_media_class_t cls)
 {
 	if (class_ok(cls) && bounds[cls]) {
-		backends[cls].stop(backend_users[cls]); /* 后端幂等 */
+		backends[cls].stop(backend_users[cls]); /* Idempotent */
 	}
 }
 
@@ -95,12 +98,12 @@ entelea_media_state_t
 entelea_media_state(entelea_media_class_t cls)
 {
 	if (!class_ok(cls) || !bounds[cls]) {
-		return ENTELEA_MEDIA_IDLE; /* 未绑定=IDLE（不伪装可用） */
+		return ENTELEA_MEDIA_IDLE; /* Unbound = IDLE (not usable) */
 	}
 	return backends[cls].state(backend_users[cls]);
 }
 
-/* ---- 假后端（ENTELEA_TEST；按类独立状态——独立性判别用） ---- */
+/* ---- Fake backend (ENTELEA_TEST; per-class state for isolation) ---- */
 #ifdef ENTELEA_TEST
 
 static struct {
@@ -164,10 +167,10 @@ fake_poll(void *user, entelea_media_frame_t *out)
 	if (fake[cls].fail_next) {
 		fake[cls].fail_next = false;
 		fake[cls].state = ENTELEA_MEDIA_FAILED;
-		return ENTELEA_E_IO; /* 失败显式（不静默成功） */
+		return ENTELEA_E_IO; /* Explicit failure (no silent success) */
 	}
 	if (fake[cls].remaining == 0) {
-		return ENTELEA_E_BUSY; /* 无帧=非失败 */
+		return ENTELEA_E_BUSY; /* No frame: not a failure */
 	}
 	fake[cls].remaining--;
 	fake[cls].now++;

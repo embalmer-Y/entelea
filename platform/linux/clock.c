@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* R07 Linux 最小宿主时钟适配：POSIX CLOCK_MONOTONIC 原始读（ISR 语义
- * 不适用——Linux 宿主无 ISR 喂狗面；与 Zephyr 适配同合同：实例时钟、
- * 原始读、单调性由时钟源保证）。 */
+/* R07 Linux minimal host clock adapter: raw POSIX CLOCK_MONOTONIC reads.
+ * ISR semantics do not apply: the Linux host has no ISR watchdog-feed
+ * surface. Same contract as the Zephyr adapter: instance clock, raw reads,
+ * monotonicity guaranteed by the clock source. */
 #define _POSIX_C_SOURCE 200809L
 #include <time.h>
 #include <entelea/time.h>

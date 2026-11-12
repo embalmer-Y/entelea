@@ -2,14 +2,17 @@
 #ifndef ENTELEA_PACKAGE_H
 #define ENTELEA_PACKAGE_H
 
-/* R05 包容器合同见 framework/services/package/contract.md。
- * TSAP v2 容器（字节格式与旧版逐字节一致——对拍oracle 的前提；改名
- * entelea_* 不改线格式）。头 16B（大端）+ 32B 摘要：
+/* R05 package container contract: see framework/services/package/contract.md.
+ * TSAP v2 container (byte format identical to the legacy version, which is the
+ * precondition for the comparison oracle; renaming to entelea_* does not
+ * change the wire format). The header is 16B (big-endian) plus a 32B digest:
  *   magic "TSAP"(4) | fmt_ver u16(=2) | manifest_len u32 | wasm_len u32
- *   | flags u16（bit0=头后随 32B sha256(manifest‖wasm)；未知位 fail-closed）
- *   | digest(32) | manifest(CBOR) ‖ wasm ‖ COSE_Sign1(ed25519，内嵌
- *     payload 副本——固件比对两副本一致，防"签 A 装 B"）。
- * v1（fmt_ver=1）fail-closed 拒收（无兼容装载）。 */
+ *   | flags u16 (bit0 = 32B sha256(manifest||wasm) follows the header;
+ *     unknown bits fail closed)
+ *   | digest(32) | manifest(CBOR) || wasm || COSE_Sign1 (ed25519, with an
+ *     embedded payload copy; firmware checks that the two copies match, which
+ *     prevents signing A but installing B).
+ * v1 (fmt_ver=1) is rejected fail-closed (no compatible loading). */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -19,7 +22,7 @@
 extern "C" {
 #endif
 
-#define ENTELEA_TSAP_MAGIC 0x54534150U /* 'T','S','A','P'（大端） */
+#define ENTELEA_TSAP_MAGIC 0x54534150U /* 'T','S','A','P' (big-endian) */
 #define ENTELEA_TSAP_FMT_VER 2U
 #define ENTELEA_TSAP_FLAGS_DIGEST 0x0001U
 #define ENTELEA_TSAP_HEADER_SIZE 16U
@@ -37,7 +40,7 @@ typedef struct {
 	uint32_t wasm_off;
 	uint32_t cose_off;
 	uint32_t
-		pkg_len; /* 规范包长=COSE 签名末尾（仅验签成功后置位；否则 0） */
+		pkg_len; /* pkg length = end of COSE sig; 0 if unverified */
 } entelea_tsap_view_t;
 
 static inline uint32_t
@@ -53,8 +56,9 @@ entelea_be16(const uint8_t *p)
 	return (uint16_t) ((uint16_t) p[0] << 8 | p[1]);
 }
 
-/* 头字段解析（v2+flags 精确匹配；仅头域校验，容器边界由调用方按存储面
- * 另验）。溢出防御：段布局须落 u32 域。 */
+/* Header field parsing (exact match on v2 and flags). Only header fields are
+ * validated here; the caller verifies container bounds against the storage
+ * surface separately. Overflow defense: segment layout must fit in u32. */
 static inline bool
 entelea_tsap_parse_fields(const uint8_t *hdr, entelea_tsap_view_t *v)
 {
@@ -68,7 +72,7 @@ entelea_tsap_parse_fields(const uint8_t *hdr, entelea_tsap_view_t *v)
 	uint16_t flags = entelea_be16(hdr + 14);
 
 	if (ver != ENTELEA_TSAP_FMT_VER || flags != ENTELEA_TSAP_FLAGS_DIGEST) {
-		return false; /* v1/未知 flags = fail-closed */
+		return false; /* v1 or unknown flags = fail-closed */
 	}
 	v->fmt_ver = ver;
 	v->flags = flags;
@@ -81,9 +85,10 @@ entelea_tsap_parse_fields(const uint8_t *hdr, entelea_tsap_view_t *v)
 	v->manifest_off = ENTELEA_TSAP_CONTENT_OFF;
 	v->wasm_off = ENTELEA_TSAP_CONTENT_OFF + v->manifest_len;
 	v->cose_off = v->wasm_off + v->wasm_len;
-	/* review P1 修复：wasm_off 自身也须无回绕且不落在 manifest 段内
-	 * （此前仅查 cose_off——超大 manifest_len 可使 wasm_off 回绕到
-	 * 48 以下，执行字节可含未签名前缀）。 */
+	/* review P1 fix: wasm_off itself must not wrap around or fall inside
+	 * the manifest segment. Previously only cose_off was checked, so an
+	 * oversized manifest_len could wrap wasm_off below 48, letting the
+	 * executed bytes include an unsigned prefix. */
 	if (v->wasm_off < v->manifest_off || v->cose_off < v->wasm_off ||
 	    v->cose_off < ENTELEA_TSAP_CONTENT_OFF) {
 		return false;
@@ -91,7 +96,7 @@ entelea_tsap_parse_fields(const uint8_t *hdr, entelea_tsap_view_t *v)
 	return true;
 }
 
-/* 整包缓冲解析（字段 + 容器边界）。 */
+/* Parses a whole buffer (fields and container bounds). */
 static inline bool
 entelea_tsap_parse(const uint8_t *buf, size_t len, entelea_tsap_view_t *v)
 {

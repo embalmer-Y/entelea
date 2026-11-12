@@ -1,10 +1,15 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * 任务状态机（R04 新实现，合同 framework/execution/task/contract.md；
- * N-TASK 新-only）。有界表 + 受理去重 + 取消效果域 + 终态回收。
- * accepted≠completed；取消不撤回已发生效果；unknown 非幂等禁止自动重试。
- * 锁：单 mutex（submit/start/终态/回收串行化；查询无锁——观测容忍
- * 微撕裂，权威态经同一查询面）。无模型：测试 principal 直调闭环。
+ * Task state machine (new R04 implementation; contract:
+ * framework/execution/task/contract.md; N-TASK, new-only). Bounded table,
+ * admission deduplication, cancellation effect field, and terminal-state
+ * reclamation. accepted != completed; cancellation does not undo effects
+ * that already happened; unknown (non-idempotent) effects must not be
+ * retried automatically.
+ * Locking: a single mutex serializes submit, start, terminal transitions
+ * and reclaim; queries are lock-free (observers tolerate micro-tearing, and
+ * the authoritative state is read through the same query surface). No
+ * model: the test principal drives the closed loop directly.
  */
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -43,7 +48,8 @@ entelea_task_bind_clock(const entelea_clock_t *clock)
 	return ENTELEA_OK;
 }
 
-/* 调用方持 task_lock；回退不是可信的截止时间依据。 */
+/* Caller holds task_lock; a backward step is not reliable evidence for
+ * a deadline. */
 static bool
 task_now_ms(uint64_t *out)
 {
@@ -60,8 +66,9 @@ task_now_ms(uint64_t *out)
 	return true;
 }
 
-/* 惰性过期（须持 task_lock）：ACCEPTED 且 deadline 已过 → CANCELLED
- * +效果 NONE（未开始无副作用）。RUNNING 不迁移（效果未知不代决）。 */
+/* Lazy expiry (requires task_lock): ACCEPTED past its deadline -> CANCELLED
+ * with effect NONE (not started, so no side effects). RUNNING does not
+ * transition (an unknown effect is not decided on its behalf). */
 static bool
 expire_locked(entelea_task_t *t)
 {
@@ -104,10 +111,10 @@ entelea_task_submit(entelea_principal_t ctx, const char *name, uint16_t seq,
 	if (name == NULL) {
 		return ENTELEA_E_PARAM;
 	}
-	/* out 仅在成功时写入（失败不清零——调用方已持有的任务 id 不受
-	 * 重复受理拒绝影响）。 */
+	/* out is written only on success (failure does not clear it), so a
+	 * task id the caller already holds survives duplicate rejection. */
 	k_mutex_lock(&task_lock, K_FOREVER);
-	/* deadline 受理门与时钟簿记共用 task_lock。 */
+	/* Deadline admission gate and clock bookkeeping share task_lock. */
 	if (deadline_ms != 0) {
 		uint64_t now;
 
@@ -117,14 +124,16 @@ entelea_task_submit(entelea_principal_t ctx, const char *name, uint16_t seq,
 		}
 		if (now >= deadline_ms) {
 			k_mutex_unlock(&task_lock);
-			return ENTELEA_E_RANGE; /* 受理即过期：拒（不养僵尸任务） */
+			return ENTELEA_E_RANGE; /* Expired on admit: reject */
 		}
 	}
-	/* 受理去重：同 principal 同 seq 的非终态任务 = E_BUSY（重复请求
-	 * 可检测，不静默合并——重启重试语义由上层用新 seq）。 */
+	/* Admission dedup: a non-terminal task with the same principal and
+	 * seq returns E_BUSY (duplicate requests are detectable and never
+	 * merged silently; restart-retry semantics are up to the caller,
+	 * who uses a new seq). */
 	for (int i = 0; i < ENTELEA_TASK_MAX; i++) {
 		if (tb.used[i]) {
-			expire_locked(&tb.tasks[i]); /* 过期任务不再占去重位 */
+			expire_locked(&tb.tasks[i]); /* Frees dedup slot */
 		}
 		if (tb.used[i] && same_principal(tb.tasks[i].owner, ctx) &&
 		    tb.tasks[i].seq == seq &&
@@ -154,7 +163,7 @@ entelea_task_submit(entelea_principal_t ctx, const char *name, uint16_t seq,
 		}
 	}
 	k_mutex_unlock(&task_lock);
-	return ENTELEA_E_NOMEM; /* 槽满（有界——不排队） */
+	return ENTELEA_E_NOMEM; /* Slots full (bounded; no queueing) */
 }
 
 static entelea_result_t
@@ -171,18 +180,19 @@ transition_effect(entelea_principal_t ctx, entelea_task_id_t id,
 	}
 	entelea_task_t *t = &tb.tasks[i];
 
-	expire_locked(t); /* 惰性过期先于状态断言（过期后动作=E_STATE） */
+	expire_locked(t); /* Lazy expiry first (expired -> E_STATE) */
 	if (!same_principal(t->owner, ctx)) {
 		k_mutex_unlock(&task_lock);
-		return ENTELEA_E_PERM; /* 他者任务 */
+		return ENTELEA_E_PERM; /* Owned by another principal */
 	}
 	if (t->state != expect_from) {
 		k_mutex_unlock(&task_lock);
-		return ENTELEA_E_STATE; /* 状态竞态：显式拒绝 */
+		return ENTELEA_E_STATE; /* State race: explicit reject */
 	}
 	t->state = next;
-	/* 效果域在锁内写入（review P1 修复：解锁后写可能被 release+重用
-	 * 竞态覆盖到新任务——不再可能伪造确认）。 */
+	/* The effect field is written under the lock (review P1 fix: a write
+	 * after unlock could race with release+reuse and overwrite a new
+	 * task, so confirmation could be forged). */
 	if (next == ENTELEA_TASK_SUCCEEDED) {
 		t->effect =
 			flag ? ENTELEA_EFFECT_CONFIRMED : ENTELEA_EFFECT_NONE;
@@ -197,7 +207,8 @@ static entelea_result_t
 transition(entelea_principal_t ctx, entelea_task_id_t id,
 	   entelea_task_state_t expect_from, entelea_task_state_t next)
 {
-	/* 状态迁移（无效果域面——start 等中间迁移用）。 */
+	/* State transition without an effect field (used for intermediate
+	 * transitions such as start). */
 	k_mutex_lock(&task_lock, K_FOREVER);
 	int i = find_id(id);
 
@@ -231,7 +242,8 @@ static entelea_result_t
 finish(entelea_principal_t ctx, entelea_task_id_t id, entelea_task_state_t st,
        bool flag)
 {
-	/* 效果域由调用方据真实回执给出——本层不伪造确认；写入在锁内。 */
+	/* The caller supplies the effect field from the real receipt; this
+	 * layer never fakes confirmation. The write happens under the lock. */
 	return transition_effect(ctx, id, ENTELEA_TASK_RUNNING, st, flag);
 }
 
@@ -261,25 +273,25 @@ entelea_task_cancel(entelea_principal_t ctx, entelea_task_id_t id)
 	}
 	entelea_task_t *t = &tb.tasks[i];
 
-	expire_locked(t); /* 已过期=已 CANCELLED → 下方终态分支拒 */
+	expire_locked(t); /* Expired is CANCELLED: rejected below */
 	if (!same_principal(t->owner, ctx)) {
 		k_mutex_unlock(&task_lock);
 		return ENTELEA_E_PERM;
 	}
 	if (t->state == ENTELEA_TASK_ACCEPTED) {
 		t->state = ENTELEA_TASK_CANCELLED;
-		t->effect = ENTELEA_EFFECT_NONE; /* 未开始：无效果 */
+		t->effect = ENTELEA_EFFECT_NONE; /* Not started: no effect */
 		k_mutex_unlock(&task_lock);
 		return ENTELEA_OK;
 	}
 	if (t->state == ENTELEA_TASK_RUNNING) {
 		t->state = ENTELEA_TASK_CANCELLED;
-		t->effect = ENTELEA_EFFECT_UNKNOWN; /* 已发生效果不撤回 */
+		t->effect = ENTELEA_EFFECT_UNKNOWN; /* Effects are not undone */
 		k_mutex_unlock(&task_lock);
 		return ENTELEA_OK;
 	}
 	k_mutex_unlock(&task_lock);
-	return ENTELEA_E_STATE; /* 终态后取消 */
+	return ENTELEA_E_STATE; /* Cancel after terminal state */
 }
 
 entelea_result_t
@@ -293,7 +305,7 @@ entelea_task_get(entelea_task_id_t id, entelea_task_t *out)
 	if (i < 0) {
 		return ENTELEA_E_NOTFOUND;
 	}
-	*out = tb.tasks[i]; /* 无锁快照（观测容忍微撕裂） */
+	*out = tb.tasks[i]; /* Lock-free snapshot (micro-tearing tolerated) */
 	return ENTELEA_OK;
 }
 
@@ -313,11 +325,11 @@ entelea_task_release(entelea_principal_t ctx, entelea_task_id_t id)
 		k_mutex_unlock(&task_lock);
 		return ENTELEA_E_PERM;
 	}
-	expire_locked(t); /* 过期 ACCEPTED 先转终态（可回收） */
+	expire_locked(t); /* Expired ACCEPTED becomes terminal first */
 	if (t->state == ENTELEA_TASK_ACCEPTED ||
 	    t->state == ENTELEA_TASK_RUNNING) {
 		k_mutex_unlock(&task_lock);
-		return ENTELEA_E_STATE; /* 未终态不可回收 */
+		return ENTELEA_E_STATE; /* Non-terminal: cannot reclaim */
 	}
 	tb.used[i] = false;
 	memset(t, 0, sizeof(*t));
@@ -330,7 +342,7 @@ void
 entelea_task_test_reset(void)
 {
 	memset(&tb, 0, sizeof(tb));
-	task_clock = NULL; /* 连时钟绑定一并隔离（用例自含重绑） */
+	task_clock = NULL; /* Also isolates clock binding (tests rebind) */
 	task_last_ms = 0;
 	task_has_last = false;
 }

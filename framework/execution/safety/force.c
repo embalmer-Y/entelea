@@ -1,11 +1,13 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * estop / fail-safe 直达路径（迁自旧 safety/force.c，R02 合同
- * framework/execution/safety/contract.md）。
- * estop 路径纪律：force_all_fault 调用图内禁分配、队列、锁、协议栈符号；
- * 仅原子置位 + 驱动直写（drivers.c 同纪律）。
- * 相对旧实现调整：noinit 留痕持久化归 R03（R02 仅内存 reason 可观）；
- * estop 沿触发入 flash 审计环归 R03。
+ * estop / fail-safe direct path (migrated from the old safety/force.c; R02
+ * contract: framework/execution/safety/contract.md).
+ * estop path discipline: the force_all_fault call graph must not contain
+ * allocation, queue, lock, or protocol stack symbols; only atomic set plus
+ * direct driver writes (same discipline as drivers.c).
+ * Changes from the old implementation: persisting the noinit trace is deferred
+ * to R03 (R02 only exposes the in-memory reason); writing estop triggers into
+ * the flash audit ring is also deferred to R03.
  */
 #include <entelea/safety.h>
 #include <entelea/storage.h>
@@ -15,8 +17,9 @@
 static uint32_t fail_reason_store;
 atomic_t entelea_system_failed = ATOMIC_INIT(0);
 
-/* 复位原因留痕钩：存储模块（R03）强实现落 noinit；无存储构建为弱桩
- * （留痕缺失如实呈现，不伪造）。 */
+/* Reset-reason trace hook: the strong implementation in the storage module
+ * (R03) writes to noinit; builds without storage get a weak stub (a missing
+ * trace is reported as missing, never faked). */
 __weak void
 entelea_safety_record_fail_reason(uint32_t reason)
 {
@@ -28,15 +31,17 @@ void
 entelea_safety_test_reset_system_failed(void)
 {
 	atomic_set(&entelea_system_failed, 0);
-	fail_reason_store = 0; /* 计划符合性审查连带修复：reason 原无复位
-				* 路径——跨用例残留使后续 fail_reason 断言
-				* 读到陈旧值（用例隔离缺口）。 */
+	fail_reason_store = 0; /* Plan-conformance review fix: reason had no
+				* reset path; stale values from earlier
+				* cases leaked into later fail_reason
+				* assertions (test-isolation gap). */
 }
 #endif
 
-/* estop ISR 直达：[ISR] 安全——仅原子置位与直写（不经队列/调度）。
- * 写失败在 ISR 上下文不可返回：计入失败计数（可观测），状态/影子仍按
- * 合同迁移（物理未知由 fail-safe/WDT 收口）。 */
+/* estop ISR direct path: [ISR]-safe; only atomic set and direct writes
+ * (no queue or scheduling). A write failure cannot return in ISR context,
+ * so it is counted (observable); state and shadow still transition per the
+ * contract (unknown physical state is closed out by fail-safe/WDT). */
 void
 entelea_safety_force_all_fault(void)
 {
@@ -51,33 +56,41 @@ entelea_safety_force_all_fault(void)
 
 		if (entelea_drivers[s->desc->kind].write(
 			    s->desc, &s->desc->fault) != 0) {
-			/* 写失败：物理效果未知——不伪称 fault 值已落（shadow
-			 * 留最后确认值）；状态仍撤销资格并标记仅 recover
-			 * 可恢复（三轮 review 发现 2）。 */
+			/* Write failed: physical effect unknown.
+			 * Do not claim the fault value landed; the shadow
+			 * keeps the last confirmed value. State still revokes
+			 * eligibility and is marked recover-only
+			 * (third-round review finding 2). */
 			entelea_safety_count_write_failure();
 			s->state = ENTELEA_ST_SAFE_FAULT;
 			s->fault_by_write_failure = true;
-			/* 基线保留：失败=无确认写（决定 C）。 */
+			/* Baseline kept: no confirmed write (decision C). */
 			any_write_failed = true;
 			continue;
 		}
-		s->shadow = s->desc->fault; /* 确认写：覆盖早期“物理未知”标记 */
+		s->shadow = s->desc->fault; /* Confirmed: clears unknown flag */
 		s->fault_by_write_failure = false;
-		s->last_t = entelea_safety_now_ms(); /* 确认写刷新锚点 */
+		s->last_t = entelea_safety_now_ms(); /* Refresh anchor */
 		s->have_last = true;
 		s->state = ENTELEA_ST_SAFE_FAULT;
 	}
 	if (any_write_failed) {
-		/* 强停升级（owner 2026-11-08 定案①）：estop 强停落驱失败 =
-		 * 无法保证输出达安全值 → 全局停机（halt=原子置位，ISR 安全；
-		 * 停喂后由 WDT 复位收口）。先尽力安全化其余通道再升级。
-		 * 停机是终态（RF1 缺陷 3）：与 system_fail 同置 system_failed，
-		 * WDT 复位前 clear_fault/recover 不得恢复任何通道输出。 */
+		/* Escalate to global halt (owner-approved 2026-11-08, item 1):
+		 * if the estop forced write to the driver fails, the output
+		 * cannot be guaranteed to reach its safe value. halt is an
+		 * atomic set (ISR-safe); after feeding stops, the WDT reset
+		 * closes the case. Remaining channels are made safe first,
+		 * then escalate.
+		 * A halt is terminal (RF1 defect 3): system_failed is set
+		 * together with system_fail, and clear_fault/recover must not
+		 * restore any channel output before the WDT reset. */
 		atomic_set(&entelea_system_failed, 1);
 		entelea_wdt_halt();
 	}
-	/* 事后补发 ENTELEA_EVT_ESTOP：由 sysworkq 周期项检测 forced 上升沿后
-	 * 发布（ISR 内不提交工作项——队列禁令）；响应上界 = 巡检周期 + 调度延迟。 */
+	/* Deferred ENTELEA_EVT_ESTOP publish: a sysworkq periodic item
+	 * publishes after detecting the forced rising edge (ISR must not
+	 * submit work items; queue ban). Response bound = patrol period
+	 * + scheduling delay. */
 }
 
 bool
@@ -96,11 +109,12 @@ void
 entelea_safety_system_fail(uint32_t reason)
 {
 	fail_reason_store = reason;
-	/* 全局停机先行（缺陷 4）：任何线程触发 system_fail，软 WDT 巡检
-	 * 立即停喂停排——停机语义不依赖调用线程自身挂起。 */
+	/* Global halt first (defect 4): if any thread triggers system_fail,
+	 * the soft WDT patrol immediately stops feeding and rescheduling; halt
+	 * semantics do not depend on the calling thread suspending itself. */
 	entelea_wdt_halt();
 	atomic_set(&entelea_system_failed,
-		   1); /* 一次性：clear_fault 拒绝释放 */
+		   1); /* One-shot: clear_fault refuses release */
 	atomic_set(&entelea_forced, 1);
 	atomic_set(&entelea_forced_at,
 		   (atomic_val_t) (uint32_t) entelea_safety_now_ms());
@@ -113,22 +127,24 @@ entelea_safety_system_fail(uint32_t reason)
 			entelea_safety_count_write_failure();
 			s->state = ENTELEA_ST_SAFE_FAULT;
 			s->fault_by_write_failure = true;
-			/* 基线保留：失败=无确认写（决定 C）。 */
+			/* Baseline kept: no confirmed write (decision C). */
 			continue;
 		}
-		s->shadow = s->desc->fault; /* 确认写：覆盖早期“物理未知”标记 */
+		s->shadow = s->desc->fault; /* Confirmed: clears unknown flag */
 		s->fault_by_write_failure = false;
-		s->last_t = entelea_safety_now_ms(); /* 确认写刷新锚点 */
+		s->last_t = entelea_safety_now_ms(); /* Refresh anchor */
 		s->have_last = true;
 		s->state = ENTELEA_ST_SAFE_FAULT;
 	}
-	/* 复位原因留痕（R03 接线：存储强实现落 noinit；弱桩 = 无存储构建）。 */
+	/* Reset-reason trace (R03 wiring: the strong storage implementation
+	 * writes noinit; the weak stub means a build without storage). */
 	entelea_safety_record_fail_reason(reason);
 
 #ifdef ENTELEA_TEST
-	return; /* 测试构建：置态后返回，由用例断言停机路径 */
+	return; /* Test build: return here; the test checks the halt path */
 #endif
-	/* 受控停机：停喂硬 WDT → 兜底复位（复位原因留痕归 R03）。 */
+	/* Controlled halt: stop feeding the hard WDT; the fallback reset
+	 * (reset-reason trace belongs to R03). */
 	for (;;) {
 		k_sleep(K_FOREVER);
 	}
@@ -142,14 +158,15 @@ entelea_safety_test_fail_reason(void)
 }
 #endif
 
-/* estop 事后补发（sysworkq 周期驱动；由 wdt 巡检复用同一节奏） */
+/* Deferred estop publish (sysworkq periodic; the wdt patrol reuses the
+ * same cadence) */
 static bool estop_announced;
 
 void
 entelea_safety_estop_announce_reset(void)
 {
 	estop_announced =
-		false; /* clear_fault 释放锁存时复位（二次 estop 可再补发） */
+		false; /* clear_fault resets it; a second estop re-announces */
 }
 
 void
@@ -166,7 +183,8 @@ entelea_safety_estop_deferred_publish(void)
 			.len = sizeof(payload),
 		};
 		entelea_evt_publish(&evt);
-		/* estop 沿触发入审计环（低频沿，不节流；evt=1）。 */
+		/* Estop trigger goes to the audit ring (low-frequency edge,
+		 * not throttled; evt=1). */
 		const entelea_storage_audit_entry_t au = {
 			.t_ms = payload.t_ms,
 			.ch_idx = 0xFFFF,

@@ -1,9 +1,11 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * 平台单调时钟适配（R02）：把 Zephyr k_uptime（native_sim 与板级同源）
- * 包成 R01 实例时钟合同。原始 read 是单计数器读取，ISR 安全——
- * wdt feed 的 ISR 调用面依赖此性质（见 entelea/wdt.h 与监督合同）。
- * 跨重启重新分配 clock_id（沿用 R01 时间合同：旧截止时间不跨重启比较）。
+ * Platform monotonic clock adapter (R02): wraps Zephyr k_uptime (shared by
+ * native_sim and boards) as the R01 instance clock contract. The raw read is
+ * a single counter read and is ISR-safe; the wdt feed ISR call path relies
+ * on this property (see entelea/wdt.h and the supervision contract).
+ * clock_id is reassigned across reboots (per the R01 time contract, old
+ * deadlines are not compared across reboots).
  */
 #include <zephyr/kernel.h>
 #include <entelea/time.h>

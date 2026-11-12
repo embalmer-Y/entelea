@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* entelea config 内部共享（不对外）：定长 schema 确定性读取助手
- * （definite-length 专用；任何超集/不定长 = false——不引入通用 CBOR
- * 依赖，真机足迹纪律）+ CRC16。 */
+/* entelea config internal, shared and not exported: deterministic read
+ * helpers for fixed-schema data (definite-length only; any superset or
+ * indefinite length returns false). No generic CBOR dependency, per the
+ * real-device footprint discipline. Plus CRC16. */
 #ifndef ENTELEA_CONFIG_INTERNAL_H
 #define ENTELEA_CONFIG_INTERNAL_H
 

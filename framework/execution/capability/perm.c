@@ -1,11 +1,16 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * 能力文法解析 + 调用者裁决（迁自旧 hal/perm.c 的裁决面，R04 合同
- * framework/execution/capability/contract.md）。
- * principal 绑定槽 = 宿主可信面（原生侧映射，APP 不可寻址）；
- * 越权、字段不匹配或过期句柄拒绝并留痕（EVT_PERM_DENIED，观测面）。
- * 相对旧实现：类/操作集裁至 R04 消费面（gpio/pwm/power/msg 为主，
- * 其余类仅登记文法——无消费者的 op 不放行新语义，fail-closed 保持）。
+ * Capability grammar parsing and caller authorization (migrated from the
+ * authorization surface of the old hal/perm.c; R04 contract:
+ * framework/execution/capability/contract.md).
+ * Principal binding slots are the trusted host side (mapped on the native
+ * side; APPs cannot address them). Unauthorized access, mismatched fields,
+ * or stale handles are rejected and logged (EVT_PERM_DENIED, observation
+ * surface).
+ * Relative to the old implementation: classes and operation sets are trimmed
+ * to the R04 consumer surface (mainly gpio/pwm/power/msg). Other classes only
+ * register grammar; ops without a consumer grant no new semantics, so
+ * fail-closed is kept.
  */
 #include <ctype.h>
 #include <string.h>
@@ -13,11 +18,11 @@
 #include <entelea/events.h>
 #include <entelea/principal.h>
 
-#define MAX_BOUND_CTX 4 /* 同时加载 APP 上限（DEC-27 #10） */
+#define MAX_BOUND_CTX 4 /* Max APPs loaded at once (DEC-27 #10) */
 
 struct bound_ctx {
 	uint16_t app_id;
-	uint16_t gen; /* 本槽最近一次绑定代数；解绑不清零（防 ABA） */
+	uint16_t gen; /* Last bind generation; kept on unbind (ABA guard) */
 	entelea_perm_table_t table;
 	bool used;
 };
@@ -86,7 +91,8 @@ parse_op(const char *s, size_t len)
 	return -1;
 }
 
-/* msg 名单文法：[A-Za-z0-9._-]{1,39}（zenoh key 段同源白名单）。 */
+/* msg name grammar: [A-Za-z0-9._-]{1,39}, the same allowlist as zenoh
+ * key segments. */
 static bool
 valid_msg_name(const char *s, size_t len)
 {
@@ -119,13 +125,14 @@ msg_target_add(entelea_perm_table_t *table, const char *s, size_t len)
 			return ENTELEA_OK;
 		}
 		if (strcmp(table->msg_targets[i], name) == 0) {
-			return ENTELEA_OK; /* 重复声明幂等 */
+			return ENTELEA_OK; /* Duplicate is idempotent */
 		}
 	}
-	return ENTELEA_E_NOMEM; /* 名单上限（装载期拒绝，不静默截断） */
+	return ENTELEA_E_NOMEM; /* Full at load time: reject, no truncation */
 }
 
-/* 实例段数值位图："0-3" / "0,2" / "5"；实例>31 拒。 */
+/* Instance bitmap: "0-3" / "0,2" / "5"; instances above 31 are
+ * rejected. */
 static entelea_result_t
 parse_instances(const char *s, size_t len, uint32_t *bitmap)
 {
@@ -199,8 +206,9 @@ entelea_perm_parse(const char *cap, entelea_perm_table_t *table)
 	if (op < 0) {
 		return ENTELEA_E_PARAM;
 	}
-	/* msg 类 = 名单形态（op 仅 send；recv 被动无权限门——其余 op 无
-	 * 消费者，fail-closed）。 */
+	/* msg class uses the allowlist form (op must be send; recv is
+	 * passive with no permission gate; other ops have no consumer, so
+	 * fail-closed). */
 	if (cls == ENTELEA_PERM_MSG) {
 		size_t tlen = strlen(c2 + 1);
 
@@ -241,7 +249,7 @@ entelea_perm_parse_list(const char *list, size_t len,
 		const size_t n = end - start;
 
 		if (n == 0 || n >= sizeof(decl)) {
-			return ENTELEA_E_PARAM; /* 空段（含首尾分号）或超长 */
+			return ENTELEA_E_PARAM; /* Empty or overlong segment */
 		}
 		memcpy(decl, list + start, n);
 		decl[n] = '\0';
@@ -270,7 +278,7 @@ entelea_principal_bind(entelea_principal_t *ctx, uint16_t app_id,
 	for (int i = 0; i < MAX_BOUND_CTX; i++) {
 		if (contexts[i].used && contexts[i].app_id == app_id) {
 			k_spin_unlock(&contexts_lock, key);
-			return ENTELEA_E_PARAM; /* app_id 撞名拒绝 */
+			return ENTELEA_E_PARAM; /* app_id already bound */
 		}
 	}
 	for (int i = 0; i < MAX_BOUND_CTX; i++) {
@@ -287,14 +295,16 @@ entelea_principal_bind(entelea_principal_t *ctx, uint16_t app_id,
 		}
 	}
 	k_spin_unlock(&contexts_lock, key);
-	return ENTELEA_E_NOMEM; /* 槽满或代数耗尽 */
+	return ENTELEA_E_NOMEM; /* Slots full or generations exhausted */
 }
 
 static struct bound_ctx *
 resolve(entelea_principal_t ctx)
 {
-	/* 句柄域外/未绑定/app_id 或代数不符 = 伪造或过期 → 拒（不泄露槽
-	 * 状态）。代数耗尽的槽不再重用，避免在本次运行中回绕。 */
+	/* Handle out of range, unbound, or app_id/generation mismatch means
+	 * forged or stale: reject without leaking slot state. Slots whose
+	 * generation is exhausted are never reused, avoiding wrap-around
+	 * within this run. */
 	if (ctx._handle == 0 || ctx._handle > MAX_BOUND_CTX) {
 		return NULL;
 	}
@@ -316,7 +326,7 @@ entelea_principal_unbind(entelea_principal_t *ctx)
 	struct bound_ctx *b = resolve(*ctx);
 
 	if (b != NULL) {
-		b->used = false; /* 旧句柄此后裁决 E_PERM */
+		b->used = false; /* Old handles now get E_PERM */
 	}
 	ctx->_handle = 0;
 	k_spin_unlock(&contexts_lock, key);
@@ -337,7 +347,7 @@ deny_trace(entelea_principal_t ctx, uint16_t detail)
 		.len = sizeof(payload),
 	};
 
-	(void) entelea_evt_publish_copy(&evt); /* 队列满时总线计数 */
+	(void) entelea_evt_publish_copy(&evt); /* Bus counts drops when full */
 }
 
 entelea_result_t
@@ -363,7 +373,7 @@ entelea_perm_check(entelea_principal_t ctx, entelea_perm_class_t cls,
 	k_spin_unlock(&contexts_lock, key);
 	if (!allowed) {
 		deny_trace(ctx, (uint16_t) ((cls << 8) | op));
-		return ENTELEA_E_PERM; /* 伪造/过期或未声明 */
+		return ENTELEA_E_PERM; /* Forged, stale, or undeclared */
 	}
 	return ENTELEA_OK;
 }

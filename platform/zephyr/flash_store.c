@@ -1,13 +1,17 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * 板级 flash 存储后端（R03 板级批 A-1）：经 Zephyr flash_map 把
- * `storage_partition` 映射为 entelea 八分区命名空间。native_sim 同一
- * 代码路径走 sim-flash（真擦除语义）；真机走 esp32 flash 驱动。
- * 布局：各分区逻辑尺寸在挂载期从 RAM 模板采样冻结（权威值），物理
- * 占用按擦块（4KB）向上取整、顺序紧排。
- * 垫片：写块对齐（P4=4B——头/尾读改写；sim=1B 自然直通）；erase_off
- * 对齐到扇区边界（超集擦除——安全方向）。真断电面归到场项；flash
- * 天然跨 SW/MWDT 复位=本后端的主要收益。
+ * Board-level flash storage backend (R03 board batch A-1): maps
+ * `storage_partition` to the eight-partition entelea namespace via Zephyr
+ * flash_map. native_sim runs the same code path on sim-flash (real erase
+ * semantics); real boards use the esp32 flash driver.
+ * Layout: each partition's logical size is sampled from the RAM template at
+ * mount time and frozen (authoritative values); the physical footprint is
+ * rounded up to erase blocks (4 KB) and packed sequentially.
+ * Shims: write-block alignment (P4 = 4 B: head/tail read-modify-write;
+ * sim = 1 B, passed straight through); erase_off is aligned to sector
+ * boundaries (superset erase, the safe direction). Real power-loss coverage
+ * is a field item; flash persisting across SW/MWDT resets is this backend's
+ * main benefit.
  */
 #include <string.h>
 #include <zephyr/storage/flash_map.h>
@@ -16,13 +20,13 @@
 #include "flash_store.h"
 
 #define SECTOR 4096U
-#define BOUNCE_MAX 32U /* 写块垫片缓冲上限（P4=4B；留裕量） */
+#define BOUNCE_MAX 32U /* write-block bounce cap (P4=4B; headroom) */
 
 static const struct flash_area *fa;
 static const struct device *flash_dev;
-static uint32_t part_off[ENTELEA_PART_COUNT]; /* 物理起始（分区相对） */
-static uint32_t part_len[ENTELEA_PART_COUNT]; /* 物理占用（扇区取整） */
-static uint32_t logical_size[ENTELEA_PART_COUNT]; /* 挂载期冻结 */
+static uint32_t part_off[ENTELEA_PART_COUNT]; /* start (partition-relative) */
+static uint32_t part_len[ENTELEA_PART_COUNT]; /* footprint (sector-rounded) */
+static uint32_t logical_size[ENTELEA_PART_COUNT]; /* frozen at mount */
 static uint32_t write_blk = 1;
 
 static uint32_t
@@ -31,10 +35,12 @@ round_up(uint32_t v, uint32_t align)
 	return (v + align - 1) / align * align;
 }
 
-/* 逻辑内偏移 → 物理内偏移。META 特例：逻辑上两副本步长
- * ENTELEA_STORAGE_META_REC（512B）；物理上各占一个擦除扇区——
- * 否则超集擦除（副本 ping-pong 各自 erase_off）会波及同扇区另一
- * 副本（计划符合性板级批发现：两副本共扇区=一次擦除双杀）。 */
+/* Logical-to-physical offset mapping. META special case: logically the two
+ * copies are ENTELEA_STORAGE_META_REC (512 B) apart, while physically each
+ * occupies its own erase sector. Otherwise a superset erase (each copy's
+ * ping-pong erase_off) would hit the other copy in the same sector (found in
+ * the plan-conformance board batch: two copies sharing a sector means one
+ * erase kills both). */
 static uint32_t
 phys_off(entelea_store_part_t part, uint32_t off)
 {
@@ -64,9 +70,11 @@ bounds(entelea_store_part_t part, uint32_t off, uint32_t len)
 static entelea_result_t
 f_read(entelea_store_part_t part, uint32_t off, void *buf, uint32_t len);
 
-/* META 跨逻辑副本边界（review P2-1）：拆两段各自翻译——原实现只重
- * 映射起始偏移，跨 512 边界的读写会把 copy1 头落进物理垫片（读得
- * 0xFF/写静默丢）。 */
+/* META accesses crossing the logical copy boundary (review P2-1) are split
+ * into two segments, each translated separately. The old code only remapped
+ * the start offset, so a read or write crossing the 512 B boundary landed
+ * copy1's head in the physical shim (reads got 0xFF, writes were silently
+ * lost). */
 static entelea_result_t
 f_read(entelea_store_part_t part, uint32_t off, void *buf, uint32_t len)
 {
@@ -92,7 +100,9 @@ f_read(entelea_store_part_t part, uint32_t off, void *buf, uint32_t len)
 	return rc == 0 ? ENTELEA_OK : ENTELEA_E_IO;
 }
 
-/* 写块对齐垫片：头/尾不足一块的部分读-改-写（bounce）；主体直写。 */
+/* Write-block alignment shim: partial head/tail blocks are
+ * read-modify-written through a bounce buffer; the body is written
+ * directly. */
 static entelea_result_t
 aligned_write(uint32_t addr, const uint8_t *src, uint32_t len)
 {
@@ -168,7 +178,8 @@ f_erase(entelea_store_part_t part)
 	if (part >= ENTELEA_PART_COUNT) {
 		return ENTELEA_E_PARAM;
 	}
-	/* 整区擦（物理占用=扇区取整——垫片属本区，不越邻区）。 */
+	/* Whole-partition erase (footprint rounded to sectors; the shim stays
+	 * within this partition and never touches neighbors). */
 	int rc = flash_area_erase(fa, part_off[part], part_len[part]);
 
 	return rc == 0 ? ENTELEA_OK : ENTELEA_E_IO;
@@ -185,9 +196,11 @@ f_erase_off(entelea_store_part_t part, uint32_t off, uint32_t len)
 	if (len == 0) {
 		return ENTELEA_OK;
 	}
-	/* 超集擦除：向下取整扇区起点、向上取整长度（NOR 擦除粒度）。
-	 * 超集只影响本区垫片（区物理占用扇区对齐；META 经 phys_off
-	 * 重映射后副本各自落独立扇区——超集=副本自身扇区）。 */
+	/* Superset erase: round the start down to a sector and the length up
+	 * (NOR erase granularity). The superset only affects this partition's
+	 * shim; the footprint is sector-aligned, and META goes through
+	 * phys_off so each copy lands in its own sector (the superset is that
+	 * copy's sector). */
 	uint32_t po = phys_off(part, off);
 	uint32_t pl = phys_off(part, off + len - 1) - po + 1;
 	uint32_t start = part_off[part] + (po / SECTOR) * SECTOR;
@@ -209,7 +222,7 @@ entelea_result_t
 entelea_platform_storage_mount_flash(void)
 {
 	if (fa != NULL) {
-		return ENTELEA_OK; /* 幂等 */
+		return ENTELEA_OK; /* idempotent */
 	}
 	if (flash_area_open(FIXED_PARTITION_ID(storage_partition), &fa) != 0) {
 		return ENTELEA_E_UNINIT;
@@ -224,9 +237,10 @@ entelea_platform_storage_mount_flash(void)
 	if (write_blk == 0 || write_blk > BOUNCE_MAX) {
 		flash_area_close(fa);
 		fa = NULL;
-		return ENTELEA_E_NOMEM; /* 写块超垫片缓冲——板配置异常 */
+		return ENTELEA_E_NOMEM; /* write block > bounce: bad config */
 	}
-	/* 布局映射：此刻后端仍=RAM——逻辑尺寸即 RAM 权威值，采样冻结。 */
+	/* Layout mapping: the backend is still RAM here, so logical sizes
+	 * are the authoritative RAM values; sample and freeze them. */
 	uint32_t cursor = 0;
 
 	for (int p = 0; p < ENTELEA_PART_COUNT; p++) {
@@ -242,7 +256,7 @@ entelea_platform_storage_mount_flash(void)
 		part_off[p] = cursor;
 		part_len[p] = round_up(logical, SECTOR);
 		if (p == ENTELEA_PART_META) {
-			/* 双副本各占一扇区（物理 8K > 逻辑 1K）。 */
+			/* one sector per copy (8K physical, 1K logical) */
 			part_len[p] = 2 * SECTOR;
 		}
 		cursor += part_len[p];
@@ -250,7 +264,7 @@ entelea_platform_storage_mount_flash(void)
 	if (cursor > fa->fa_size) {
 		flash_area_close(fa);
 		fa = NULL;
-		return ENTELEA_E_NOMEM; /* storage 分区装不下八区布局 */
+		return ENTELEA_E_NOMEM; /* storage too small for eight areas */
 	}
 	return entelea_storage_mount(&flash_ops);
 }

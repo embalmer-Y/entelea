@@ -2,8 +2,10 @@
 #ifndef ENTELEA_KV_H
 #define ENTELEA_KV_H
 
-/* R03 App 业务状态 kv 合同见 framework/services/storage/contract.md。
- * 有界 blob（≤250B）按 app_id 哈希归属，跨升级/回滚保留；不是经历库。 */
+/* R03 App business-state kv contract: see
+ * framework/services/storage/contract.md.
+ * Bounded blobs (<= 250B) are owned by app_id hash and survive upgrade and
+ * rollback. This is not an experience store. */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -14,28 +16,34 @@
 extern "C" {
 #endif
 
-#define ENTELEA_KV_BLOB_MAX 250 /* 264B 槽 − 14B 头（结构性） */
+#define ENTELEA_KV_BLOB_MAX 250 /* 264B slot - 14B header (structural) */
 
-/** 惰性初始化（首次 save/load 内部调用亦可）；分区缺失 = E_STATE，
- *  读错误 = E_IO 且不就绪（下次调用重扫，不盲写）。 */
+/** Lazy initialization (the first save/load may also call it internally).
+ *  A missing partition gives E_STATE; a read error gives E_IO and leaves the
+ *  module not ready (the next call rescans and never writes blindly). */
 entelea_result_t
 entelea_kv_init(void);
 
-/** 保存/覆盖该 app 的状态 blob（追加式；CRC 与提交标记后回读；
- *  页满先读后擦压实）。目标页有活动页没有的待保留记录时返回 E_STATE，
- *  不擦除。失败 = 错误码；写失败时效果可能已落盘，该槽不复用，
- *  重新扫描后再判断。 */
+/** Saves (overwrites) the state blob of this app. The write is append-only;
+ *  the CRC and commit marker are read back afterwards. When the page is full,
+ *  live data is read first, then the page is erased and compacted. If the
+ *  target page holds records to keep that the active page lacks, returns
+ *  E_STATE without erasing. Failure returns an error code. After a write
+ *  failure the effect may already be on flash, so the slot is not reused;
+ *  rescan before deciding again. */
 entelea_result_t
 entelea_kv_save(uint32_t app_hash, const uint8_t *data, uint16_t len);
 
-/** 读该 app 最新 blob；返回拷贝长度（≥0）或错误码（out 空 = E_PARAM，
- *  未存 = E_NOTFOUND，容量不足 = E_RANGE，读错误或受保护记录损坏 =
- *  E_IO，init 错误原样）。旧无校验记录仍可读，但不能证明完整性。 */
+/** Reads the latest blob of this app. Returns the copied length (>= 0) or an
+ *  error code: E_PARAM if out is NULL, E_NOTFOUND if nothing is stored,
+ *  E_RANGE if the capacity is insufficient, E_IO on a read error or a corrupted
+ *  protected record. Init errors are returned unchanged. Legacy records without
+ *  a check can still be read, but their integrity cannot be proven. */
 int32_t
 entelea_kv_load(uint32_t app_hash, uint8_t *out, uint16_t max);
 
 #ifdef ENTELEA_TEST
-/** 游标复位（后端抹除后重扫描；测试隔离）。 */
+/** Resets the cursor; the backend is rescanned after erase (test isolation). */
 void
 entelea_kv_test_reset(void);
 #endif

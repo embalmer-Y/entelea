@@ -4,7 +4,8 @@
 
 #include <entelea/d12.h>
 
-/* 填充 D12 宿主端口结构，由装配层经 entelea_d12_bind_* 绑定。 */
+/* Populate the D12 host port structures; the assembly layer binds them
+ * through entelea_d12_bind_*. */
 entelea_result_t
 entelea_platform_d12_lock_init(entelea_lock_t *lock);
 entelea_result_t

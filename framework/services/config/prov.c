@@ -1,27 +1,34 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * provisioning 装载（迁自旧 store/prov.c，R03 合同见
- * framework/services/config/contract.md）。
- * PROV 分区布局（小端）：u32 cbor_len | u16 crc16(cbor) | cbor[]。
- * schema v1（9 对，定序）：v/node_id/cube_id/routers[tstr×≤4]/pk0/pk1/
- * cred/pwr_ma/estop；v2 = v1 前缀 + 尾部追加（11 对 deploy_mode+
- * estop_remote_clear；12 对 +lconf；15 对 +tls_ca/tls_cert/tls_key，
- * 三键同现同缺、len=0 键=结构损坏）。确定性子集解码：超集/不定长/
- * 域外值 = E_IO（fail-closed，不静默归并）。缺字段缺省 = orchestrated/
- * 远程清除开放/lconf 0/TLS off（存量 prov 零重刷兼容）。
- * 本文件零写调用（写通道 = 维护窗/maint 或烧录注入 prov_write_test，
- * 与 prov.c 分离——机械检查目标）。TLS 三元组 R03 起随装载态常驻
- * （旧 CONFIG_TS_NET_TLS 门控在 R06 消费方接入时复核足迹）。
+ * provisioning loader (migrated from the old store/prov.c; R03 contract:
+ * framework/services/config/contract.md).
+ * PROV partition layout (little-endian): u32 cbor_len | u16 crc16(cbor) |
+ * cbor[]. Schema v1 (9 pairs, fixed order): v/node_id/cube_id/
+ * routers[tstr, <=4]/pk0/pk1/cred/pwr_ma/estop. v2 = v1 prefix plus appended
+ * tail (11 pairs: deploy_mode + estop_remote_clear; 12 pairs: + lconf; 15
+ * pairs: + tls_ca/tls_cert/tls_key; the three TLS keys are all present or
+ * all absent, and a len=0 key is structural damage). Deterministic subset
+ * decoding: superset, indefinite length or out-of-domain values = E_IO
+ * (fail-closed, never silently merged). Missing fields default to
+ * orchestrated / remote clear open / lconf 0 / TLS off (existing prov stays
+ * compatible without reflashing).
+ * This file makes no write calls (write channels: the maintenance window
+ * (maint) or flash injection prov_write_test, kept separate from prov.c as a
+ * mechanical check target). The TLS triple has been resident in the loaded
+ * state since R03 (the old CONFIG_TS_NET_TLS gate is re-checked for footprint
+ * when the R06 consumer is wired in).
  */
 #include <string.h>
 #include <entelea/prov.h>
 #include <entelea/storage.h>
 #include "internal.h"
 
-#define PROV_CBOR_MAX 3800U /* 4KiB 分区内合理上限（结构性） */
+#define PROV_CBOR_MAX 3800U /* Structural cap within the 4KiB partition */
 
-/* 未装载/装载失败兜底 = v1 等义（estop_remote_clear 开放——测试构建常
- * 无 prov；装载失败生产板走 boot fail-safe，此值仅失败前观测安全侧）。 */
+/* Fallback when unloaded or the load failed: same meaning as v1
+ * (estop_remote_clear open; test builds often have no prov). On a production
+ * board a failed load goes through boot fail-safe; this value only gives the
+ * safe-side view before the failure. */
 static entelea_prov_t prov = {
 	.deploy_mode = ENTELEA_DEPLOY_ORCHESTRATED,
 	.estop_remote_clear = 1,
@@ -55,7 +62,7 @@ entelea_prov_load(void)
 		return ENTELEA_E_IO;
 	}
 	if (entelea_cfg_crc16(cbor, cbor_len) != crc) {
-		return ENTELEA_E_IO; /* CRC 失败 → 调用方 fail-safe */
+		return ENTELEA_E_IO; /* CRC fail: caller fail-safe */
 	}
 	return prov_walk(cbor, cbor_len, &prov, &prov_tls);
 }
@@ -72,13 +79,13 @@ prov_walk(const uint8_t *cbor, uint32_t cbor_len, entelea_prov_t *out,
 	}
 	uint32_t pairs;
 
-	/* v1=9 对；v2=11/12/15 对（键序=v1 前缀+尾部追加）。 */
+	/* v1: 9 pairs; v2: 11/12/15 pairs (v1 prefix + appended tail). */
 	if (!entelea_rd_len(&r, ib & 0x1F, &pairs) ||
 	    (pairs != 9 && pairs != 11 && pairs != 12 && pairs != 15)) {
 		return ENTELEA_E_IO;
 	}
 
-	/* 缺字段缺省（先置再走查；out 可能为脏 scratch）。 */
+	/* Defaults first, then the walk (out may be dirty scratch). */
 	out->deploy_mode = ENTELEA_DEPLOY_ORCHESTRATED;
 	out->estop_remote_clear = 1;
 	out->local_confirm = 0;
@@ -112,7 +119,7 @@ prov_walk(const uint8_t *cbor, uint32_t cbor_len, entelea_prov_t *out,
 			return ENTELEA_E_IO;
 		}
 		switch (k) {
-		case 0: /* v：9 对 ⇔ v1，11/12/15 对 ⇔ v2（错配=结构损坏） */
+		case 0: /* 9 pairs = v1, 11/12/15 = v2 (mismatch: corrupt) */
 			if (!entelea_rd_uint(&r, &u) ||
 			    u != (uint32_t) (pairs == 9 ? 1 : 2)) {
 				return ENTELEA_E_IO;
@@ -130,7 +137,7 @@ prov_walk(const uint8_t *cbor, uint32_t cbor_len, entelea_prov_t *out,
 				return ENTELEA_E_IO;
 			}
 			break;
-		case 3: { /* routers: definite array of tstr ≤4 */
+		case 3: { /* routers: definite array of tstr, <=4 */
 			uint8_t ab;
 
 			if (!entelea_rd_u8(&r, &ab) ||
@@ -175,34 +182,35 @@ prov_walk(const uint8_t *cbor, uint32_t cbor_len, entelea_prov_t *out,
 				return ENTELEA_E_IO;
 			}
 			break;
-		case 8: /* estop 标志域 u8（防静默截断） */
+		case 8: /* estop flag field, u8 (no silent truncation) */
 			if (!entelea_rd_uint(&r, &u) || u > 0xFFU) {
 				return ENTELEA_E_IO;
 			}
 			out->estop_trigger_flags = (uint8_t) u;
 			break;
-		case 9: /* deploy_mode：域外值 fail-closed */
+		case 9: /* deploy_mode: out-of-domain value fails closed */
 			if (!entelea_rd_uint(&r, &u) ||
 			    u > (uint32_t) ENTELEA_DEPLOY_STANDALONE) {
 				return ENTELEA_E_IO;
 			}
 			out->deploy_mode = (uint8_t) u;
 			break;
-		case 10: /* estop_remote_clear：0|1 之外 fail-closed */
+		case 10: /* estop_remote_clear: not 0|1 = fail-closed */
 			if (!entelea_rd_uint(&r, &u) || u > 1U) {
 				return ENTELEA_E_IO;
 			}
 			out->estop_remote_clear = (uint8_t) u;
 			break;
 		default:
-			if (k == 11) { /* lconf：域外 fail-closed */
+			if (k == 11) { /* lconf: fail-closed outside 0|1 */
 				if (!entelea_rd_uint(&r, &u) || u > 1U) {
 					return ENTELEA_E_IO;
 				}
 				out->local_confirm = (uint8_t) u;
 				break;
 			}
-			/* 12/13/14：TLS DER bstr；tls_out=NULL=validate 零拷贝。 */
+			/* 12/13/14: TLS DER bstr; tls_out=NULL is the
+			 * zero-copy validate walk. */
 			uint16_t blen = 0;
 			uint8_t *dst = NULL;
 			size_t cap = 0;
@@ -227,11 +235,12 @@ prov_walk(const uint8_t *cbor, uint32_t cbor_len, entelea_prov_t *out,
 			}
 			if (!entelea_rd_bstr_len(&r, dst, cap, &blen) ||
 			    blen == 0) {
-				return ENTELEA_E_IO; /* 键在值空=结构损坏 */
+				return ENTELEA_E_IO; /* empty value: corrupt */
 			}
 			*dlen = blen;
 			if (tls_out != NULL) {
-				/* 装载态自身长度镜像（消费者单一读面）。 */
+				/* Mirror the length in the loaded state:
+				 * the single read surface for consumers. */
 				if (k == 12) {
 					tls_out->ca_len = blen;
 				} else if (k == 13) {
@@ -244,7 +253,7 @@ prov_walk(const uint8_t *cbor, uint32_t cbor_len, entelea_prov_t *out,
 		}
 	}
 	if (r.rem != 0) {
-		return ENTELEA_E_IO; /* 定长 schema：尾部余量=结构损坏 */
+		return ENTELEA_E_IO; /* trailing bytes: structural damage */
 	}
 	return ENTELEA_OK;
 }
@@ -257,7 +266,8 @@ entelea_prov_validate(const uint8_t *cbor, uint32_t len)
 	}
 	entelea_prov_t scratch;
 
-	/* 零拷贝走查（tls_out=NULL）：validate 不触碰装载活态。 */
+	/* Zero-copy walk (tls_out=NULL): validate never touches the
+	 * live loaded state. */
 	return prov_walk(cbor, len, &scratch, NULL);
 }
 

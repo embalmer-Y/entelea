@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* D12 日计数持久端口（Zephyr KV）。键与 PKG_ACTIVE_KV_TAG 同属 app_hash
- * 键空间（framework/services/package/store.c），标签为 ASCII "D12G"。 */
+/* D12 day-counter persistent port (Zephyr KV). Its key shares the app_hash
+ * key space with PKG_ACTIVE_KV_TAG (framework/services/package/store.c).
+ * The tag is ASCII "D12G". */
 #include <entelea/d12.h>
 #include <entelea/kv.h>
 #include "d12_ports.h"

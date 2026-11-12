@@ -2,10 +2,12 @@
 #ifndef ENTELEA_SUPERVISION_H
 #define ENTELEA_SUPERVISION_H
 
-/* R02 监督启动合同见 framework/runtime/supervision/contract.md。
- * 监督与业务 boot 拆分：本模块只提供顺序执行器与 fail-safe 语义；
- * 步骤表由平台装配（platform/zephyr/boot_steps.c），顺序是规格，
- * 只允许尾部追加，不可调换既有次序。 */
+/* R02 supervision boot contract: see framework/runtime/supervision/contract.md.
+ * Supervision is split from the business boot: this module only provides the
+ * sequential executor and fail-safe semantics. The step table is assembled by
+ * the platform (platform/zephyr/boot_steps.c). The order is the specification:
+ * steps may only be appended at the tail; the existing order must not
+ * change. */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -22,7 +24,8 @@ typedef struct {
 	entelea_boot_step_fn fn;
 } entelea_boot_step_t;
 
-/* fail-safe reason 编码（沿旧 TS_FAIL_* 位布局，来源域 <<16 | 载荷）。 */
+/* fail-safe reason encoding, following the legacy TS_FAIL_* bit layout
+ * (source domain << 16 | payload). */
 #define ENTELEA_FAIL_SRC_BOOT 0x0001U
 #define ENTELEA_FAIL_SRC_WDT 0x0002U
 #define ENTELEA_FAIL_BOOT(idx) \
@@ -30,11 +33,13 @@ typedef struct {
 #define ENTELEA_FAIL_WDT(src) \
 	((uint32_t) ENTELEA_FAIL_SRC_WDT << 16 | (uint32_t) (src))
 
-/** [thread] 固定顺序执行；每步完成后发布 ENTELEA_EVT_BOOT_STEP（含失败步
- * result）。任一步失败 → entelea_safety_system_fail(ENTELEA_FAIL_BOOT(i))
- * 后受控停机（停喂 WDT → 硬 WDT 兜底复位；ENTELEA_TEST 构建停机路径可返回，
- * 由用例断言）。全部成功 → 发布 ENTELEA_EVT_BOOT_DONE 后返回；
- * 调用方（main）随后转常驻监督空闲。 */
+/** [thread] Runs the steps in fixed order. After each step completes, publishes
+ * ENTELEA_EVT_BOOT_STEP (including the failed step's result). If any step
+ * fails, calls entelea_safety_system_fail(ENTELEA_FAIL_BOOT(i)) and then halts
+ * in a controlled way: it stops feeding the WDT so the hard WDT reset acts as
+ * the fallback. ENTELEA_TEST builds may return from the halt path, and tests
+ * assert on that. When all steps succeed, publishes ENTELEA_EVT_BOOT_DONE and
+ * returns; the caller (main) then moves to resident supervision idle. */
 void
 entelea_supervision_boot(const entelea_boot_step_t *steps, size_t count);
 

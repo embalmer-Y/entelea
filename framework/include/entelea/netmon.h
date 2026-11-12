@@ -2,13 +2,20 @@
 #ifndef ENTELEA_NETMON_H
 #define ENTELEA_NETMON_H
 
-/* R06 网络/动态依赖合同见 framework/services/net/contract.md。
- * 机制+假传输（不碰真实网络/云）。四子面：
- * ①心跳监视（断链判定源+恢复滞回+部署模式守卫）；
- * ②控制租约（准入仲裁，惰性过期，id 不复用，本地席位视图失效）；
- * ③幂等缓存（idem 命中回放缓存回执不重执行；unknown 非幂等不自动重试）；
- * ④依赖状态机（network/model/storage/App 声明→可观测依赖态→
- *   独立 App 不被全局智脑状态绑死）。 */
+/* R06 network and dynamic dependency contract: see
+ * framework/services/net/contract.md.
+ * Mechanisms plus a fake transport (no real network or cloud access). There
+ * are four sub-surfaces:
+ * 1. Heartbeat monitoring (link-down decision source, recovery hysteresis, and
+ *    deployment-mode guard);
+ * 2. Control leases (admission arbitration, lazy expiry, IDs are never reused,
+ *    local seat view invalidation);
+ * 3. Idempotency cache (an idem hit replays the cached receipt without
+ *    re-executing; unknown outcomes of non-idempotent actions are not retried
+ *    automatically);
+ * 4. Dependency state machine (network/model/storage/App declarations ->
+ *    observable dependency states; a standalone App is not tied to the global
+ *    assistant state). */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -19,54 +26,65 @@
 extern "C" {
 #endif
 
-/* ---- ① 心跳监视（旧 linkmon 语义；数值出处 DEC-22/27） ---- */
+/* ---- 1. Heartbeat (legacy linkmon semantics; DEC-22/27) ---- */
 
 #define ENTELEA_NET_HB_PERIOD_MS 1000U
 #define ENTELEA_NET_HB_MISS_LIMIT 6U
 #define ENTELEA_NET_HB_RECOVER 2U
 
-/** [thread] host 心跳到达（streak++；恢复滞回 ≥RECOVER 才 up）。 */
+/** [thread] Host heartbeat arrives (streak++). Recovery is hysteretic: the link
+ * goes up only when the streak is >= RECOVER. */
 void
 entelea_net_hb_host(uint64_t now_ms);
 
-/** [thread] 周期判定：超时（elapsed > MISS_LIMIT×PERIOD）→ down。 */
+/** [thread] Periodic check. On timeout (elapsed > MISS_LIMIT * PERIOD),
+ * the link goes down. */
 void
 entelea_net_linkmon_tick(uint64_t now_ms);
 
-/** [any] 判定状态镜像。 */
+/** [any] Mirror of the decided link state. */
 bool
 entelea_net_link_up(void);
 
-/* ---- ② 控制租约（旧 lease 语义；TTL 出处 DEC-41） ---- */
+/* ---- 2. Control leases (legacy lease semantics; TTL from DEC-41) ---- */
 
 #define ENTELEA_NET_LEASE_TTL_MS 10000U
 #define ENTELEA_NET_LEASE_HOLDER_MAX 24
 
-/** [thread] 获取/续期（同 holder 幂等续期 id 不变；他人持有拒并回填
- * 当前租约归因；本地席位激活期=强制失效视图拒）。惰性过期（无定时器）。
- * lease_id 单调递增不复用。 */
+/** [thread] Acquires or renews a lease. Renewal by the same holder is
+ * idempotent and keeps the id. If another holder owns the lease, the request
+ * is refused and the current lease attribution is returned. During local seat
+ * activation the view is forcibly invalidated, and requests are refused.
+ * Expiry is lazy (no timer). lease_id increases monotonically and is never
+ * reused. */
 entelea_result_t
 entelea_net_lease_acquire(const char *holder, uint64_t now_ms, uint32_t *id,
 			  uint64_t *expires_at_ms);
 
-/** [thread] 归还（无有效租约 = 幂等空操作；他人租约拒）。 */
+/** [thread] Releases a lease. With no valid lease this is an idempotent no-op;
+ * releasing another holder's lease is refused. */
 entelea_result_t
 entelea_net_lease_release(const char *holder, uint64_t now_ms);
 
-/** [any] 指定 holder 是否持有有效租约（本地席位激活期恒 false——视图）。 */
+/** [any] Whether the given holder holds a valid lease (always false while the
+ * local seat is active; this is a view). */
 bool
 entelea_net_lease_held_by(const char *holder, uint64_t now_ms);
 
-/* ---- ③ 幂等缓存（旧 DEC-40 LRU 语义） ---- */
+/* ---- 3. Idempotency cache (legacy DEC-40 LRU semantics) ---- */
 
 #define ENTELEA_NET_IDEM_CACHE 4
 #define ENTELEA_NET_IDEM_KEY_MAX 16
 #define ENTELEA_NET_IDEM_REPLY_MAX 128
 
-/** 幂等执行包装：idem 命中 → 回放缓存回执不重执行（replayed=true）；
- * 未命中 → 调 exec 并缓存（仅当 exec 返回 OK 且非 unknown 效果）。
- * **unknown 非幂等不自动重试**：exec 返回 PENDING/unknown 效果时不
- * 缓存（下次同 idem 重执行——调用方决策，本层不静默重试也不吞结果）。 */
+/** Idempotent execution wrapper. On an idem hit, the cached receipt is
+ * replayed without re-executing (replayed=true). On a miss, exec is called and
+ * the result is cached only if exec returns OK with a non-unknown effect.
+ * **Unknown outcomes of non-idempotent actions are never retried
+ * automatically**: when exec returns PENDING or an unknown effect, nothing is
+ * cached. The next call with the same idem key re-executes; that is the
+ * caller's decision, and this layer neither retries silently nor swallows the
+ * result. */
 entelea_result_t
 entelea_net_idem_run(const char *idem_key, const uint8_t *request,
 		     size_t req_len,
@@ -74,11 +92,11 @@ entelea_net_idem_run(const char *idem_key, const uint8_t *request,
 					      uint8_t *, size_t *),
 		     uint8_t *reply, size_t *reply_len, bool *replayed);
 
-/* ---- ④ 依赖状态机（真实依赖变化驱动准入/暂停/恢复） ---- */
+/* ---- 4. Dependency state machine (driven by real changes) ---- */
 
 typedef enum {
 	ENTELEA_DEP_DOWN = 0,
-	ENTELEA_DEP_DEGRADED, /* 可用但抖动（恢复防抖窗内） */
+	ENTELEA_DEP_DEGRADED, /* usable but flapping (recovery debounce) */
 	ENTELEA_DEP_UP,
 } entelea_dep_state_t;
 
@@ -90,22 +108,27 @@ typedef enum {
 	ENTELEA_DEP_COUNT,
 } entelea_dep_kind_t;
 
-/** [thread] 上报原始观测（transport 探测/云调用结果/存储 IO/App 声明）。
- * 恢复防抖：DOWN→UP 需连续 good_streak 次 good 观测（默认 2——风暴
- * 抑制）；UP→DOWN 立即（失败侧保守）。依赖状态与只读查询并发同步；
- * 非依赖状态机的其他网络操作仍需调用方串行化。 */
+/** [thread] Reports a raw observation (transport probe, cloud call result,
+ * storage IO, or App declaration). Recovery debounce: DOWN -> UP needs
+ * good_streak consecutive good observations (default 2, which suppresses
+ * storms). UP -> DOWN is immediate (the failure side is conservative).
+ * Dependency state and read-only queries are synchronized; other network
+ * operations outside the dependency state machine still require caller
+ * serialization. */
 entelea_result_t
 entelea_dep_report(entelea_dep_kind_t kind, bool good, uint64_t now_ms);
 
-/** [thread] 标记依赖不可用，但不伪造不可知的观测时间。 */
+/** [thread] Marks a dependency as unavailable. No observation time is
+ * fabricated. */
 entelea_result_t
 entelea_dep_mark_down(entelea_dep_kind_t kind);
 
-/** [any] 依赖当前态（线程/ISR 安全的瞬时快照，不锁住后续操作）。 */
+/** [any] Current dependency state. This is a thread- and ISR-safe snapshot
+ * that does not lock later operations. */
 entelea_dep_state_t
 entelea_dep_state(entelea_dep_kind_t kind);
 
-/** 依赖名（观测/审计归因用）。 */
+/** Dependency name (for observation and audit attribution). */
 const char *
 entelea_dep_name(entelea_dep_kind_t kind);
 

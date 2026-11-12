@@ -1,11 +1,14 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* r15 板上模型传输真实现（platform/zephyr 装配面——框架不含网络栈；
- * 与 platform/linux/https_chat.c 同源合同）。移植差异面（其余逐行
- * 同源）：socket=getaddrinfo+Zephyr POSIX、CA=嵌入根数组、BIO=自管
- * fd 回调、时钟=k_uptime_get。F-2 打磨全部保留：值感知 JSON 键查找
- * （模型可在 reasoning 文本写字面 "content":）、TLS1.3 ticket 续读、
- * SO_RCVTIMEO 1s 量子+整体 deadline、首行状态码（401/403→E_PERM、
- * 429→E_BUSY）、截断显式（-2/-3→E_RANGE 不冒充成功）。 */
+/* r15 on-board model transport, real implementation (platform/zephyr assembly
+ * surface; the framework has no network stack). Same contract as
+ * platform/linux/https_chat.c. Porting differences (all other lines are
+ * identical): socket = getaddrinfo + Zephyr POSIX, CA = embedded root array,
+ * BIO = self-managed fd callbacks, clock = k_uptime_get. All F-2 refinements
+ * are kept: value-aware JSON key lookup (the model may write a literal
+ * "content": inside reasoning text), TLS 1.3 ticket read continuation,
+ * SO_RCVTIMEO 1 s time slices plus an overall deadline, status code on the
+ * first line (401/403 -> E_PERM, 429 -> E_BUSY), and explicit truncation
+ * (-2/-3 -> E_RANGE, never reported as success). */
 #include <errno.h>
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -45,7 +48,7 @@ now_ms(uint64_t *out)
 	return true;
 }
 
-/* ---- BIO：fd 直连 send/recv（mbedtls_net_* 是主机 POSIX 面） ---- */
+/* ---- BIO: direct fd send/recv (mbedtls_net_* is host POSIX) ---- */
 static int
 bio_send(void *ctx, const unsigned char *buf, size_t len)
 {
@@ -118,7 +121,7 @@ entelea_https_chat(void *user, const entelea_model_msg_t *msgs, uint8_t n,
 		.ai_family = AF_INET,
 		.ai_socktype = SOCK_STREAM,
 	};
-	static char body[ENTELEA_HTTPS_BODY_MAX]; /* 8K 静态（闸单线程） */
+	static char body[ENTELEA_HTTPS_BODY_MAX]; /* 8K static; one thread */
 	static char req[512 + ENTELEA_HTTPS_BODY_MAX];
 	int fd = -1;
 	entelea_result_t r = ENTELEA_E_IO;
@@ -129,7 +132,7 @@ entelea_https_chat(void *user, const entelea_model_msg_t *msgs, uint8_t n,
 	mbedtls_x509_crt_init(&ca);
 	if (psa_crypto_init() != PSA_SUCCESS) {
 		stage = "psa_init";
-		goto cleanup; /* RNG 面=Zephyr mbedtls 模块 PSA */
+		goto cleanup; /* RNG: Zephyr mbedtls module PSA */
 	}
 	for (size_t i = 0; i < entelea_ca_root_count; i++) {
 		if (mbedtls_x509_crt_parse(
@@ -163,7 +166,7 @@ entelea_https_chat(void *user, const entelea_model_msg_t *msgs, uint8_t n,
 		r = deadline_rc;
 		goto cleanup;
 	}
-	{ /* DNS 可能阻塞；返回后检查同一时间预算。 */
+	{ /* DNS may block; re-check the same time budget on return. */
 		int gai = getaddrinfo(cfg->host, HTTPS_PORT, &hints, &res);
 
 		deadline_rc = https_timer_check(&timer, now_ms);
@@ -253,11 +256,11 @@ entelea_https_chat(void *user, const entelea_model_msg_t *msgs, uint8_t n,
 			}
 			stage = "handshake";
 			printk("[https] handshake: -0x%x\n", (unsigned) -hs);
-			goto cleanup; /* 含证书验证拒=E_IO */
+			goto cleanup; /* cert verify reject = E_IO */
 		}
 	}
 
-	{ /* HTTP POST 组包（host 版同面） */
+	{ /* HTTP POST framing (same as host version) */
 		char esc[384];
 		char model_esc[sizeof(cfg->model) * 6];
 
@@ -329,7 +332,7 @@ entelea_https_chat(void *user, const entelea_model_msg_t *msgs, uint8_t n,
 	while (got + 1 < ENTELEA_HTTPS_BODY_MAX) {
 		deadline_rc = https_timer_check(&timer, now_ms);
 		if (deadline_rc != ENTELEA_OK) {
-			stage = "read_deadline"; /* 慢速/静默对端不得无限挂起 */
+			stage = "read_deadline"; /* slow/silent peer bounded */
 			r = deadline_rc;
 			goto cleanup;
 		}
@@ -352,7 +355,7 @@ entelea_https_chat(void *user, const entelea_model_msg_t *msgs, uint8_t n,
 		if (rd == MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET ||
 		    rd == MBEDTLS_ERR_SSL_WANT_READ ||
 		    rd == MBEDTLS_ERR_SSL_WANT_WRITE) {
-			continue; /* ticket/WANT_*：量子轮询（计入 deadline） */
+			continue; /* ticket/WANT_*: poll, counts to deadline */
 		}
 		if (rd < 0) {
 			stage = "ssl_read";

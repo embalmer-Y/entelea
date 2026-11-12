@@ -1,9 +1,12 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * 事件总线（迁自旧 core/events.c，R02 合同 framework/runtime/supervision/contract.md）：
- * 静态注册表 + ISR 投递队列（sysworkq 分发）。确定性：分发顺序 = 注册表
- * 静态顺序（禁运行期插队）。相对旧实现调整：时间戳来源由全局 ts_time_ms
- * 改为实例时钟绑定；容量常量出处不变（DEC-27）。
+ * Event bus (migrated from the old core/events.c; R02 contract:
+ * framework/runtime/supervision/contract.md):
+ * static registry plus ISR delivery queue (dispatched via sysworkq).
+ * Deterministic: dispatch order equals the static registry order (no runtime
+ * queue jumping). Changes from the old implementation: the timestamp source
+ * moves from the global ts_time_ms to the instance clock binding; the origin of
+ * the capacity constants is unchanged (DEC-27).
  */
 #include <stdbool.h>
 #include <string.h>
@@ -35,12 +38,16 @@ entelea_evt_bind_clock(const entelea_clock_t *clock)
 	return ENTELEA_OK;
 }
 
-/* 发布时间戳：经绑定时钟的原始 read（绕过 clock_now 的回退簿记——
- * 簿记非原子，ISR 投递与线程分发并发访问同一实例会撕裂 last_ms）。
- * 单调护栏：读失败/回退沿用最后有效值，不伪造 0；未绑定或从未成功
- * → 0（可观测的未配置）。
- * 并发（二轮 review 缺陷 5）：ISR 发布与线程分发并发访问 last_good，
- * 32 位目标 u64 可撕裂——比较/更新入 irq_lock 微临界区（ISR 可嵌套）。 */
+/* Publish timestamp: raw read through the bound clock (bypasses the
+ * regression bookkeeping of clock_now, which is not atomic; concurrent ISR
+ * delivery and thread dispatch on one instance would tear last_ms).
+ * Monotonic guard: on read failure or regression, keep the last valid value
+ * instead of faking 0. If unbound or never successful -> 0 (observable as
+ * unconfigured).
+ * Concurrency (second-round review defect 5): ISR publish and thread dispatch
+ * access last_good concurrently, and u64 can tear on 32-bit targets. The
+ * compare and update go inside an irq_lock micro critical section (ISR may
+ * nest). */
 static uint64_t
 now_ms(void)
 {
@@ -48,8 +55,10 @@ now_ms(void)
 	uint64_t ms = 0;
 	unsigned int key = irq_lock();
 
-	/* 读+比较+更新全程持锁（短且不阻塞的读取）：ISR/线程采样串行化，
-	 * 正常前进不再被交错误记为回退；真回退保守沿用最后有效值。 */
+	/* Read, compare and update run under the lock (short, non-blocking
+	 * read): ISR and thread sampling are serialized, so normal progress is
+	 * not misrecorded as a regression; a real regression conservatively
+	 * keeps the last valid value. */
 	bool ok = evt_clock != NULL && evt_clock->read_ms != NULL &&
 		  evt_clock->read_ms(evt_clock->user, &ms) == ENTELEA_OK;
 
@@ -135,7 +144,8 @@ publish_event(const entelea_event_t *evt, bool copy)
 		k_work_submit_to_queue(&k_sys_work_q, &drain_work);
 		return ENTELEA_OK;
 	}
-	/* 线程路径同步分发；时间戳与 ISR 路径同由总线加盖（发布瞬间）。 */
+	/* Thread path dispatches synchronously; like the ISR path, the bus
+	 * stamps the time at publish. */
 	if (q.copied) {
 		q.evt.data = &q.copied_payload;
 	}

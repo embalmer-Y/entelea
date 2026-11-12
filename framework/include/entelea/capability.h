@@ -2,9 +2,11 @@
 #ifndef ENTELEA_CAPABILITY_H
 #define ENTELEA_CAPABILITY_H
 
-/* R04 能力注册合同见 framework/execution/capability/contract.md。
- * 外设描述符（静态注册，回滚不留半注册）+ 按需能力检查。
- * DETACH 语义经 safety force_channel_fault（既有机制面）。 */
+/* R04 capability registration contract: see
+ * framework/execution/capability/contract.md.
+ * Peripheral descriptors (static registration; rollback leaves no partial
+ * registration) plus on-demand capability checks. DETACH semantics go through
+ * safety force_channel_fault (the existing mechanism surface). */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -17,44 +19,47 @@
 extern "C" {
 #endif
 
-#define ENTELEA_PERIPH_DESCS_MAX 24 /* DEC-27 #7（对齐旧上限） */
+#define ENTELEA_PERIPH_DESCS_MAX 24 /* DEC-27 #7 (matches legacy limit) */
 
 typedef enum {
-	ENTELEA_DEV_OUTPUT = 0, /* 输出通道（经保护层，必带 safety uid） */
-	ENTELEA_DEV_INPUT, /* 输入（不经保护层——合同 3） */
+	ENTELEA_DEV_OUTPUT = 0, /* output via protection layer (safety uid) */
+	ENTELEA_DEV_INPUT, /* input, bypasses protection layer (contract 3) */
 	ENTELEA_DEV_SENSOR,
 	ENTELEA_DEV_KIND_COUNT,
 } entelea_dev_kind_t;
 
 typedef struct {
-	const char *uid; /* 逻辑名（注册期冻结） */
+	const char *uid; /* logical name (frozen at registration) */
 	entelea_dev_kind_t kind;
-	uint8_t inst; /* 权限实例号（≤31，与能力位图对齐） */
+	uint8_t inst; /* instance no. (<= 31, matches capability bitmap) */
 	entelea_perm_class_t perm_class;
-	const char *safety_uid; /* 输出通道的 safety 通道 uid（NULL=无） */
+	const char *safety_uid; /* output channel's safety uid (NULL = none) */
 } entelea_periph_desc_t;
 
-/** [boot] 批量注册（原子：任一非法/撞名/超限 → 全部回滚，E_PARAM）。 */
+/** [boot] Registers a batch atomically. If any entry is invalid, has a name
+ * collision, or exceeds the limit, all entries are rolled back (E_PARAM). */
 entelea_result_t
 entelea_periph_register(const entelea_periph_desc_t *descs, size_t count);
 
-/** [any] 按 uid 查描述符（NULL=未注册）。 */
+/** [any] Finds a descriptor by uid (NULL = not registered). */
 const entelea_periph_desc_t *
 entelea_periph_find(const char *uid);
 
-/** [any] 注册数。 */
+/** [any] Number of registered descriptors. */
 size_t
 entelea_periph_count(void);
 
-/** [any] 能力门 + 输出通道地址：检查 principal 对描述符的类/实例授权；
- * 输出设备额外要求其 safety 通道存在且处于可提交态。未经此门的
- * 直接 safety commit 属调用方违约（评审面）。 */
+/** [any] Capability gate and output channel address. Checks the principal's
+ * class/instance authorization for the descriptor. Output devices must also
+ * have their safety channel present and committable. A direct safety commit
+ * that bypasses this gate is a caller violation (review surface). */
 entelea_result_t
 entelea_periph_acquire(entelea_principal_t ctx, const char *uid,
 		       const entelea_periph_desc_t **out);
 
-/** [boot/test] DETACH：物理不在场 → safety 单通道 fault（既有机制面），
- * 描述符保留（重附经 entelea_safety_channel_recover）。 */
+/** [boot/test] DETACH: if the device is physically absent, raises a single
+ * safety-channel fault (existing mechanism surface). The descriptor is kept;
+ * reattaching goes through entelea_safety_channel_recover. */
 entelea_result_t
 entelea_periph_detach(const char *uid);
 

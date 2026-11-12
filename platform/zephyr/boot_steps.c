@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* R02 平台装配启动表：estop GPIO → 全通道安全起始态 → WDT 启动 →
- * 监督就绪（占位锚定顺序）。后续业务批次只在尾部追加步骤。 */
+/* R02 platform assembly boot table: estop GPIO -> all-channel safe initial
+ * state -> WDT start -> supervision ready (placeholder order anchor). Later
+ * business batches only append steps at the tail. */
 #include <zephyr/sys/printk.h>
 #include <zephyr/toolchain.h> /* __weak */
 #include <entelea/d12.h>
@@ -12,9 +13,11 @@
 #include "d12_ports.h"
 #include <entelea/time.h>
 
-/* D12 启动防护（板级强实现=d12_bootguard.c；无实现板=native_sim/
- * 测试=空过）。SAFE-HALT 判定经 entelea_platform_d12_safe_halt 由
- * 装配层消费（防护不进 system_fail——那会 MWDT 复位+1 反成风暴源）。 */
+/* D12 boot guard (board strong implementation: d12_bootguard.c; boards
+ * without one, i.e. native_sim and tests, pass trivially). The SAFE-HALT
+ * decision is consumed by the assembly layer via
+ * entelea_platform_d12_safe_halt (the guard must not feed system_fail: that
+ * would add an MWDT reset and become a storm source). */
 #ifndef ENTELEA_REQUIRE_D12_BOOTGUARD
 __weak bool
 entelea_platform_d12_bootguard(void)
@@ -29,7 +32,8 @@ entelea_platform_d12_safe_halt(void)
 }
 #endif
 
-/* 持久端口弱缺省：仅链接 d12_store.c 的目标有强实现（KV）。 */
+/* Weak default for the persistent port: only targets linking d12_store.c
+ * have the strong (KV) implementation. */
 __weak entelea_result_t
 entelea_platform_d12_store_init(entelea_d12_store_t *store)
 {
@@ -40,7 +44,7 @@ entelea_platform_d12_store_init(entelea_d12_store_t *store)
 static entelea_result_t
 step_d12_bootguard(void)
 {
-	static entelea_clock_t d12_clock; /* 独立实例（uptime 单调，幂等） */
+	static entelea_clock_t d12_clock; /* own uptime clock (idempotent) */
 	static entelea_lock_t d12_lock;
 	static entelea_wallclock_t d12_wall;
 	static entelea_d12_store_t d12_store;
@@ -67,7 +71,8 @@ step_d12_bootguard(void)
 	if (r != ENTELEA_OK) {
 		return r;
 	}
-	/* 持久端口缺席或失败不阻止启动：未绑定时闸门 fail-closed */
+	/* A missing or failed persistent port does not block boot; the gate
+	 * fails closed while unbound. */
 	r = entelea_platform_d12_store_init(&d12_store);
 	if (r == ENTELEA_OK) {
 		r = entelea_d12_bind_store(&d12_store);
@@ -77,11 +82,12 @@ step_d12_bootguard(void)
 		       r);
 	}
 	(void) entelea_platform_d12_bootguard();
-	return ENTELEA_OK; /* SAFE-HALT 判定归装配层（见上注） */
+	return ENTELEA_OK; /* SAFE-HALT left to assembly layer (see above) */
 }
 
-/* 板级 flash 后端弱桩（R03 板级批）：默认无 flash 面（RAM 后端）；
- * 链接 platform/zephyr/flash_store.c 的目标获得强实现。 */
+/* Weak board-level flash backend stub (R03 board batch): by default there is
+ * no flash surface (RAM backend); targets linking
+ * platform/zephyr/flash_store.c get the strong implementation. */
 __weak entelea_result_t
 entelea_platform_storage_mount_flash(void)
 {
@@ -109,20 +115,25 @@ step_wdt_start(void)
 static entelea_result_t
 step_supervision_ready(void)
 {
-	/* 顺序锚定占位（旧 core_init 同语义）：事件/时钟为静态绑定，
-	 * 由装配 main 在执行器前完成；无动态 init。 */
+	/* Order-anchoring placeholder (same as legacy core_init): events and
+	 * clocks are statically bound by the assembly main before the executor
+	 * runs; no dynamic init. */
 	return ENTELEA_OK;
 }
 
 static entelea_result_t
 step_storage_init(void)
 {
-	/* R03 尾部追加：存储初始化 + noinit 消费；上次异常复位留痕经
-	 * entelea_storage_last_reset 由装配/观测面上报（打印留在平台层）。
-	 * 板级批：先挂 flash 后端。挂载约定（review P2-2 修复）：弱桩
-	 * E_UNINIT=目标无 flash 面（合法直通 RAM）；强实现返回其它错误
-	 * =**配置了 flash 却不可用**——持久化承诺失效，boot 步骤失败
-	 * fail-safe（不再静默退化 RAM 空转）。 */
+	/* R03 tail append: storage init and noinit consumption. The last
+	 * abnormal-reset trace is reported via entelea_storage_last_reset
+	 * by the assembly/observation surface (printing stays in the
+	 * platform layer).
+	 * Board batch: mount the flash backend first. Mount contract
+	 * (review P2-2 fix): weak stub E_UNINIT means the target has no
+	 * flash surface (legal passthrough to RAM); a strong implementation
+	 * returning any other error means **flash configured but unusable**:
+	 * the persistence guarantee is void, so the boot step fails safe
+	 * (no silent fallback to an idle RAM backend). */
 	entelea_result_t m = entelea_platform_storage_mount_flash();
 
 	if (m != ENTELEA_OK && m != ENTELEA_E_UNINIT) {

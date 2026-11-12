@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* entelea storage 内部共享（不对外）。 */
+/* entelea storage internal, shared and not exported. */
 #ifndef ENTELEA_STORAGE_INTERNAL_H
 #define ENTELEA_STORAGE_INTERNAL_H
 
 #include <string.h>
 #include <entelea/storage.h>
 
-/* CRC16-CCITT（poly 0x1021，init 0xFFFF）。 */
+/* CRC16-CCITT (poly 0x1021, init 0xFFFF). */
 static inline uint16_t
 entelea_crc16(const uint8_t *data, size_t len)
 {
@@ -23,10 +23,11 @@ entelea_crc16(const uint8_t *data, size_t len)
 	return crc;
 }
 
-/* 后端 ops 类型与当前后端符号在公共头（板级 flash 后端挂载面）。
- * 模块内部仍经 internal.h 统一取用。 */
+/* Backend ops types and current backend symbols are in the public header
+ * (board flash backend mount surface). Module code still goes through
+ * internal.h. */
 
-/* 小端读写（内部分区本机序）。 */
+/* Little-endian access (internal partitions use native order). */
 static inline void
 entelea_put_le16(uint8_t *p, uint16_t v)
 {

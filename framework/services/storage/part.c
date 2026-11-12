@@ -1,29 +1,35 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * 分区命名空间与后端端口（迁自旧 store/part.c 的 RAM 后端子集，R03 合同
- * framework/services/storage/contract.md）。
- * RAM 后端（native_sim/主机测试）：静态数组 + 0xFF 抹除语义，
- * test_reset 模拟"掉电后全新镜像"。flash 后端（DT fixed-partitions +
- * flash_map，含写对齐垫片）随板级批（D12 冻结后）迁移——本子闭环不提供，
- * 不宣称板级持久化已验证。越界（含 off+len u32 回绕）显式拒绝。
+ * Partition namespace and backend port (migrated from the RAM-backend subset
+ * of the old store/part.c; R03 contract: framework/services/storage/
+ * contract.md).
+ * RAM backend (native_sim / host tests): static arrays with 0xFF erase
+ * semantics; test_reset simulates a "fresh image after power loss". The flash
+ * backend (DT fixed-partitions + flash_map, including write-alignment shims)
+ * migrates with the board batch (after D12 is frozen). This sub-loop does not
+ * provide it and does not claim board-level persistence is verified.
+ * Out-of-range accesses (including off+len u32 wraparound) are refused.
  */
 #include <string.h>
 #include <entelea/storage.h>
 #include "internal.h"
 
-#define META_SIZE 1024U /* 双副本各 512B */
+#define META_SIZE 1024U /* Two copies, 512B each */
 #define NOINIT_SIZE 256U
-#define AUDIT_SIZE 8192U /* 两页乒乓 × 64 槽 × 64B（DEC-52①） */
+#define AUDIT_SIZE 8192U /* Two-page ping-pong, 64 x 64B (DEC-52, item 1) */
 #define PROV_SIZE 4096U
 #define TRUST_SIZE 8192U
 #define KV_SIZE 8192U
 #define SLOT_SIZE 262144U
 
 #ifdef ENTELEA_NO_RAM_BACKEND
-/* flash 目标（板级批）：RAM 镜像数组不编（省 ~540KB SRAM）。RAM ops
- * 退化为惰性（读/写/擦=E_UNINIT、整擦=OK），尺寸表保持**权威**——
- * flash_store 挂载期经 part_size 采样。挂载前的安全留痕（system_fail
- * 早于 storage_init）无持久面=RAM 后端进程内语义本也不跨复位。 */
+/* Flash target (board batch): the RAM mirror arrays are not built (saves
+ * ~540KB SRAM). RAM ops degrade to inert (read/write/erase_off return
+ * E_UNINIT; whole-partition erase returns OK), while the size table stays
+ * authoritative: flash_store samples it through part_size at mount time.
+ * A safety trace recorded before mount (system_fail before storage_init)
+ * has no persistent surface; RAM-backend semantics never crossed a reset
+ * anyway. */
 static uint8_t ram_meta[1];
 static uint8_t ram_noinit[1];
 static uint8_t ram_audit[1];
@@ -46,7 +52,7 @@ static bool ram_meta_initialized;
 #endif
 
 #ifdef RAM_BACKEND_INERT
-/* 惰性短路：无 RAM 数组（尺寸表仍权威）。 */
+/* Inert short-circuit: no RAM arrays; size table stays authoritative. */
 #define RAM_INERT_GUARD() return ENTELEA_E_UNINIT
 #else
 #define RAM_INERT_GUARD() \
@@ -154,7 +160,7 @@ ram_erase(entelea_store_part_t part)
 	uint8_t *base = part_ram(part, &size);
 
 #ifdef RAM_BACKEND_INERT
-	return ENTELEA_OK; /* 无数组=无事可擦（不报错） */
+	return ENTELEA_OK; /* No array: nothing to erase (no error) */
 #else
 	if (part == ENTELEA_PART_META) {
 		ram_meta_initialized = true;
@@ -184,8 +190,9 @@ static const entelea_store_ops_t ram_ops_template = {
 	.size = ram_size,
 };
 
-/* 当前后端（默认 RAM；非 const——板级 flash 经 entelea_storage_mount
- * 挂载。符号名保留：模块内 32 处引用零改动）。 */
+/* Current backend (RAM by default; not const: the board flash is attached
+ * via entelea_storage_mount). The symbol name is kept: the module's 32
+ * references need no change. */
 entelea_store_ops_t entelea_store_backend = {
 	.read = ram_read,
 	.write = ram_write,
@@ -198,21 +205,23 @@ entelea_result_t
 entelea_storage_mount(const entelea_store_ops_t *ops)
 {
 	if (ops == NULL) {
-		entelea_store_backend = ram_ops_template; /* 恢复默认 */
+		entelea_store_backend = ram_ops_template; /* Restore default */
 		return ENTELEA_OK;
 	}
 	if (ops->read == NULL || ops->write == NULL || ops->erase == NULL ||
 	    ops->erase_off == NULL || ops->size == NULL) {
 		return ENTELEA_E_PARAM;
 	}
-	/* 尺寸表权威性：挂载后 size() 必须与 RAM 模板一致（逻辑分区
-	 * 尺寸不随后端变）——由挂载方保证（flash_store 按模板映射）。 */
+	/* The size table is authoritative: after mount, size() must match the
+	 * RAM template (logical partition sizes do not depend on the backend).
+	 * The mounter guarantees this (flash_store maps by the template). */
 	entelea_store_backend = *ops;
 	return ENTELEA_OK;
 }
 
 #ifdef ENTELEA_TEST
-/* 越界/回绕负测探针：直通后端 read（端口边界合同）。 */
+/* Negative probe for out-of-range and wraparound: passes through to the
+ * backend read (port boundary contract). */
 entelea_result_t
 entelea_storage_test_backend_read(entelea_store_part_t part, uint32_t off,
 				  void *buf, uint32_t len)
@@ -245,11 +254,13 @@ entelea_storage_test_reset(void)
 }
 #endif
 
-/* 公共端口原语（跨模块消费经此窄面）。板级批 A-1 修复：经**当前
- * 后端**转发——原实现硬编码 ram_*，挂载 flash 后模块外消费者
- * （prov/pkg/上层）仍静默走 RAM（计划符合性板级批发现：prov 在
- * flash 变体读到上一用例的 RAM 残影）。未挂载时后端=RAM 模板，
- * 行为不变。 */
+/* Common port primitives (cross-module consumers go through this narrow
+ * surface). Board batch A-1 fix: forward through the **current backend**.
+ * The original hard-coded ram_*, so after mounting flash, consumers outside
+ * the module (prov/pkg/upper layers) still silently used RAM (found in the
+ * plan conformance board review: prov read a previous case's RAM residue on
+ * the flash variant). When unmounted the backend is the RAM template and
+ * behavior is unchanged. */
 entelea_result_t
 entelea_storage_read(entelea_store_part_t part, uint32_t off, void *buf,
 		     uint32_t len)
@@ -276,8 +287,10 @@ entelea_storage_part_size(entelea_store_part_t part)
 	return entelea_store_backend.size(part);
 }
 
-/* ---- SHA-256 流式（R05 包验签；FIPS 180-4，与 R01 一次性接口同算法）----
- * 调用方串行（包验签单线程域）；state 由调用方持有（init→update*→final）。 */
+/* ---- SHA-256 streaming (R05 package verification; FIPS 180-4, same
+ * algorithm as the R01 one-shot API) ----
+ * Callers are serialized (package verification is a single-thread domain);
+ * state is owned by the caller (init -> update* -> final). */
 #include <entelea/sha256.h>
 
 #define ROTR(x, n) (((x) >> (n)) | ((x) << (32 - (n))))
@@ -392,7 +405,7 @@ entelea_sha256_stream_update(uint32_t state[8], const uint8_t *data,
 	if (data == NULL && len > 0) {
 		return;
 	}
-	/* state 回填（调用方持有可能被复制的状态；幂等）。 */
+	/* Write back state (caller may hold a copy; idempotent). */
 	memcpy(sc.state, state, 32);
 	sc_absorb(data, len);
 	memcpy(state, sc.state, 32);

@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* tweetnacl 固件内自测钩子（DEC-49 调试期）：与主机对拍同源数据
- * （~/project/logs/tnacl/{sm,pub}.bin 导出的字节数组）——分离"库在模块
- * 构建下是否正确"与"verify 管线构造是否正确"两个变量。 */
+/* Firmware self-test hook for tweetnacl (DEC-49 debug phase). It uses the
+ * same data as the host cross-check (byte arrays exported from
+ * ~/project/logs/tnacl/{sm,pub}.bin), separating two variables: whether
+ * the library is correct when built as a module, and whether the verify
+ * pipeline is constructed correctly. */
 #include "tweetnacl.h"
 
 static const unsigned char self_sm[] = {

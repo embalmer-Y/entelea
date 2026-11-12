@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * 信任根表持久化（迁自旧 store/ts_trust.c，R03 合同见本目录 contract.md）。
- * 分区 = 8KB 双副本乒乓（2×4KB，擦除块对齐，meta 同型撕裂安全）。
+ * Persistence of the trust-root table (migrated from the old
+ * store/ts_trust.c; R03 contract in this directory's contract.md).
+ * Partition = 8KB two-copy ping-pong (2x4KB, erase-block aligned, torn-write
+ * safe like meta).
  */
 #include <string.h>
 #include "config_reader.h"
@@ -9,7 +11,7 @@
 #include <entelea/trust.h>
 #include "internal.h"
 
-#define TRUST_REC_HDR 8 /* seq u32 | len u16 | crc16 u16（meta 同型） */
+#define TRUST_REC_HDR 8 /* seq u32 | len u16 | crc16 u16 (same as meta) */
 #define TRUST_BACKEND_SIZE 8192U
 
 static entelea_trust_table_t table;
@@ -76,12 +78,13 @@ write_rec(uint8_t copy, uint32_t seq, const void *buf, uint16_t len)
 	if (entelea_store_backend.read(ENTELEA_PART_TRUST, copy * stride, back,
 				       total) != ENTELEA_OK ||
 	    memcmp(rec, back, total) != 0) {
-		return ENTELEA_E_IO; /* 回读校验 */
+		return ENTELEA_E_IO; /* Read-back check */
 	}
 	return ENTELEA_OK;
 }
 
-/* 确定性 schema 走查（validate/load 共用——单一事实源）。 */
+/* Deterministic schema walk, shared by validate and load (one source of
+ * truth). */
 static entelea_result_t
 trust_walk(const uint8_t *cbor, uint32_t cbor_len, entelea_trust_table_t *out)
 {
@@ -94,14 +97,14 @@ trust_walk(const uint8_t *cbor, uint32_t cbor_len, entelea_trust_table_t *out)
 	uint32_t pairs;
 
 	if (!entelea_rd_len(&r, ib & 0x1F, &pairs) || pairs != 2) {
-		return ENTELEA_E_IO; /* 恰 2 对定序键 */
+		return ENTELEA_E_IO; /* Exactly 2 pairs, fixed key order */
 	}
 	char key[8];
 	uint32_t u;
 
 	if (!entelea_rd_tstr(&r, key, sizeof(key)) || strcmp(key, "ver") != 0 ||
 	    !entelea_rd_uint(&r, &u) || u == 0) {
-		return ENTELEA_E_IO; /* ver ≥ 1（0 = 哨兵非合法表值） */
+		return ENTELEA_E_IO; /* ver >= 1; 0 is a sentinel */
 	}
 	out->ver = u;
 	if (!entelea_rd_tstr(&r, key, sizeof(key)) ||
@@ -124,12 +127,12 @@ trust_walk(const uint8_t *cbor, uint32_t cbor_len, entelea_trust_table_t *out)
 		}
 		for (uint32_t j = 0; j < i; j++) {
 			if (memcmp(out->keys[i], out->keys[j], 32) == 0) {
-				return ENTELEA_E_IO; /* 键内重复 = 生成侧错误 */
+				return ENTELEA_E_IO; /* duplicate key */
 			}
 		}
 	}
 	if (r.rem != 0) {
-		return ENTELEA_E_IO; /* 尾部余量 = 结构损坏 */
+		return ENTELEA_E_IO; /* trailing bytes: structural damage */
 	}
 	out->n_keys = (uint8_t) n;
 	return ENTELEA_OK;
@@ -156,7 +159,7 @@ entelea_trust_load(void)
 	entelea_trust_table_t t0;
 
 	if (ok0 && trust_walk(data, l0, &t0) != ENTELEA_OK) {
-		ok0 = false; /* CRC 过而 schema 违例 = 损 */
+		ok0 = false; /* CRC ok, schema violated = bad */
 	}
 	bool ok1 = read_rec(1, &s1, &l1, data) == ENTELEA_OK;
 	entelea_trust_table_t t1;
@@ -171,7 +174,7 @@ entelea_trust_load(void)
 	} else if (ok1) {
 		table = t1;
 	} else {
-		memset(&table, 0, sizeof(table)); /* 双损/空 = 工厂根单源 */
+		memset(&table, 0, sizeof(table)); /* Both bad: factory root */
 	}
 	loaded = true;
 	return ENTELEA_OK;
@@ -195,7 +198,7 @@ entelea_trust_write(const uint8_t *cbor, uint32_t len)
 	entelea_trust_table_t t;
 
 	if (trust_walk(cbor, len, &t) != ENTELEA_OK) {
-		return ENTELEA_E_IO; /* 非法=零写入（fail-closed） */
+		return ENTELEA_E_IO; /* Invalid: zero writes (fail-closed) */
 	}
 	uint32_t s0, s1;
 	uint16_t l0, l1;
@@ -218,7 +221,7 @@ entelea_trust_write(const uint8_t *cbor, uint32_t len)
 		inactive = 0;
 	}
 	if (cur_seq + 1 < cur_seq) {
-		return ENTELEA_E_RANGE; /* seq 回绕（防御） */
+		return ENTELEA_E_RANGE; /* seq wrap (defensive) */
 	}
 	entelea_result_t r =
 		write_rec(inactive, cur_seq + 1, cbor, (uint16_t) len);
@@ -226,7 +229,7 @@ entelea_trust_write(const uint8_t *cbor, uint32_t len)
 	if (r != ENTELEA_OK) {
 		return r;
 	}
-	return entelea_trust_load(); /* 活动切换 + RAM 重载 */
+	return entelea_trust_load(); /* Switch active + RAM reload */
 }
 
 #ifdef ENTELEA_TEST

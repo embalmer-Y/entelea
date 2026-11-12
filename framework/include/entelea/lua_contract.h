@@ -2,8 +2,9 @@
 #ifndef ENTELEA_LUA_CONTRACT_H
 #define ENTELEA_LUA_CONTRACT_H
 
-/* D03 Lua 接入合同（R05 关键可行性验证面；正式运行支持后续批次交付）。
- * 机制合同见 framework/services/package/contract.md（§Lua 接入）。 */
+/* D03 Lua integration contract (R05 key feasibility-validation surface; formal
+ * runtime support is delivered in a later batch). The mechanism contract is in
+ * framework/services/package/contract.md (section: Lua integration). */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -18,37 +19,39 @@ extern "C" {
 
 typedef enum {
 	ENTELEA_LUA_FMT_BINARY =
-		1, /* "\x1bLua"+ver 字节码（5.3=0x53/5.4=0x54） */
+		1, /* "\x1bLua" + bytecode version byte (5.3=0x53/5.4=0x54) */
 } entelea_lua_fmt_t;
 
 typedef struct {
 	entelea_lua_fmt_t format;
-	uint8_t version; /* 字节码版本字节 */
+	uint8_t version; /* bytecode version byte */
 } entelea_lua_payload_info_t;
 
-/** 载荷/版本识别（字节级；非 Lua 载荷 = E_INVALID_SIG——不得默认解释为
- * Wasm 或按文件后缀推断权限）。 */
+/** Identifies payload and version at byte level. A non-Lua payload returns
+ * E_INVALID_SIG; it must not default to Wasm or infer permissions from the file
+ * suffix. */
 entelea_result_t
 entelea_lua_payload_ident(const uint8_t *data, uint32_t len,
 			  entelea_lua_payload_info_t *out);
 
-/* ---- 内存预算（lua_Allocator 挂点语义；每实例独立） ---- */
+/* ---- Memory budget (lua_Allocator hook semantics, per instance) ---- */
 
 typedef struct {
 	uint32_t quota_bytes;
 	uint32_t used_bytes;
 	uint32_t peak_bytes;
-	uint32_t denied; /* 超配额拒绝次数（VM OOM 路径可观） */
+	uint32_t denied; /* over-quota denials (visible on VM OOM path) */
 } entelea_lua_mem_budget_t;
 
 entelea_result_t
 entelea_lua_mem_init(entelea_lua_mem_budget_t *b, uint32_t quota_bytes);
-/** alloc/realloc/free 钩子（old_n→new_n；缩容恒过）。超配额=false+计数。 */
+/** alloc/realloc/free hook (old_n -> new_n; shrinking always succeeds). Over
+ * quota returns false and increments the denial count. */
 bool
 entelea_lua_mem_alloc(entelea_lua_mem_budget_t *b, uint32_t old_n,
 		      uint32_t new_n);
 
-/* ---- 执行预算与有界停止（sethook count 语义） ---- */
+/* ---- Execution budget and bounded stop (sethook count semantics) ---- */
 
 typedef struct {
 	uint32_t step_budget;
@@ -58,23 +61,26 @@ typedef struct {
 
 entelea_result_t
 entelea_lua_exec_init(entelea_lua_exec_budget_t *b, uint32_t step_budget);
-/** 每步闸：超预算=false（此后一切 step 拒——有界停止；调用方必须返回
- * E_TIMEOUT，不静默续跑。deadline 不替代执行预算——R01 app.h 语义）。 */
+/** Per-step gate: over budget returns false, and every later step is refused
+ * (a bounded stop). The caller must return E_TIMEOUT and must not silently
+ * continue. A deadline does not replace the execution budget (R01 app.h
+ * semantics). */
 bool
 entelea_lua_exec_step(entelea_lua_exec_budget_t *b);
 
-/* ---- 工厂产物描述（R12 Forge 对拍面） ---- */
+/* ---- Factory artifact description (R12 Forge comparison surface) ---- */
 
 typedef struct {
-	uint8_t version; /* 合同版本（=1） */
-	uint16_t mem_quota_kb; /* 内存配额（1..512） */
-	uint32_t exec_budget_steps; /* 执行步预算（1..1e7） */
+	uint8_t version; /* contract version (=1) */
+	uint16_t mem_quota_kb; /* memory quota in KB (1..512) */
+	uint32_t exec_budget_steps; /* execution step budget (1..1e7) */
 	entelea_lua_fmt_t format;
 } entelea_lua_contract_t;
 
-/** 确定性编码，与 Forge build_manifest 逐字节一致：map(4){0:version,
- * 1:mem_kb, 2:steps, 3:fmt(lua=1)}，int 键升序、整数最短编码。域外/未知
- * 版本或格式 = E_PARAM（拒绝时不写 out/out_len）。 */
+/** Deterministic encoding, byte-for-byte identical to Forge build_manifest:
+ * map(4){0:version, 1:mem_kb, 2:steps, 3:fmt(lua=1)}. Int keys are sorted
+ * ascending, and integers use the shortest encoding. An out-of-domain or
+ * unknown version or format returns E_PARAM and does not write out/out_len. */
 entelea_result_t
 entelea_lua_contract_encode(const entelea_lua_contract_t *c,
 			    uint8_t out[ENTELEA_LUA_CONTRACT_CBOR_MAX],

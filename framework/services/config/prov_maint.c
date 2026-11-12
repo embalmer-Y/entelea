@@ -1,11 +1,15 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * prov 维护写通道 + 烧录测试注入（迁自旧 store/prov_maint.c 与
- * prov_test.c，R03 合同见 framework/services/config/contract.md）。
- * prov.c 本体零写不变（机械检查目标）。维护窗：写入前全量 schema 校验
- * （fail-closed——失败零写入）+ per-boot 一次性窗（RAM 旗：再写须经
- * 复位循环——远程换身份结构性限速且可观测）。记录格式与烧录注入一致
- * （头 len|crc + CBOR 一体单次连续写——flash 程序一次纪律）。
+ * prov maintenance write channel and flash-test injection (migrated from
+ * the old store/prov_maint.c and prov_test.c; R03 contract:
+ * framework/services/config/contract.md).
+ * prov.c itself has no writes and stays unchanged (mechanical check
+ * target). Maintenance window: a full schema check before writing
+ * (fail-closed: a failure writes nothing), plus a one-shot window per boot
+ * (RAM flag: writing again requires a reset cycle, so remote identity
+ * changes are structurally rate-limited and observable). The record format
+ * matches flash injection (header len|crc followed by CBOR in one contiguous
+ * write, per the single-program flash discipline).
  */
 #include <string.h>
 #include <entelea/prov.h>
@@ -21,12 +25,12 @@ entelea_prov_write_maint(const uint8_t *cbor, uint32_t len)
 		return ENTELEA_E_PARAM;
 	}
 	if (maint_written_this_boot) {
-		return ENTELEA_E_STATE; /* 一次性窗：再写须复位 */
+		return ENTELEA_E_STATE; /* One-shot: reset to write again */
 	}
 	entelea_result_t v = entelea_prov_validate(cbor, len);
 
 	if (v != ENTELEA_OK) {
-		return v; /* 非法 prov = 零写入（fail-closed） */
+		return v; /* Invalid prov: zero writes (fail-closed) */
 	}
 	static uint8_t rec[4096];
 

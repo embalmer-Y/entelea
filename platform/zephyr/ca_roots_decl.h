@@ -2,7 +2,7 @@
 #ifndef ENTELEA_CA_ROOTS_DECL_H
 #define ENTELEA_CA_ROOTS_DECL_H
 
-/* ca_roots.c 嵌入信任根面（https_chat 板上版消费）。 */
+/* Embedded trust roots from ca_roots.c, consumed by the on-board https_chat. */
 #include <stddef.h>
 
 extern const char *const entelea_ca_roots[];

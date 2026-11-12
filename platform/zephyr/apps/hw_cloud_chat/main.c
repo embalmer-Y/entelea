@@ -1,13 +1,17 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* r15 MCU 真云闸（A-1）：WiFi→DHCP→板上 TLS1.3 真模型 chat 全链真测。
- * 凭据=P4C2 串口注入（P4C1 扩展：ssid/psk + host/api_key/model——
- * 不入镜像不入仓库，用后显式 zeroize）。判据行 [hw-cloud]：
- *   1. connect+DHCP+dep NET good（复用 F-1 面）
- *   2. 一次真实恢复探测 → MODEL DEGRADED（一条观测）
- *   3. 断链（disconnect）→ 再 chat = E_STATE（netmon 准入拒——云失败
- *      与硬件安全不同状态机的可观测面）+ touched 不变
- *   4. 复连 → 第二次真实恢复探测 → MODEL UP → 普通 chat
- * 诊断失败只停用云与本诊断；真正的启动/监督故障仍走安全停机。 */
+/* r15 MCU real-cloud gate (A-1): full-chain real test of WiFi -> DHCP ->
+ * on-board TLS 1.3 real model chat.
+ * Credentials are injected over the P4C2 serial port (P4C1 extension:
+ * ssid/psk + host/api_key/model). They are not stored in the image or repo,
+ * and are zeroized explicitly after use. Criteria lines [hw-cloud]:
+ *   1. connect+DHCP+dep NET good (reuses the F-1 surface)
+ *   2. one real recovery probe -> MODEL DEGRADED (one observation)
+ *   3. link down (disconnect) -> chat again = E_STATE (rejected by netmon
+ *      admission; cloud failure is observed on a state machine distinct from
+ *      hardware safety) + touched unchanged
+ *   4. reconnect -> second real recovery probe -> MODEL UP -> ordinary chat
+ * A diagnostic failure disables only the cloud path and this diagnostic; real
+ * boot or supervision faults still take the safe-stop path. */
 #include <errno.h>
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -56,7 +60,7 @@ static atomic_t disconnect_status;
 static int chat_touched;
 static bool connect_requested;
 
-static entelea_https_cfg_t cfg_live; /* P4C2 凭据运行时填 */
+static entelea_https_cfg_t cfg_live; /* runtime-filled from P4C2 creds */
 
 static int
 uart_read_exact(const struct device *uart, uint8_t *buf, size_t size,
@@ -91,7 +95,7 @@ p4c2_uart_read(void *user, uint8_t *dst, size_t size)
 static int
 read_credentials(struct gate_credentials *c)
 {
-	/* P4C2：magic + u8[5] 长度 + ssid/psk/host/key/model（60s 窗）。 */
+	/* P4C2: magic, u8[5] lengths, ssid/psk/host/key/model (60s window). */
 	struct credential_uart_reader reader = {
 		.uart = DEVICE_DT_GET(DT_CHOSEN(zephyr_console)),
 		.end = sys_timepoint_calc(K_SECONDS(60)),
@@ -322,8 +326,8 @@ main(void)
 	callbacks_registered = true;
 
 	cfg_live.touched = &chat_touched;
-	{ /* host 字段可携 path（"host/api/v1" 形式——F-2 host 版
-	 * parse_base_url 等价面：首个 '/' 分离）。 */
+	{ /* The host field may carry a path ("host/api/v1" form), matching the
+	 * F-2 host version's parse_base_url: split at the first '/'. */
 		char *slash = strchr(credentials.host, '/');
 
 		if (slash != NULL) {
@@ -346,7 +350,7 @@ main(void)
 
 	entelea_model_bind(&transport, &cfg_live);
 
-	/* 第一轮：一次真实探测仅产生一条 MODEL good 观测。 */
+	/* Round 1: one real probe yields one MODEL good observation. */
 	CHK(connect_and_report(&credentials, 1) == 0,
 	    "connect+dhcp+dep NET UP");
 	chat_touched = 0;
@@ -359,15 +363,16 @@ main(void)
 	CHK(entelea_dep_state(ENTELEA_DEP_MODEL) == ENTELEA_DEP_DEGRADED,
 	    "one successful probe leaves MODEL DEGRADED");
 
-	/* 失联拒对照：断链→chat 必须被拒（netmon 准入面）+touched 不变。 */
+	/* Negative check: with the link down, chat must be rejected by the
+	 * netmon admission gate and touched must not change. */
 	CHK(disconnect_quiet() == 0, "disconnect -> dep NET DOWN");
-	chat_touched = 99; /* 哨兵：调用被拒则不推进 */
+	chat_touched = 99; /* sentinel: unchanged if the call is rejected */
 	ret = chat_once(false, out, sizeof(out), NULL);
 	CHK(ret != ENTELEA_OK && chat_touched == 99,
 	    "chat rejected while NET down (admission gate)");
 	printk("[hw-cloud] rejected rc=%d (E_STATE expected)\n", ret);
 
-	/* 第二条真实成功观测后，普通调用才可进入。 */
+	/* Ordinary calls are allowed only after a second real success. */
 	CHK(connect_and_report(&credentials, 2) == 0,
 	    "reconnect+dhcp (attempt 2)");
 	chat_touched = 0;

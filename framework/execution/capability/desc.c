@@ -1,8 +1,10 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * 外设描述符注册表（迁自旧 periph/desc.c 语义，R04 合同见本目录
- * contract.md）。静态批量注册（boot 期，回滚不留半注册）；DETACH =
- * safety 单通道 fault（机制面复用，物理效果语义见 safety 合同 A2）。
+ * Peripheral descriptor registry (migrated from the old periph/desc.c
+ * semantics; R04 contract in contract.md of this directory). Static batch
+ * registration at boot: a failed batch leaves no partial registration.
+ * DETACH = single-channel fault in safety (the mechanism is reused; physical
+ * effect semantics are in safety contract A2).
  */
 #include <string.h>
 #include <entelea/capability.h>
@@ -20,7 +22,7 @@ desc_valid(const entelea_periph_desc_t *d)
 		return false;
 	}
 	if (d->kind == ENTELEA_DEV_OUTPUT && d->safety_uid == NULL) {
-		return false; /* 输出必带保护通道 */
+		return false; /* Outputs must have a protection channel */
 	}
 	return true;
 }
@@ -60,19 +62,20 @@ entelea_periph_register(const entelea_periph_desc_t *list, size_t count)
 		return ENTELEA_E_PARAM;
 	}
 	if (desc_count + count > ENTELEA_PERIPH_DESCS_MAX) {
-		return ENTELEA_E_NOMEM; /* 整批拒绝（可预测性） */
+		return ENTELEA_E_NOMEM; /* Reject whole batch (predictable) */
 	}
-	/* 先全量校验（含批内撞名）——任一失败零注册。 */
+	/* Validate the whole batch first (including duplicate uids within
+	 * the batch); any failure registers nothing. */
 	for (size_t i = 0; i < count; i++) {
 		if (!desc_valid(&list[i])) {
 			return ENTELEA_E_PARAM;
 		}
 		if (find_idx(list[i].uid) >= 0) {
-			return ENTELEA_E_PARAM; /* 已注册撞名 */
+			return ENTELEA_E_PARAM; /* uid already registered */
 		}
 		for (size_t j = 0; j < i; j++) {
 			if (strcmp(list[i].uid, list[j].uid) == 0) {
-				return ENTELEA_E_PARAM; /* 批内撞名 */
+				return ENTELEA_E_PARAM; /* Batch duplicate */
 			}
 		}
 	}
@@ -101,17 +104,17 @@ entelea_periph_acquire(entelea_principal_t ctx, const char *uid,
 						d->inst);
 
 	if (r != ENTELEA_OK) {
-		return r; /* 越权（留痕在 perm_check 内） */
+		return r; /* Denied; logged in perm_check */
 	}
 	if (d->kind == ENTELEA_DEV_OUTPUT) {
 		entelea_ch_state_t st;
 
 		if (entelea_safety_channel_state(d->safety_uid, &st) !=
 		    ENTELEA_OK) {
-			return ENTELEA_E_STATE; /* 声明了通道但未注册 */
+			return ENTELEA_E_STATE; /* Declared but unregistered */
 		}
 		if (st != ENTELEA_ST_ACTIVE) {
-			return ENTELEA_E_STATE; /* 安全态：不可提交 */
+			return ENTELEA_E_STATE; /* Safe state: no commit */
 		}
 	}
 	if (out != NULL) {
@@ -129,7 +132,7 @@ entelea_periph_detach(const char *uid)
 		return ENTELEA_E_NOTFOUND;
 	}
 	if (d->kind != ENTELEA_DEV_OUTPUT || d->safety_uid == NULL) {
-		return ENTELEA_E_STATE; /* 非输出无 detach 语义 */
+		return ENTELEA_E_STATE; /* No detach for non-outputs */
 	}
 	return entelea_safety_force_channel_fault(d->safety_uid);
 }
