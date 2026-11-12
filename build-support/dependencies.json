@@ -66,7 +66,7 @@
       "id": "esp_hosted_mcu",
       "commit": "2e3f6c8bd717d67698319a6a24f9f4218d8db068",
       "patches": [],
-      "note": "C5 \u534f\u5904\u7406\u5668 slave \u56fa\u4ef6\u6e90\uff08tag v3.0.10\uff1bcheckout=/home/emb/project/deps/esp-hosted-mcu\uff09"
+      "note": "C5 \u534f\u5904\u7406\u5668 slave \u56fa\u4ef6\u6e90\uff08tag v3.0.10\uff1bcheckout=entelea/.deps/esp-hosted-mcu\uff09"
     }
   ]
 }

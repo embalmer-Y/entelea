@@ -12,14 +12,15 @@ R13 仍待完整框架/产品验收。逐项范围、已验证内容和阻塞见
 - [唯一资产台账](docs/migration-assets.json)：固定来源、模块映射、迁移与验证状态。
 - [框架 Wiki](docs/wiki/README.md)：模块职责、调用链、平台差异和限制。
 - 旧源码在相邻 `entelea-legacy`，主基线
-  `e54047b51519fa449dfe4a338af8d126bed8fac4`；Forge 单独固定版本。
+  `e54047b51519fa449dfe4a338af8d126bed8fac4`；旧 Forge 为其子模块 `agent`（ca5219e7）。
 - 新目录是 linked worktree；旧目录包含共享 Git 对象库，**不能删除**。
 - 本地 `rebuild` 分支；远端历史与当前状态应以 Git 实际查询为准。
 
 已认可 D01–D12 的建议方向，D03 调整为首期设计覆盖 Lua；
 具体未决边界仍按[评审记录](docs/rebuild-plan.md#7-设计确认清单与不得擅定的阈值)逐批冻结。
-Forge 保留独立工程仓库，编程引擎已确定采用 **OpenHands Software Agent SDK**，
-不继续自研通用创作循环；独立工作区已有 SDK 接入试验，隔离和版本化等
+Forge 工厂已于 2026-11-12 按所有者决定并入本仓库 `factory/forge/`（快照自 ec24f00），
+编程引擎已确定采用 **OpenHands Software Agent SDK**，不继续自研通用创作循环；
+SDK 环境位于 `/home/emb/project/envs/openhands`，由带哈希锁同步。隔离和版本化等
 产品保障尚未闭合。
 职责与迁移边界见[工厂引擎决策](docs/rebuild-plan.md#71-工厂编程引擎已确认决策)。
 默认只读取当前批次所需上下文；公共机制通过不意味着设备/产品验收通过。

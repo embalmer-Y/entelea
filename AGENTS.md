@@ -13,8 +13,9 @@ product acceptance remains pending. See `docs/rf1-validation.md`.
   of the plan before implementing unresolved boundaries. D03 requires first-phase
   Lua contracts and feasibility validation, not first-phase production support.
 - Forge uses owner-approved OpenHands Software Agent SDK, not the legacy generic
-  creation loop. A separate local workspace has an SDK integration; reproducible
-  versioning, isolation, egress and product acceptance remain to be verified.
+  creation loop. The factory is merged into `factory/forge/` (owner decision,
+  2026-11-12); its SDK environment is `/home/emb/project/envs/openhands`, synced
+  from a hashed lock. Isolation, egress and product acceptance remain to be verified.
 - Distinguish framework contracts from product requirements. Use auxiliary
   intelligence / simulated intelligence at framework level; companion only in
   the companion product context.
@@ -35,8 +36,10 @@ product acceptance remains pending. See `docs/rf1-validation.md`.
   cannot undo effects, and unknown non-idempotent operations must not be retried.
 - Preserve other agents' changes; pause on conflicts. Do not reset or amend their
   work. No pushes, real cloud/paid calls, flashing, or hardware actions without
-  explicit authorization. The old Forge baseline is pinned; the separate active
-  Forge workspace has no Git revision anchor.
+  explicit authorization. The old Forge baseline is pinned as legacy gitlink `agent`
+  (ca5219e7); the in-repo factory snapshot is ec24f00 (history: bundle).
+- Zephyr builds use an explicit module set. Never install west into the build
+  interpreter (`.venv`); `tools/build_zephyr.py` refuses such an interpreter.
 - Keep migration state separate from verification. Record failures and untested
   boundaries; never weaken assertions or exclusions to manufacture green tests.
 - Common primitive contracts are in `framework/common/contract.md`; build sources

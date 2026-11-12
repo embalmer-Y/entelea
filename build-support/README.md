@@ -23,17 +23,15 @@ cmake --build build/common-only
 
 | 类别 | 目录与约束 |
 | --- | --- |
-| 新版受管理源码 | 按需放仓库忽略的 `.deps/<dependency>`，如 `.deps/zephyr`、`.deps/hal_espressif`；不提前创建空目录或复制全部旧依赖 |
-| 外部源码复用 | 可显式指定固定、完整核验通过的外部 checkout，只读消费；现有 `../entelea-legacy/.deps` 保持不变，不能借复用之名修补归档 |
-| 构建产物 | 统一放本仓库 `build/<batch>-<target>`；R01 保留已记录的 `build/r01` 等路径，R02 的 native/板级/诊断/实验目标各用独立目录 |
-| Python 环境 | 按已批准依赖使用明确的解释器；旧环境只可在路径有效时只读复用，不假定搬迁前 shebang 仍可执行，不自动安装包 |
-| Zephyr SDK | 安装在 Project 外，通过显式 `ZEPHYR_SDK_INSTALL_DIR` 选择；只读复用，不自动发现替代 SDK、不执行共享安装的 setup、不修改注册表或 shell 配置 |
+| 受管源码 | 仓库忽略的 `.deps/`：`zephyrproject/`（`west init -l` 绑定固定 Zephyr 4.5 提交 41d10b5；模块由 `west update` 按 west.yml 拉取；应用 6 个已批准补丁）、`wamr/`、`esp-hosted-mcu/`、`lua/`、`zephyr-sdk-1.0.1/` |
+| 外部源码与产物 | 仓库外 `/home/emb/project/deps/`：ESP-IDF v5.5.4 与 C5 固件产物（路径写入构建脚本与 `c5-firmware.json`） |
+| 构建产物 | 统一放本仓库 `build/<batch>-<target>`；可再生，不作证据保存 |
+| Python 环境 | 构建：仓库内 `.venv/`（CPython 3.12，`uv venv --seed`；Zephyr 依赖经 `west packages pip` 安装，ruff 随之固定为 0.14.2）。west 另放 `/home/emb/project/envs/west`，构建解释器不得可导入 west（否则 Zephyr 继承整个工作区模块集，`build_zephyr.py` 拒绝）。OpenHands：`/home/emb/project/envs/openhands`，由带哈希锁 `factory/forge/requirements-openhands.lock` 同步 |
+| Zephyr SDK | `.deps/zephyr-sdk-1.0.1/`（仓库忽略），`build_zephyr.py --sdk` 设置 `ZEPHYR_SDK_INSTALL_DIR` 与 `ZEPHYR_TOOLCHAIN_VARIANT=zephyr`（官方方式，不注册 CMake 包、不执行 setup、不修改 shell 配置） |
 
-本机已只读核实的参考环境是 `/home/emb/zephyr-sdk-1.0.1`：
-`sdk_version` 为 `1.0.1`，实际 RISC-V GCC 为 `14.3.0`，
+本机 SDK 为 `sdk_version` `1.0.1`，实际 RISC-V GCC 为 `14.3.0`，
 编译器位于 `gnu/riscv64-zephyr-elf/bin/riscv64-zephyr-elf-gcc`。
-这是本机参考位置/版本，不是跨机器硬编码路径，也不批准所有未来板卡组合。
-参考板与本机工具链的历史核验范围见 `docs/r16-validation.md`；
+这是本机版本核验结果，不批准所有未来板卡组合；
 不同主机或目标的变更仍须显式记录，不能凭目录名认定版本。
 
 构建入口在调用 CMake/Twister 前须落实并负测：
@@ -49,30 +47,29 @@ cmake --build build/common-only
 5. 记录实际路径、版本、配置与执行证据；源码/SDK 核验通过不等于
    编译通过，交叉编译通过不等于设备运行或物理停止通过。
 
-旧顶层 `zephyrproject` 已按用户授权外移到
-`/home/emb/project-archive/entelea-handoff-2026-11-08/zephyrproject`。
-它虽在同一 Zephyr 提交，却含 DMA 实验修改，不符合新批准补丁集合；
-只能作历史参考，不能直接选为新版正式依赖或迁回新 `.deps`。
-SDK 没有移动。外移工具/虚拟环境/缓存可能仍含旧绝对路径；
-保存这些目录是保留资产，不是宣称搬迁后旧运行环境仍可执行。
+旧顶层 `zephyrproject` 与历史归档已于 2026-11-12 按所有者决定删除。
+旧 `zephyrproject` 含 DMA 实验修改，不符合批准补丁集合，不再使用；
+当前 Zephyr 仅来自上文 `.deps/zephyrproject` 的固定提交与 west 模块。
+外部 ESP-IDF 与 C5 产物仍在 `/home/emb/project/deps/`（仓库外，路径已写入脚本与清单）。
 
 ## 来源与核验
 
 [固定依赖](dependencies.json)涵盖已采用的 Zephyr/Wasm 目标的
-Zephyr、WAMR、HAL，不宣称完整SDK/所有可选模块可重现。
-其他模块在需要时从固定旧 `docs/provenance.md` / 锁文件选择并重新核验。
-主机公共库不消费这三个依赖；元数据通过不表示固件构建通过。
+Zephyr、WAMR、HAL、nanopb、mbedtls、tf-psa-crypto；west 模块修订与清单
+逐项一致（所有者决定以 west.yml 为准并同步核对）。
+主机公共库不消费这些依赖；元数据通过不表示固件构建通过。
 
-Forge 的编程引擎已选 OpenHands Software Agent SDK，独立工作区已有
-1.60.2 接入试验；工作区完整版本锚点、隔离和产品验收尚未闭合。
-它是独立工厂的 Python/工程依赖，不是 Zephyr SDK 或 MCU 公共库依赖，
-不加入此固件三项 pin；需在独立 Forge 工程中固定来源、许可及锁文件。
-边界见
+Forge 工厂已于 2026-11-12 并入 [factory/forge](../factory/forge/)（快照自
+ec24f00；历史 bundle 位于 `/home/emb/project/forge-ec24f00.bundle`）。编程引擎为
+OpenHands Software Agent SDK 1.60.2，环境位于 `/home/emb/project/envs/openhands`，
+由 [带哈希锁](../factory/forge/requirements-openhands.lock) 同步。
+它是工厂的 Python 工程依赖，不是 Zephyr SDK 或 MCU 公共库依赖，不加入固件三项 pin。
+隔离与产品验收仍未闭合；边界见
 [工厂引擎决策](../docs/rebuild-plan.md#71-工厂编程引擎已确认决策)。
 
 ```sh
 python3 tools/check_dependencies.py
-python3 tools/check_dependencies.py --dependency zephyr --checkout ../entelea-legacy/.deps/zephyr
+python3 tools/check_dependencies.py --dependency zephyr --checkout .deps/zephyrproject/zephyr
 ```
 
 完整diff、版本、staged/untracked和mode均核验，**只读、不修补**。

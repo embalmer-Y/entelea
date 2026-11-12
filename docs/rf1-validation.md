@@ -160,6 +160,39 @@ R13 保持 pending。
   7. ISR 拒绝由锁端口代码保证，未做中断注入测试；并发仅在主机与 native_sim 线程中验证，未在真板多核验证。
   8. 名称仍为 `d12`；WP4b（改名为 `guard`）尚未执行。
 
+### 依赖布局与 Forge 并入验证记录（2026-11-12）
+
+- 决策：所有者表单确认受管检出位于 `.deps/`（Zephyr 经 `west init -l` 绑定固定提交 41d10b5，
+  模块经 `west update` 按 west.yml 拉取，修订与 `dependencies.json` 逐项一致）；SDK 迁入
+  `.deps/zephyr-sdk-1.0.1` 并以 `ZEPHYR_SDK_INSTALL_DIR` 选择；esp-hosted-mcu 复制入 `.deps/`；
+  Forge 并入 `factory/forge/`（推翻 D-M 与 D1 的两仓库约定）；OpenHands 环境迁至
+  `/home/emb/project/envs/openhands` 并由带哈希锁同步。legacy 保持冻结原位。
+- 缺陷复现与修复：west 位于构建解释器时，Zephyr 继承整个工作区模块集，`build_zephyr.py`
+  preflight 报 `Effective module set differs from the verified set`（gate nsim 首次运行失败）。
+  修复：west 移出 `.venv`（单独位于 `/home/emb/project/envs/west`，v1.5.0）；`build_zephyr.py`
+  新增守卫，`--python` 可导入 west 即拒绝。负测：`--python /home/emb/project/envs/west/bin/python --dry-run`
+  退出码 1，未创建构建目录。
+- 验证（真实命令与退出码）：
+  - 主机 `RunCtest_CMakeTools` 7/7；`python3 -m unittest discover -s tools/tests -v` 退出码 0。
+  - `RUN=run004 factory/forge/gate/gate_run.sh nsim`：product、dev、pending 重启三段 `ALL PASS`，退出码 0。
+  - Forge 离线预算单测（`envs/openhands` 解释器）16/16 OK。
+  - native_sim 构建与运行退出码均为 0，无 `FAIL -` 行，套件均报告 `succeeded`：wasm、d12、delivery、
+    store、r13、pkg、r04、assist、core、media、affect、memory、net、safety、wdt_start、wdt_hardware。
+  - 板级交叉编译（`esp32p4c5_core_board/esp32p4/hpcore`，未烧录）：`hw_factory_intake` 退出码 0，
+    RAM 449,268；`hw_flash_persist` 退出码 0，RAM 98,040；红线 552,960，`check_board_ram.py` PASS。
+  - Linux 云诊断 `build-support/build-f2-cloud.sh` 退出码 0（仅编译，未运行）。
+  - `python3 tools/check_migration.py --sources`：PASS，800 项，117 资产。
+  - 模块与补丁：`check_dependencies.py --dependency zephyr --checkout .deps/zephyrproject/zephyr` PASS；
+    `--dependency wamr --checkout .deps/wamr` PASS；esp-hosted-mcu HEAD `2e3f6c8`；SDK `sdk_version` 1.0.1，GCC 14.3.0。
+  - OpenHands 环境：版本集合与旧环境逐行一致（仅少 pip）；`openhands-sdk` / `openhands-tools` 1.60.2，`pynacl` 1.6.2 可导入。
+- 未测与边界：
+  1. `build-support/build-c5-firmware.sh` 未运行（它会对 IDF 副本执行 patch-idf，并覆盖产物与 sha256）；
+     仅路径已改，需授权后再执行。
+  2. 旧副本 `/home/emb/project/deps/esp-hosted-mcu` 与 `deps/.eh-comp` 仍保留，删除待确认。
+  3. 历史验证文档中的旧路径（`../entelea-legacy/.deps/...`）未改写，随历史文档处理。
+  4. 板级烧录与真机验证未执行（未授权）；native_sim 结果不代表真板行为。
+  5. ruff 版本由 Zephyr 官方依赖固定为 0.14.2，未采用此前计划的 0.17.4。
+
 ## 对照原规划和批准修订
 
 | 批次 | 当前范围与未完成项 |

@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
-# R05 Wasm 闭环测试：WAMR（pinned ../entelea-legacy/.deps/wamr）经旧
+# R05 Wasm 闭环测试：WAMR（pinned .deps/wamr）经旧
 # DEC-17/25/31/48③ 编译面（fast 解释器+指令配额+WASI 关+池）。
 cmake_minimum_required(VERSION 3.20.0)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(entelea_tests_wasm)
 
 set(ENTELEA_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
-set(WAMR_DIR ${ENTELEA_ROOT}/../entelea-legacy/.deps/wamr)
+set(WAMR_DIR ${ENTELEA_ROOT}/.deps/wamr)
 if(NOT EXISTS ${WAMR_DIR}/core/iwasm/include/wasm_export.h)
   message(FATAL_ERROR "pinned WAMR checkout missing at ${WAMR_DIR}")
 endif()

@@ -1,9 +1,11 @@
 __pycache__/
 *.py[cod]
 .venv/
+venv/
 .deps/
 build/
 .env
 .env.*
 !.env.example
-flash.bin
+*.key
+*.pem

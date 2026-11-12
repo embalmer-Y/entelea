@@ -1,0 +1,10 @@
+{
+  "package_digest": "b3035796477421839a0ffa28a5429037539456223c540f114307368ed3950db9",
+  "permissions": 4,
+  "runtime_version": 3,
+  "payload_kind": 0,
+  "budget_steps": 2000000,
+  "mem_quota_kb": 8,
+  "description": "factory run003 (wasm_gen template)",
+  "tsap_len": 331
+}

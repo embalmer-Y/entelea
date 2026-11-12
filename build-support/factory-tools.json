@@ -7,7 +7,8 @@
       "kind": "pip",
       "version": "1.60.2",
       "python": "3.12.13",
-      "venv": "/home/emb/project/workspace/openhands-venv",
+      "venv": "/home/emb/project/envs/openhands",
+      "lock": "factory/forge/requirements-openhands.lock",
       "purpose": "Forge 编程引擎（owner 已确认——R12 合同；不进固件/MCU 公共库依赖）"
     },
     {

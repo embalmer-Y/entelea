@@ -7,8 +7,8 @@ set -e
 cd "$(dirname "$0")/.."
 OUT=${ENTELEA_CLOUD_OUT:-build/f2-cloud}
 MB=${ENTELEA_MBEDTLS_BUILD:-build/.toolobj/mbedtls-host}
-M=${ENTELEA_MBEDTLS_SOURCE:-../entelea-legacy/.deps/mbedtls}
-P=${ENTELEA_PSA_SOURCE:-../entelea-legacy/.deps/tf-psa-crypto}
+M=${ENTELEA_MBEDTLS_SOURCE:-.deps/zephyrproject/modules/crypto/mbedtls}
+P=${ENTELEA_PSA_SOURCE:-.deps/zephyrproject/modules/crypto/tf-psa-crypto}
 mkdir -p "$OUT"
 
 # pin 校验（review P2-4：源树换版必须显式失败，不静默换 TLS 库）。

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "note": "C5 协处理器 slave 固件产物清单（机器可查复现链）。源 pin=dependencies.json esp_hosted_mcu；构建脚本=build-support/build-c5-firmware.sh；产物存放=/home/emb/project/deps/c5-firmware-dist/（仓库外——二进制不入 git，sha256 在此锚定）。原厂 flash 已整擦状态全片备份=/home/emb/project/c5-reflash/c5-flash-backup-4M.bin。",
+  "note": "C5 协处理器 slave 固件产物清单（机器可查复现链）。源 pin=dependencies.json esp_hosted_mcu；构建脚本=build-support/build-c5-firmware.sh；esp-hosted 检出=entelea/.deps/esp-hosted-mcu；产物存放=/home/emb/project/deps/c5-firmware-dist/（仓库外——二进制不入 git，sha256 在此锚定）。原厂 flash 已整擦状态全片备份=/home/emb/project/c5-reflash/c5-flash-backup-4M.bin。",
   "firmware": {
     "chip": "esp32c5",
     "transport": "sdio",

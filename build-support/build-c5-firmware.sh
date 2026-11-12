@@ -8,14 +8,15 @@
 #  4) 四件套产物→deps/c5-firmware-dist/ + sha256 回写 c5-firmware.json
 # 烧录（switch key C5 侧；见 c5-firmware.json flash_offsets_note）。
 set -e
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DEPS=/home/emb/project/deps
-EH=$DEPS/esp-hosted-mcu
+EH=$ROOT/.deps/esp-hosted-mcu
 IDF=$DEPS/esp-idf
 DIST=$DEPS/c5-firmware-dist
 PROJ=$EH/examples/wifi/sta/cp
-BRIDGE=$DEPS/.eh-comp/esp_hosted
+BRIDGE=$ROOT/.deps/.eh-comp/esp_hosted
 
-cd "$(dirname "$0")/.."
+cd "$ROOT"
 python3 tools/check_dependencies.py > /dev/null
 ACTUAL=$(git -C "$EH" rev-parse HEAD)
 WANT=$(python3 -c "import json;print([d['commit'] for d in json.load(open('build-support/dependencies.json'))['dependencies'] if d['id']=='esp_hosted_mcu'][0])")

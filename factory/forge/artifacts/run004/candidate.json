@@ -1,0 +1,10 @@
+{
+  "package_digest": "98e642b05afdb9a179690a6c90adfbcdd7cc5d78781b0a329a0e5d2aec67f553",
+  "permissions": 4,
+  "runtime_version": 3,
+  "payload_kind": 0,
+  "budget_steps": 2000000,
+  "mem_quota_kb": 8,
+  "description": "factory run004 (wasm_gen fixed spin)",
+  "tsap_len": 341
+}

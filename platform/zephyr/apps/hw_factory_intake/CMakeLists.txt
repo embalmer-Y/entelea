@@ -1,12 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # D-3 最小工厂闭环闸：WAMR 编译面同 tests/wasm（fast interp+配额+WASI
-# 关+池 256KB）；工厂产物头经 FACTORY_PKG_HEADER 注入（默认=forge
-# artifacts/run004）。板级 SRAM 预算：ENTELEA_NO_RAM_BACKEND=1（flash
+# 关+池 256KB）；工厂产物头经 FACTORY_PKG_HEADER 注入（默认=factory/forge
+# artifacts/run004，SHA256 固定）。板级 SRAM 预算：ENTELEA_NO_RAM_BACKEND=1（flash
 # 后端为唯一持久面——同 hw_flash_persist 纪律）。
 # FACTORY_DEV_AUTOCONFIRM=ON：开发自动确认+执行夹具（无用户验收效力）。
 cmake_minimum_required(VERSION 3.20.0)
 
-set(FACTORY_PKG_HEADER "/home/emb/project/workspace/forge/artifacts/run004/factory_pkg.h"
+get_filename_component(ENTELEA_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../.. ABSOLUTE)
+# Tracked in factory/forge; only the run004 default is pinned by SHA256 below.
+set(FACTORY_PKG_RUN004 ${ENTELEA_ROOT}/factory/forge/artifacts/run004/factory_pkg.h)
+set(FACTORY_PKG_RUN004_SHA256 41231020ad06b407707a4fb5bc1f968c81343673d85d4ec10c9c539620e94aed)
+set(FACTORY_PKG_HEADER ${FACTORY_PKG_RUN004}
     CACHE STRING "Forge 工厂产物头（tsap_pack.py 生成）")
 option(FACTORY_DEV_AUTOCONFIRM "dev-only auto-confirm (no user acceptance)" OFF)
 option(FACTORY_TEST_STOP_AFTER_PENDING "native_sim restart test fixture" OFF)
@@ -15,6 +19,13 @@ if(FACTORY_TEST_STOP_AFTER_PENDING AND NOT BOARD MATCHES "^native_sim")
 endif()
 if(NOT EXISTS ${FACTORY_PKG_HEADER})
   message(FATAL_ERROR "factory package header missing: ${FACTORY_PKG_HEADER}")
+endif()
+get_filename_component(_factory_pkg_abs ${FACTORY_PKG_HEADER} ABSOLUTE)
+if(_factory_pkg_abs STREQUAL FACTORY_PKG_RUN004)
+  file(SHA256 ${FACTORY_PKG_RUN004} _factory_pkg_sha)
+  if(NOT _factory_pkg_sha STREQUAL FACTORY_PKG_RUN004_SHA256)
+    message(FATAL_ERROR "run004 factory package header SHA256 mismatch: ${_factory_pkg_sha}")
+  endif()
 endif()
 
 if(TEST_FLASH_BACKEND)
@@ -31,8 +42,7 @@ endif()
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(entelea_hw_factory_intake)
 
-set(ENTELEA_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
-set(WAMR_DIR ${ENTELEA_ROOT}/../entelea-legacy/.deps/wamr)
+set(WAMR_DIR ${ENTELEA_ROOT}/.deps/wamr)
 if(NOT EXISTS ${WAMR_DIR}/core/iwasm/include/wasm_export.h)
   message(FATAL_ERROR "pinned WAMR checkout missing at ${WAMR_DIR}")
 endif()

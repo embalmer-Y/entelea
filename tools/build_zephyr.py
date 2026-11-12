@@ -26,6 +26,12 @@ import sys
 from pathlib import Path
 
 NATIVE_BOARDS = ("native_sim", "native_sim/native/64", "native_sim/native/32")
+# Exit 3 when west is importable: Zephyr would then inherit the whole west
+# workspace module set instead of the explicit one.
+WEST_PROBE = (
+    "import importlib.util, sys\n"
+    "sys.exit(3 if importlib.util.find_spec('west') else 0)"
+)
 # 模块白名单=dependencies.json 单一来源（F 批起含 nanopb/mbedtls/
 # tf_psa_crypto——真网/真云面模块；commit pin 由 check_dependencies.py
 # 交叉校验，防 json 自改）。
@@ -131,6 +137,11 @@ def preflight(root, args):
         python = Path(args.python).absolute()
         if not python.is_file():
             raise BuildError(f"--python interpreter not found: {python}")
+        probe = subprocess.run([str(python), "-c", WEST_PROBE])
+        if probe.returncode == 3:
+            raise BuildError(f"--python must not import west (implicit workspace modules): {python}")
+        if probe.returncode != 0:
+            raise BuildError(f"cannot probe --python interpreter: {python}")
         run([str(python), "--version"])
         managed_args.append(f"-DPython3_EXECUTABLE={python}")
         print(f"[preflight] python: {run([str(python), '--version'])}")

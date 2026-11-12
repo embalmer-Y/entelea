@@ -1,0 +1,10 @@
+{
+  "package_digest": "c180f82809e9ee9250e09c4f4cc80ca2de0a3d1e36ab95164c02fe899e195c47",
+  "permissions": 4,
+  "runtime_version": 1,
+  "payload_kind": 0,
+  "budget_steps": 2000000,
+  "mem_quota_kb": 8,
+  "description": "SDK factory run001 (glm-5.3-flash)",
+  "tsap_len": 317
+}
