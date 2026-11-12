@@ -13,7 +13,7 @@ affect_setup(void)
 
 /* helper wrapper（ztest 宏内不便直接循环调用带断言——独立返回码面） */
 static int
-entea_unused_tick(uint32_t dt, const int8_t st[ENTELEA_AFFECT_LEVELS])
+entelea_unused_tick(uint32_t dt, const int8_t st[ENTELEA_AFFECT_LEVELS])
 {
 	return entelea_affect_tick(dt, st) == ENTELEA_OK ? 0 : 1;
 }
@@ -22,7 +22,7 @@ static void
 tick_n(uint32_t dt, const int8_t st[ENTELEA_AFFECT_LEVELS], int n)
 {
 	for (int i = 0; i < n; i++) {
-		zassert_equal(entea_unused_tick(dt, st), 0);
+		zassert_equal(entelea_unused_tick(dt, st), 0);
 	}
 }
 

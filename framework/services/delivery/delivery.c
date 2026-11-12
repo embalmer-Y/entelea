@@ -316,9 +316,9 @@ entelea_factory_intake(const entelea_factory_candidate_t *fc, uint8_t slot)
 
 /* ---- Cross-reboot persistence (board batch A-4; RF1 v3): record layout
  * (little-endian):
- * u8 ver=3 | u8 state | u8 cand_version | u8 slot | u32 last_epoch |
+ * u8 ver=4 | u8 state | u8 cand_version | u8 slot | u32 last_epoch |
  * u32 budget_steps | u8 perm_len | perm[96] (zero-filled) | digest[32].
- * v1/v2 are not migrated: treated as bad records (fail-closed). */
+ * v1-v3 are not migrated: treated as bad records (fail-closed). */
 #define TRIAL_PERSIST_VER 4U
 #define TRIAL_REC_PERM_OFF 13U
 #define TRIAL_REC_DIG_OFF (TRIAL_REC_PERM_OFF + ENTELEA_TRIAL_PERM_MAX)
