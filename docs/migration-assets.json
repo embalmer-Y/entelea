@@ -2,6 +2,7 @@
   "schema_version": 1,
   "project": "Entelea",
   "baseline_tag": "legacy-baseline-2026-11-08",
+  "status_semantics": "R00–R12 的 done 是历史批次记录，不代表当前完整规划或产品验收；RF1 当前复核见 docs/rf1-validation.md。planned_root 是原规划位置，已落地位置和范围见 implemented_scope。",
   "repositories": [
     {
       "id": "legacy",
@@ -24,7 +25,8 @@
       "title": "治理与资产追踪",
       "planned_root": "docs/rebuild",
       "first_batch": "R00",
-      "status": "planned"
+      "status": "in_progress",
+      "implemented_scope": "规划和唯一台账位于 docs/rebuild-plan.md、docs/migration-assets.json；RF1 仍有阻塞项"
     },
     {
       "id": "M-BUILD",
@@ -47,154 +49,176 @@
       "title": "启动与监督",
       "planned_root": "framework/runtime/supervision",
       "first_batch": "R02",
-      "status": "in_progress"
+      "status": "in_progress",
+      "implemented_scope": "启动、事件和监督机制已有；真实 ISR 交错、多核与物理复位边界未完成"
     },
     {
       "id": "M-SAFETY",
-      "title": "不可绕过的输出保护",
+      "title": "输出保护",
       "planned_root": "framework/execution/safety",
       "first_batch": "R02",
-      "status": "in_progress"
+      "status": "in_progress",
+      "implemented_scope": "安全提交与后端已有；源码检查不证明链接级防绕过，物理效果待验收"
     },
     {
       "id": "M-PLATFORM-ZEPHYR",
       "title": "Zephyr 集成与硬件后端",
       "planned_root": "platform/zephyr",
       "first_batch": "R02",
-      "status": "implemented"
+      "status": "in_progress",
+      "implemented_scope": "最小及诊断镜像、所需端口和部分交叉构建已有；不是所有板级后端与当前源码真机验收"
     },
     {
       "id": "M-STORAGE",
       "title": "存储提交与命名空间",
       "planned_root": "framework/services/storage",
       "first_batch": "R03",
-      "status": "in_progress"
+      "status": "in_progress",
+      "implemented_scope": "meta/KV/audit/trust 和现有端口；旧记录完整性、真实断电及维护恢复未闭合"
     },
     {
       "id": "M-CONFIG",
       "title": "配置/身份/凭据",
       "planned_root": "framework/services/config",
       "first_batch": "R03",
-      "status": "in_progress"
+      "status": "in_progress",
+      "implemented_scope": "provisioning 与部分运行限额已有；每日/小时窗口和产品级阈值未闭合"
     },
     {
       "id": "M-OBSERVABILITY",
       "title": "有界诊断与审计",
       "planned_root": "framework/services/observability",
       "first_batch": "R03",
-      "status": "in_progress"
+      "status": "in_progress",
+      "implemented_scope": "事件在 framework/runtime/supervision，审计在 framework/services/storage；完整产品诊断未验收"
     },
     {
       "id": "M-CAPABILITY",
       "title": "能力目录",
       "planned_root": "framework/runtime/capability",
       "first_batch": "R04",
-      "status": "in_progress"
+      "status": "in_progress",
+      "implemented_scope": "现有实现在 framework/execution/capability；可信宿主主体边界及试用权限绑定须遵循 RF1"
     },
     {
       "id": "M-EXECUTION",
       "title": "权限与执行门",
       "planned_root": "framework/execution/gate",
       "first_batch": "R04",
-      "status": "in_progress"
+      "status": "in_progress",
+      "implemented_scope": "权限、safety 与 assistant 执行门分布于 framework/execution 和 framework/services/assistant；未证明所有 C 调用强制经授权"
     },
     {
       "id": "M-RESOURCE",
       "title": "资源所有权",
       "planned_root": "framework/runtime/resource",
       "first_batch": "R04",
-      "status": "in_progress"
+      "status": "in_progress",
+      "implemented_scope": "功率资源机制在 framework/execution/resource；物理功率与完整产品资源治理未验收"
     },
     {
       "id": "M-TASK",
       "title": "任务/回执/取消",
       "planned_root": "framework/runtime/task",
       "first_batch": "R04",
-      "status": "in_progress"
+      "status": "in_progress",
+      "implemented_scope": "有界任务机制在 framework/execution/task；真实完成效果由调用方提供"
     },
     {
       "id": "M-APP",
       "title": "受限 App 契约与 Wasm 执行",
       "planned_root": "framework/services/app",
       "first_batch": "R05",
-      "status": "planned"
+      "status": "in_progress",
+      "implemented_scope": "TSAP 与单实例 WAMR 在 framework/services/package；Lua 真 VM 可行性和试用权限绑定未完成"
     },
     {
       "id": "M-NETWORK",
       "title": "传输与协议适配",
       "planned_root": "platform/zephyr/network",
       "first_batch": "R06",
-      "status": "planned"
+      "status": "in_progress",
+      "implemented_scope": "队列及网络机制在 framework/services/net，平台诊断在 platform/zephyr；远端送达不由 sink 证明"
     },
     {
       "id": "M-DEPENDENCY",
       "title": "动态依赖与恢复",
       "planned_root": "framework/runtime/dependency",
       "first_batch": "R06",
-      "status": "planned"
+      "status": "in_progress",
+      "implemented_scope": "依赖状态机在 framework/services/net/netmon.c；产品恢复策略未全验收"
     },
     {
       "id": "M-PLATFORM-LINUX",
       "title": "原生 Linux 宿主",
       "planned_root": "platform/linux",
       "first_batch": "R07",
-      "status": "planned"
+      "status": "in_progress",
+      "implemented_scope": "同源机制合同宿主与诊断；完整 Linux Wasm/App 宿主及 ARM64 实跑未完成"
     },
     {
       "id": "M-CONTEXT",
       "title": "来源情境与云模型适配",
       "planned_root": "framework/cognition/context",
       "first_batch": "R08",
-      "status": "planned"
+      "status": "in_progress",
+      "implemented_scope": "有界情境与模型适配在 framework/services/assistant；非完整常驻认知产品"
     },
     {
       "id": "M-DELIBERATION",
       "title": "触发/思考/候选",
       "planned_root": "framework/cognition/deliberation",
       "first_batch": "R08",
-      "status": "planned"
+      "status": "in_progress",
+      "implemented_scope": "触发与候选执行在 framework/services/assistant；真实产品编排未验收"
     },
     {
       "id": "M-MEDIA",
       "title": "可选音频/图像/显示",
       "planned_root": "framework/extensions/media",
       "first_batch": "R09",
-      "status": "planned"
+      "status": "in_progress",
+      "implemented_scope": "采集接口与假后端在 framework/services/media；真实媒体、播放/显示与 D11 待定"
     },
     {
       "id": "M-MEMORY",
       "title": "经历/检索/巩固/删除",
       "planned_root": "framework/cognition/memory",
       "first_batch": "R10",
-      "status": "planned"
+      "status": "in_progress",
+      "implemented_scope": "同意/墓碑的有界 RAM 链在 framework/services/memory；原规划的可恢复持久经历链未交付"
     },
     {
       "id": "M-AFFECT",
       "title": "可选驱力/情感",
       "planned_root": "framework/cognition/affect",
       "first_batch": "R11",
-      "status": "planned"
+      "status": "in_progress",
+      "implemented_scope": "模拟 affect 在 framework/services/affect；旧 A-AFFECT 源为 reference，长期行为未验收"
     },
     {
       "id": "M-ADAPTATION",
       "title": "长期倾向",
       "planned_root": "framework/cognition/adaptation",
       "first_batch": "R11",
-      "status": "planned"
+      "status": "in_progress",
+      "implemented_scope": "适应/版本环机制在 framework/services/affect；真实长期体验未验收"
     },
     {
       "id": "M-DELIVERY",
       "title": "候选/试用/用户确认",
       "planned_root": "framework/services/delivery",
       "first_batch": "R12",
-      "status": "planned"
+      "status": "in_progress",
+      "implemented_scope": "试用状态与内容门已有；确认权限、预算、稳定集、晋升和并发装载未闭合"
     },
     {
       "id": "M-FACTORY",
       "title": "独立工程工厂契约",
       "planned_root": "integrations/forge",
       "first_batch": "R12",
-      "status": "planned"
+      "status": "in_progress",
+      "implemented_scope": "设备侧窄合同在 framework/services/delivery；独立 Forge 工作区非 Git 仓库，隔离和版本锚点未闭合"
     },
     {
       "id": "M-PRODUCT",
@@ -209,7 +233,7 @@
       "planned_root": "tests",
       "first_batch": "R01",
       "status": "in_progress",
-      "implemented_scope": "R01主机合同/机械负测；后续模块/硬件验证未迁"
+      "implemented_scope": "主机与 native_sim 合同/负测和部分板级交叉构建；本轮 CTest 入口不可用，当前源码物理验收未完成"
     }
   ],
   "batches": [
@@ -245,7 +269,7 @@
         "docs/r02-validation.md"
       ],
       "implementation_commit": "94da27e",
-      "note": "软件面三轮整改+native_sim 全绿；D12 硬件闸 2026-11-08 owner 授权实测：烧录/上电/复位一致性+两相物理故障停止闭环（system_fail→SW复位≤4.2s；内核楔死→MWDT0 SoC 硬复位≤8.8s）。未测残留如实：真实断电/estop 物理边沿（DT 未冻结）/输出电平测量（无仪器）——见验证记录。"
+      "note": "历史批次见 docs/r02-validation.md。RF1 修复强停、时钟及 WDT 快照反例；历史硬件结果不覆盖当前源码，物理停止延迟与多核交错仍未验收，见 docs/rf1-validation.md。"
     },
     {
       "id": "R03",
@@ -253,7 +277,7 @@
         "R01"
       ],
       "status": "done",
-      "note": "板级批收口：flash 后端挂载端口+store 双后端 12/12+真机持久化闸（SW/POWERON 双域四链+试用跨重启，板级 review 修复后复跑 0 FAIL）。未决如实：真实断电域=到场挂起（owner 2026-11-09 择期）；D10 撤销/擦除具体边界随产品批；宿主文件后端随 D02。证据 docs/r03-validation.md 板级批节。",
+      "note": "历史板级批见 docs/r03-validation.md。RF1 修复 KV 压实和 KV/Audit 撕裂、读错误；旧记录无完整性证明，真实断电与维护恢复仍未验收，见 docs/rf1-validation.md。",
       "evidence_paths": [
         "docs/r03-validation.md"
       ],
@@ -265,7 +289,7 @@
         "R02"
       ],
       "status": "done",
-      "note": "软件面全交付（含 A1 决议补交付的截止时间面——受理门/惰性过期/去重让位，aebe4df）；锁序=单 mutex+write_lock 复用，公平性合同已立（多任务真并发评审延后有记录）。证据 docs/r04-validation.md。",
+      "note": "历史机制交付见 docs/r04-validation.md。RF1 修复过期主体、并发与未知时钟；公开 C 句柄依赖可信宿主，不证明同地址空间防伪；试用授权未绑定，见 docs/rf1-validation.md。",
       "evidence_paths": [
         "docs/r04-validation.md"
       ],
@@ -278,7 +302,7 @@
         "R04"
       ],
       "status": "done",
-      "note": "TSAP/验签/安装链/Wasm 闭环/Lua 机制合同全交付（pkg 8+wasm 6 用例绿；信任表非工厂键判别性测试 c04bf58 前序）；字节对拍经 R-V1 移 R12 工厂任务；D03 宿主调用条款已补（A3）。证据 docs/r05-validation.md。",
+      "note": "历史 TSAP、Wasm 与 Lua 合同证据见 docs/r05-validation.md。RF1 修复 Wasm 生命周期/身份/ABI；Lua C 机制桩未证明真实 VM 资源或中断，权限/预算绑定未闭合，见 docs/rf1-validation.md。",
       "evidence_paths": [
         "docs/r05-validation.md"
       ],
@@ -291,7 +315,7 @@
         "R05"
       ],
       "status": "done",
-      "note": "心跳/租约/幂等/依赖状态机+B-1 avq/pubq 传输队列（ba1dc47）；真网实测归真网批（D2 已授权、凭据已备）；L338 日志读取/幂等分块经 R-V2 移真机命令面批。证据 docs/r06-validation.md。",
+      "note": "历史机制和真网范围见 docs/r06-validation.md。RF1 修复帧长度与依赖并发；sink 无远端回执，当前源码真网验收未做，见 docs/rf1-validation.md。",
       "evidence_paths": [
         "docs/r06-validation.md"
       ],
@@ -320,7 +344,7 @@
         "R06"
       ],
       "status": "done",
-      "note": "辅助闭环+模型适配层（B-2：依赖联动/有界重试/用量台账+主机真调用冒烟）+任务受理面（B-3）；模型真传输随真网批。证据 docs/r08-validation.md。",
+      "note": "历史辅助机制见 docs/r08-validation.md。RF1 修复输出目标、逐尝试限额与未知效果重试；同步 HTTPS 非端到端硬截止，完整产品未验收，见 docs/rf1-validation.md。",
       "evidence_paths": [
         "docs/r08-validation.md"
       ],
@@ -335,7 +359,7 @@
         "R06"
       ],
       "status": "done",
-      "note": "采集面+按类独立后端（P2 修复后）+生命周期/权限全绿；播放/显示/多消费者/预算经 R-V3 移媒体真后端板级批（D11）；媒体外发决策面同。证据 docs/r09-validation.md。",
+      "note": "历史采集接口与假后端证据见 docs/r09-validation.md；RF1 修复采集中重绑。播放/显示、多消费者、预算和真实媒体仍依赖 R-V3/D11，见 docs/rf1-validation.md。",
       "evidence_paths": [
         "docs/r09-validation.md"
       ],
@@ -348,7 +372,7 @@
         "R08"
       ],
       "status": "done",
-      "note": "同意/有界/墓碑不复活（容量边界负测）全绿；持久 schema 显式依赖 D06（合同注记——端口已备）；巩固事务/断电域随板级与到场。证据 docs/r10-validation.md。",
+      "note": "历史 RAM 同意/墓碑机制见 docs/r10-validation.md；RF1 修复同时间戳写入。原规划可恢复持久经历链尚未交付，schema、巩固和断电恢复未闭合，见 docs/rf1-validation.md。",
       "evidence_paths": [
         "docs/r10-validation.md"
       ],
@@ -361,7 +385,7 @@
         "R10"
       ],
       "status": "done",
-      "note": "单写者/确定性/版本环+角色连续性（A7）全绿；长期轨迹/真实数月体验=闸文'不冒充'——加速回放机制已证；A-AFFECT/A-REFERENCE 已 reference 登记（A6）。证据 docs/r11-validation.md。",
+      "note": "历史模拟机制见 docs/r11-validation.md；RF1 修复生产初值。A-AFFECT 的 20 项是 reference 而非迁入，真实长期行为未验收，见 docs/rf1-validation.md。",
       "evidence_paths": [
         "docs/r11-validation.md"
       ],
@@ -375,11 +399,34 @@
         "R06"
       ],
       "status": "done",
-      "note": "D05 单候选/内容绑定/intake 域外拒全绿；跨重启持久（A-4：flush/restore fail-closed+真机证据）；SDK 实际接入=独立获批工厂任务（7.1 批外，D1 资源已齐待执行）；对拍随工厂任务（R-V1）。证据 docs/r12-validation.md。",
+      "note": "历史试用与工厂范围见 docs/r12-validation.md。RF1 已绑定候选摘要并收紧恢复，但用户确认权限/预算未绑定运行时，稳定集与数据晋升未闭合；Forge 工作区无独立 Git 锚点，见 docs/rf1-validation.md。",
       "evidence_paths": [
         "docs/r12-validation.md"
       ],
       "implementation_commit": "4aa8ff1"
+    },
+    {
+      "id": "RF1",
+      "depends_on": [
+        "R02",
+        "R03",
+        "R04",
+        "R05",
+        "R06",
+        "R07",
+        "R08",
+        "R09",
+        "R10",
+        "R11",
+        "R12"
+      ],
+      "status": "blocked",
+      "evidence_paths": [
+        "docs/rf1-validation.md"
+      ],
+      "implementation_commit": "29d6cde",
+      "review_commit": "22b126d",
+      "note": "已修复并复验多项迁移缺陷；真实 WAMR 探针仍证明确认权限与运行时权限脱钩，稳定集/预算合同待裁决。原生同址主体依赖可信宿主，不宣称隔离。本轮 CTest 入口不可用；未推送或执行真机/真云操作。"
     },
     {
       "id": "R13",
@@ -388,10 +435,11 @@
         "R09",
         "R10",
         "R11",
-        "R12"
+        "R12",
+        "RF1"
       ],
       "status": "pending",
-      "note": "软件面（配置矩阵+框架合同验收）已交付（e0eaa28）；保持 pending：产品闸未过——D11/D12 产品未决与量化门槛未冻结、首个完整伴侣真机验收未做（含到场三件套）。依赖批全部 done 后即为此批剩余面。"
+      "note": "配置矩阵及两条机制抽样不是完整框架验收；RF1 仍 blocked，原规划能力及 D11/D12 等产品闸未闭合，当前源码完整真机验收未做。见 docs/rf1-validation.md。"
     }
   ],
   "design_decisions": [
