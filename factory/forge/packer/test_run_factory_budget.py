@@ -126,10 +126,9 @@ class MainRefusesBeforeSdk(unittest.TestCase):
             self.assertFalse(imported)
 
     def test_existing_evidence_not_overwritten(self):
-        run003 = rf.FORGE / "artifacts/run003"
-        if not (run003 / "app.wasm").exists():
-            self.skipTest("run003 absent")
-        rc, imported = self.run_main(HDR, [str(run003)])
+        run004 = rf.FORGE / "artifacts/run004"
+        self.assertTrue((run004 / "app.wasm").exists(), "run004 evidence missing")
+        rc, imported = self.run_main(HDR, [str(run004)])
         self.assertEqual(rc, 2)
         self.assertFalse(imported)
 
@@ -145,46 +144,6 @@ class ModuleImportIsSdkFree(unittest.TestCase):
             [sys.executable, "-c", code], check=True, capture_output=True, text=True
         ).stdout.strip()
         self.assertEqual(out, "False")
-
-
-class RetiredDriversRefuse(unittest.TestCase):
-    """RF1：run002/run003 一次性修正驱动直调 SDK、绕过预算门禁且会覆盖
-    历史证据——必须在任何 import 之前拒绝。先静态判定守卫存在（未加
-    守卫时绝不执行：venv 下会真实调云），再实际运行确认拒绝。"""
-
-    DRIVERS = ("run_factory_fix.py", "run_factory_fix2.py")
-
-    def _guard_first(self, path):
-        import ast
-
-        body = ast.parse(path.read_text()).body
-        i = (
-            1
-            if (
-                body
-                and isinstance(body[0], ast.Expr)
-                and isinstance(getattr(body[0], "value", None), ast.Constant)
-            )
-            else 0
-        )
-        node = body[i] if len(body) > i else None
-        return isinstance(node, ast.Raise) and "retired" in ast.unparse(node)
-
-    def test_retired_drivers_refuse_before_import(self):
-        here = Path(__file__).resolve().parent
-        for name in self.DRIVERS:
-            path = here / name
-            if not path.exists():
-                continue
-            self.assertTrue(self._guard_first(path), f"{name}: 首语句须为 retired 拒绝")
-            r = subprocess.run(
-                [sys.executable, "-X", "importtime", str(path)],
-                capture_output=True,
-                text=True,
-            )
-            self.assertNotEqual(r.returncode, 0, name)
-            self.assertIn("retired", r.stderr, name)
-            self.assertNotIn("openhands", r.stderr, name)
 
 
 if __name__ == "__main__":

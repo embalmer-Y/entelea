@@ -17,8 +17,7 @@ Software Agent SDK 为编程引擎；本目录 = Forge 工厂面，2026-11-12 �
   前汇总台账“工厂”行（不可解析=拒），剩余额度不足单次上限即拒；单次
   token 硬上限（默认 2M，经 SDK `max_budget_per_run`，可超至多一步）；
   `run_dir` 须为未产出的 `artifacts/<run>/`（历史 run 不可覆盖）；台账
-  行在 finally 写入（用量不可读按单次上限记）。`run_factory_fix*.py`
-  已退役（首语句拒绝）。离线负测：`python3 -m unittest
+  行在 finally 写入（用量不可读按单次上限记）。离线负测：`python3 -m unittest
   test_run_factory_budget`（在 `packer/` 下执行）。
 - **外发**：法律范围内目的地不设白名单；仅安全下限=信任根/签名
   私钥/凭据不出本机。
@@ -28,7 +27,8 @@ Software Agent SDK 为编程引擎；本目录 = Forge 工厂面，2026-11-12 �
 - `packer/` — TSAP v2 打包签名器（字节格式与设备 R05 验签管线对拍）
 - `tasks/` — SDK 任务书（工厂 App 规格说明）
 - `artifacts/` — 工厂产物（按 run 编号：.tsap 包 + candidate.json + C 头）。
-  run001–003 为历史证据（run003 的 spin 对 N>=1 死循环，勿再消费）；
+  失败轮次 run001–003 的产物已删除（历史见提交 55559c2，败因记于
+  `AGENTS.md`）；
   run004 = `wasm_gen.py` 确定性组装 + 公开测试根签名（RF1，非 SDK 直产、
   无云调用），是设备 `hw_factory_intake` 默认头。
 - `gate/gate_run.sh` 默认仅运行两个 native_sim 模式及 PENDING 跨重启
