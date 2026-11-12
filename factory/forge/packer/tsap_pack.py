@@ -17,6 +17,7 @@ platform/zephyr/tests/pkg 对照实现）逐字节对齐：
 信任）。产出的 candidate.json 域校验与固件 entelea_factory_intake
 同域（fail-closed 提前拒）。
 """
+
 import argparse
 import hashlib
 import json
@@ -48,7 +49,7 @@ def cbor_uint(n: int) -> bytes:
         return bytes([0x18, n])
     if n < 65536:
         return b"\x19" + struct.pack(">H", n)
-    return b"\x1A" + struct.pack(">I", n)
+    return b"\x1a" + struct.pack(">I", n)
 
 
 def build_manifest(version: int, mem_kb: int, steps: int, fmt: str) -> bytes:
@@ -65,10 +66,15 @@ def build_manifest(version: int, mem_kb: int, steps: int, fmt: str) -> bytes:
 
 def sig_structure(payload: bytes) -> bytes:
     """COSE Sig_structure（无签名的被签文）：["Signature1",phdr,{},payload]。"""
-    return (b"\x84" b"\x6a" b"Signature1"
-            b"\x43\xa1\x01\x27"   # phdr bstr(3) = {1:-8} EdDSA
-            b"\x40"               # uhdr bstr(0)（外层为 map 时 a0——见下）
-            + cbor_hdr_bstr(len(payload)) + payload)
+    return (
+        b"\x84"
+        b"\x6a"
+        b"Signature1"
+        b"\x43\xa1\x01\x27"  # phdr bstr(3) = {1:-8} EdDSA
+        b"\x40"  # uhdr bstr(0)（外层为 map 时 a0——见下）
+        + cbor_hdr_bstr(len(payload))
+        + payload
+    )
 
 
 def build_tsap(manifest: bytes, wasm: bytes, seed: bytes) -> bytes:
@@ -78,14 +84,22 @@ def build_tsap(manifest: bytes, wasm: bytes, seed: bytes) -> bytes:
     sig = sk.sign(sig_structure(payload)).signature
     assert len(sig) == 64
 
-    cose = (b"\xd2\x84"                     # tag18 + array(4)
-            b"\x43\xa1\x01\x27"             # phdr bstr(3)
-            b"\xa0"                         # uhdr map(0)
-            + cbor_hdr_bstr(len(payload)) + payload
-            + b"\x58\x40" + sig)            # sig bstr(64)
-    hdr = (b"TSAP" + struct.pack(">H", 2)
-           + struct.pack(">I", len(manifest)) + struct.pack(">I", len(wasm))
-           + struct.pack(">H", 1))
+    cose = (
+        b"\xd2\x84"  # tag18 + array(4)
+        b"\x43\xa1\x01\x27"  # phdr bstr(3)
+        b"\xa0"  # uhdr map(0)
+        + cbor_hdr_bstr(len(payload))
+        + payload
+        + b"\x58\x40"
+        + sig
+    )  # sig bstr(64)
+    hdr = (
+        b"TSAP"
+        + struct.pack(">H", 2)
+        + struct.pack(">I", len(manifest))
+        + struct.pack(">I", len(wasm))
+        + struct.pack(">H", 1)
+    )
     assert len(hdr) == 16
     return hdr + digest + payload + cose
 
@@ -100,28 +114,33 @@ def emit_c_header(tsap: bytes, cand: dict, path: Path) -> None:
         f.write("/* Forge 工厂产物（生成：tsap_pack.py；勿手改） */\n")
         f.write("static const uint8_t FACTORY_TSAP[] = {\n")
         for i in range(0, len(tsap), 12):
-            row = ",".join(f"0x{b:02x}" for b in tsap[i:i + 12])
+            row = ",".join(f"0x{b:02x}" for b in tsap[i : i + 12])
             f.write(f"\t{row},\n")
         f.write("};\n")
         f.write(f"#define FACTORY_TSAP_LEN {len(tsap)}u\n")
-        f.write(f"static const uint8_t FACTORY_DIGEST[32] = {{\n\t"
-                + ",".join(f"0x{b:02x}" for b in dg) + "\n};\n")
+        f.write(
+            "static const uint8_t FACTORY_DIGEST[32] = {\n\t"
+            + ",".join(f"0x{b:02x}" for b in dg)
+            + "\n};\n"
+        )
         f.write(f"#define FACTORY_PERMISSIONS {cand['permissions']}u\n")
         f.write(f"#define FACTORY_VERSION {cand['runtime_version']}u\n")
         f.write(f"#define FACTORY_KIND {cand['payload_kind']}u\n")
         f.write(f"#define FACTORY_BUDGET {cand['budget_steps']}u\n")
         f.write(f"#define FACTORY_MEM_KB {cand['mem_quota_kb']}u\n")
-        f.write('static const char FACTORY_DESC[] = "'
-                + desc.decode("latin1").replace("\\", "\\\\")
-                  .replace('"', '\\"')
-                + '";\n')
+        f.write(
+            'static const char FACTORY_DESC[] = "'
+            + desc.decode("latin1").replace("\\", "\\\\").replace('"', '\\"')
+            + '";\n'
+        )
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--wasm", type=Path, required=True)
-    ap.add_argument("--key", type=Path, required=True,
-                    help="32B ed25519 seed（公开测试根）")
+    ap.add_argument(
+        "--key", type=Path, required=True, help="32B ed25519 seed（公开测试根）"
+    )
     ap.add_argument("--version", type=int, required=True)
     ap.add_argument("--mem-kb", type=int, required=True)
     ap.add_argument("--steps", type=int, required=True)
@@ -166,9 +185,12 @@ def main() -> int:
         "tsap_len": len(tsap),
     }
     (args.out / "candidate.json").write_text(
-        json.dumps(cand, indent=2, ensure_ascii=False) + "\n")
+        json.dumps(cand, indent=2, ensure_ascii=False) + "\n"
+    )
     emit_c_header(tsap, cand, args.out / "factory_pkg.h")
-    print(f"OK: {args.out}/app.tsap ({len(tsap)}B) digest={cand['package_digest'][:16]}…")
+    print(
+        f"OK: {args.out}/app.tsap ({len(tsap)}B) digest={cand['package_digest'][:16]}…"
+    )
     return 0
 
 

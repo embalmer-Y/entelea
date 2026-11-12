@@ -56,7 +56,10 @@ class ArchitectureTests(unittest.TestCase):
         expected = sum(
             len(POLICY[group])
             for group in (
-                "common", "compat", "contract_tests", "zephyr_framework",
+                "common",
+                "compat",
+                "contract_tests",
+                "zephyr_framework",
                 "platform_zephyr",
             )
         ) + sum(len(paths) for paths in POLICY["diagnostics"].values())
@@ -100,18 +103,12 @@ class ArchitectureTests(unittest.TestCase):
         self.rejected("Protection gate outside reviewed Zephyr sources")
 
     def test_gate_allows_reviewed_driver_output(self):
-        self.write(
-            "framework/runtime/supervision/fw.c", "gpio_pin_set_dt(&s, 1);\n"
-        )
-        self.policy["protected_output_sources"] = [
-            "framework/runtime/supervision/fw.c"
-        ]
+        self.write("framework/runtime/supervision/fw.c", "gpio_pin_set_dt(&s, 1);\n")
+        self.policy["protected_output_sources"] = ["framework/runtime/supervision/fw.c"]
         self.assertEqual(ARCH.validate(self.root, self.policy), 4)
 
     def test_zephyr_framework_output_bypass(self):
-        self.write(
-            "framework/execution/safety/bad.c", "pwm_set(dev, 1, 2, 3, 0);\n"
-        )
+        self.write("framework/execution/safety/bad.c", "pwm_set(dev, 1, 2, 3, 0);\n")
         self.policy["zephyr_framework"].append("framework/execution/safety/bad.c")
         self.rejected("Output bypass")
 
@@ -128,9 +125,7 @@ class ArchitectureTests(unittest.TestCase):
         self.rejected("Driver table bypass")
 
     def test_driver_table_inside_safety_allowed(self):
-        self.policy["zephyr_framework"].append(
-            "framework/execution/safety/extra.c"
-        )
+        self.policy["zephyr_framework"].append("framework/execution/safety/extra.c")
         self.write(
             "framework/execution/safety/extra.c",
             "extern const char entelea_drivers;\n",

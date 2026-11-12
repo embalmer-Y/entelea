@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """run_factory 预算闸离线单测（RF1 #10；不导入 SDK、不联网）。"""
+
 import io
 import subprocess
 import sys
@@ -11,8 +12,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run_factory as rf  # noqa: E402
 
-HDR = ("| 日期 | 用途 | 模型 | tokens（约） | 估算成本 | 结果 |\n"
-       "| --- | --- | --- | --- | --- | --- |\n")
+HDR = (
+    "| 日期 | 用途 | 模型 | tokens（约） | 估算成本 | 结果 |\n"
+    "| --- | --- | --- | --- | --- | --- |\n"
+)
 
 
 def row(purpose: str, tokens: str) -> str:
@@ -36,8 +39,12 @@ class ParseTokens(unittest.TestCase):
 
 class LedgerSum(unittest.TestCase):
     def test_only_factory_rows(self):
-        text = (HDR + row("工厂 run001", "~1.0M(估)") + row("冒烟", "999999")
-                + row("工厂 run002", "1025161"))
+        text = (
+            HDR
+            + row("工厂 run001", "~1.0M(估)")
+            + row("冒烟", "999999")
+            + row("工厂 run002", "1025161")
+        )
         self.assertEqual(rf.factory_tokens_used(text), 2_025_161)
 
     def test_bad_factory_row_fails_closed(self):
@@ -68,8 +75,11 @@ class Gate(unittest.TestCase):
         self.assertIsNotNone(rf.budget_gate(int(self.CAP * 0.8) - 1, 1))
 
     def test_exhausted_or_projected_over_rejects(self):
-        for used, run in ((self.CAP, 1), (self.CAP + 5, 1),
-                          (self.CAP - 1_000_000, 2_000_000)):
+        for used, run in (
+            (self.CAP, 1),
+            (self.CAP + 5, 1),
+            (self.CAP - 1_000_000, 2_000_000),
+        ):
             with self.assertRaises(rf.BudgetError):
                 rf.budget_gate(used, run)
         self.assertIsNotNone(rf.budget_gate(self.CAP - 2_000_000, 2_000_000))
@@ -105,9 +115,11 @@ class MainRefusesBeforeSdk(unittest.TestCase):
         self.assertEqual(self.run_main(HDR + row("工厂 a", "?"), ["x"])[0], 2)
 
     def test_bad_args_refused(self):
-        argv_bad = (["/tmp/elsewhere"],
-                    [str(rf.FORGE / "artifacts/runX"), "--max-iter", "0"],
-                    [str(rf.FORGE / "artifacts/runX"), "--run-tokens", "0"])
+        argv_bad = (
+            ["/tmp/elsewhere"],
+            [str(rf.FORGE / "artifacts/runX"), "--max-iter", "0"],
+            [str(rf.FORGE / "artifacts/runX"), "--run-tokens", "0"],
+        )
         for argv in argv_bad:
             rc, imported = self.run_main(HDR, argv)
             self.assertEqual(rc, 2, argv)
@@ -124,11 +136,14 @@ class MainRefusesBeforeSdk(unittest.TestCase):
 
 class ModuleImportIsSdkFree(unittest.TestCase):
     def test_import_does_not_load_sdk(self):
-        code = ("import sys; sys.path.insert(0, %r); import run_factory; "
-                "print('openhands' in ' '.join(sys.modules))"
-                % str(Path(__file__).resolve().parent))
-        out = subprocess.run([sys.executable, "-c", code], check=True,
-                             capture_output=True, text=True).stdout.strip()
+        code = (
+            "import sys; sys.path.insert(0, %r); import run_factory; "
+            "print('openhands' in ' '.join(sys.modules))"
+            % str(Path(__file__).resolve().parent)
+        )
+        out = subprocess.run(
+            [sys.executable, "-c", code], check=True, capture_output=True, text=True
+        ).stdout.strip()
         self.assertEqual(out, "False")
 
 
@@ -141,13 +156,19 @@ class RetiredDriversRefuse(unittest.TestCase):
 
     def _guard_first(self, path):
         import ast
+
         body = ast.parse(path.read_text()).body
-        i = 1 if (body and isinstance(body[0], ast.Expr)
-                  and isinstance(getattr(body[0], "value", None),
-                                 ast.Constant)) else 0
+        i = (
+            1
+            if (
+                body
+                and isinstance(body[0], ast.Expr)
+                and isinstance(getattr(body[0], "value", None), ast.Constant)
+            )
+            else 0
+        )
         node = body[i] if len(body) > i else None
-        return (isinstance(node, ast.Raise)
-                and "retired" in ast.unparse(node))
+        return isinstance(node, ast.Raise) and "retired" in ast.unparse(node)
 
     def test_retired_drivers_refuse_before_import(self):
         here = Path(__file__).resolve().parent
@@ -155,10 +176,12 @@ class RetiredDriversRefuse(unittest.TestCase):
             path = here / name
             if not path.exists():
                 continue
-            self.assertTrue(self._guard_first(path),
-                            f"{name}: 首语句须为 retired 拒绝")
-            r = subprocess.run([sys.executable, "-X", "importtime",
-                                str(path)], capture_output=True, text=True)
+            self.assertTrue(self._guard_first(path), f"{name}: 首语句须为 retired 拒绝")
+            r = subprocess.run(
+                [sys.executable, "-X", "importtime", str(path)],
+                capture_output=True,
+                text=True,
+            )
             self.assertNotEqual(r.returncode, 0, name)
             self.assertIn("retired", r.stderr, name)
             self.assertNotIn("openhands", r.stderr, name)

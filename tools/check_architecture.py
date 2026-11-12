@@ -60,8 +60,13 @@ def validate(root, policy):
     )
     groups = {
         name: policy[name]
-        for name in ("common", "compat", "contract_tests", "zephyr_framework",
-                     "platform_zephyr")
+        for name in (
+            "common",
+            "compat",
+            "contract_tests",
+            "zephyr_framework",
+            "platform_zephyr",
+        )
     }
     fail(isinstance(policy["diagnostics"], dict), "Diagnostics must name exact targets")
     for name, paths in policy["diagnostics"].items():
@@ -74,10 +79,12 @@ def validate(root, policy):
     group_of = {}
     for group, paths in groups.items():
         fail(isinstance(paths, list), f"Source group is not a list: {group}")
-        if (
-            group in {"common", "contract_tests", "zephyr_framework", "platform_zephyr"}
-            or group.startswith("diagnostic:")
-        ):
+        if group in {
+            "common",
+            "contract_tests",
+            "zephyr_framework",
+            "platform_zephyr",
+        } or group.startswith("diagnostic:"):
             fail(paths, f"Empty required source group: {group}")
         for path in paths:
             fail(path not in seen, f"Source classified twice: {path}")

@@ -108,8 +108,9 @@ class PreflightTests(unittest.TestCase):
         bindir.mkdir(parents=True, exist_ok=True)
         gcc = bindir / "riscv64-zephyr-elf-gcc"
         if compiler:
-            gcc.write_text("#!/bin/sh\necho 'riscv64-zephyr-elf-gcc "
-                           f"({gcc_version}) 1'\n")
+            gcc.write_text(
+                f"#!/bin/sh\necho 'riscv64-zephyr-elf-gcc ({gcc_version}) 1'\n"
+            )
             gcc.chmod(gcc.stat().st_mode | stat.S_IEXEC)
         return sdk
 
@@ -157,8 +158,7 @@ class PreflightTests(unittest.TestCase):
         target = self.repo / "build" / "r02-native_sim"
         target.mkdir(parents=True)
         (target / "CMakeCache.txt").write_text(
-            "BOARD:STRING=native_sim\n"
-            "CMAKE_HOME_DIRECTORY:INTERNAL=/tmp/other-app\n"
+            "BOARD:STRING=native_sim\nCMAKE_HOME_DIRECTORY:INTERNAL=/tmp/other-app\n"
         )
         self.fails("another app")
 
@@ -263,29 +263,37 @@ class PreflightTests(unittest.TestCase):
         self.assertIn("hal_espressif", checks[1])
         self.assertIn(str(hal.resolve()), checks[1])
         self.assertIn("wamr", checks[2])
-        self.assertEqual(
-            env["ZEPHYR_MODULES"], f"{hal.resolve()};{hal.resolve()}"
-        )
+        self.assertEqual(env["ZEPHYR_MODULES"], f"{hal.resolve()};{hal.resolve()}")
 
     def test_cmake_arg_cannot_override_board(self):
         self.base["cmake_arg"] = ["-DBOARD=qemu_x86"]
         self.fails("must not override managed variable BOARD")
 
     def test_cmake_arg_cannot_override_managed_vars(self):
-        for var in ("ZEPHYR_BASE", "ZEPHYR_MODULES", "Python3_EXECUTABLE",
-                    "CMAKE_C_COMPILER", "BOARD_ROOT", "ZEPHYR_SDK_INSTALL_DIR"):
+        for var in (
+            "ZEPHYR_BASE",
+            "ZEPHYR_MODULES",
+            "Python3_EXECUTABLE",
+            "CMAKE_C_COMPILER",
+            "BOARD_ROOT",
+            "ZEPHYR_SDK_INSTALL_DIR",
+        ):
             self.base["cmake_arg"] = [f"-D{var}=x"]
             self.fails("must not override managed variable " + var)
 
     def test_cmake_arg_typed_variants_rejected(self):
         # CMake cache-typed spellings must not bypass the blacklist
         # (second-review finding 4).
-        for spec in ("-DBOARD:STRING=qemu_x86",
-                     "-DZEPHYR_MODULES:STRING=/tmp/rogue",
-                     "-DCMAKE_C_COMPILER:FILEPATH=/tmp/cc",
-                     "-DBOARD :STRING = x"):
+        for spec in (
+            "-DBOARD:STRING=qemu_x86",
+            "-DZEPHYR_MODULES:STRING=/tmp/rogue",
+            "-DCMAKE_C_COMPILER:FILEPATH=/tmp/cc",
+            "-DBOARD :STRING = x",
+        ):
             self.base["cmake_arg"] = [spec]
-            self.fails("must not override managed variable BOARD|CMAKE_C_COMPILER|ZEPHYR_MODULES")
+            self.fails(
+                "must not override managed variable BOARD|CMAKE_C_COMPILER|ZEPHYR_MODULES"
+            )
 
     def write_cache(self, board="native_sim", zephyr=None, cc=None, home=None):
         target = self.repo / "build" / "r02-native_sim"
@@ -313,7 +321,9 @@ class PreflightTests(unittest.TestCase):
         target = self.repo / "build" / "r02-native_sim"
         rogue = self.root / "rogue"
         rogue.mkdir()
-        (target / "zephyr_modules.txt").write_text(f'"rogue":"{rogue}":"{rogue}/zephyr"\n')
+        (target / "zephyr_modules.txt").write_text(
+            f'"rogue":"{rogue}":"{rogue}/zephyr"\n'
+        )
         with mock.patch.object(BZ.shutil, "which", return_value="/usr/bin/cc"):
             with self.assertRaisesRegex(BZ.BuildError, "module set differs"):
                 self.check_effective([])
@@ -322,7 +332,9 @@ class PreflightTests(unittest.TestCase):
         self.write_cache(cc="/usr/bin/cc")
         target = self.repo / "build" / "r02-native_sim"
         hal = self.root / "hal"
-        (target / "zephyr_modules.txt").write_text(f'"hal_espressif":"{hal}":"{hal}/zephyr"\n')
+        (target / "zephyr_modules.txt").write_text(
+            f'"hal_espressif":"{hal}":"{hal}/zephyr"\n'
+        )
         with mock.patch.object(BZ.shutil, "which", return_value="/usr/bin/cc"):
             BZ.verify_effective_config(
                 target, type("Args", (), self.base)(), [str(hal)]
@@ -344,9 +356,7 @@ class PreflightTests(unittest.TestCase):
         base["python"] = str(self.root / "right-python")
         with mock.patch.object(BZ.shutil, "which", return_value="/usr/bin/cc"):
             with self.assertRaisesRegex(BZ.BuildError, "Python3_EXECUTABLE"):
-                BZ.verify_effective_config(
-                    target, type("Args", (), base)(), []
-                )
+                BZ.verify_effective_config(target, type("Args", (), base)(), [])
 
     def test_cmake_arg_source_redirect_rejected(self):
         for spec in ("-S/tmp/rogue-app", "-B/tmp/rogue-build", "-S /rogue"):
@@ -437,7 +447,9 @@ class PreflightTests(unittest.TestCase):
                 )
         shim = self.repo / "build" / ".toolbin" / "esptool"
         self.assertTrue(shim.is_file())
-        self.assertIn(str(self.repo / "build" / ".toolbin"), env["PATH"].split(os.pathsep)[0])
+        self.assertIn(
+            str(self.repo / "build" / ".toolbin"), env["PATH"].split(os.pathsep)[0]
+        )
 
     def test_check_dependencies_invoked_read_only(self):
         seen = []

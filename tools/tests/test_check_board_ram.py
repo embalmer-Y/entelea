@@ -67,9 +67,7 @@ class BoardRamTests(unittest.TestCase):
         ):
             with self.subTest(content=content):
                 result = self.run_checker(content)
-                self.assertNotEqual(
-                    result.returncode, 0, result.stdout + result.stderr
-                )
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("FAIL", result.stderr)
 
     def test_overlapping_output_sections_are_rejected(self):

@@ -6,6 +6,7 @@
 仅主机侧验证传输形状（推理 token/超时/截断语义）；固件真传输
 随真网批。用法：tools/model_smoke.py [--model M] [--prompt P]
 """
+
 import argparse
 import os
 import datetime
@@ -29,26 +30,35 @@ def main():
     cfg = json.load(open(CREDS))
     if args.model not in cfg["allowed_models"]:
         raise SystemExit(f"model not allowed: {args.model}")
-    body = json.dumps({
-        "model": args.model,
-        "max_tokens": args.max_tokens,
-        "messages": [{"role": "user", "content": args.prompt}],
-    }).encode()
+    body = json.dumps(
+        {
+            "model": args.model,
+            "max_tokens": args.max_tokens,
+            "messages": [{"role": "user", "content": args.prompt}],
+        }
+    ).encode()
     req = urllib.request.Request(
-        cfg["llm_base_url"] + "/chat/completions", data=body,
-        headers={"Authorization": "Bearer " + cfg["llm_api_key"],
-                 "Content-Type": "application/json"})
+        cfg["llm_base_url"] + "/chat/completions",
+        data=body,
+        headers={
+            "Authorization": "Bearer " + cfg["llm_api_key"],
+            "Content-Type": "application/json",
+        },
+    )
     t0 = time.time()
-    with urllib.request.urlopen(req, timeout=90,
-                                context=ssl.create_default_context()) as r:
+    with urllib.request.urlopen(
+        req, timeout=90, context=ssl.create_default_context()
+    ) as r:
         out = json.load(r)
     dt = time.time() - t0
     c = out["choices"][0]
     usage = out.get("usage", {})
-    line = (f"| {datetime.date.today().isoformat()} | model_smoke 主机冒烟 "
-            f"| {args.model} | {usage.get('total_tokens', '?')} "
-            f"| <$0.01 | content={c['message']['content']!r} "
-            f"finish={c['finish_reason']} {dt:.1f}s |\n")
+    line = (
+        f"| {datetime.date.today().isoformat()} | model_smoke 主机冒烟 "
+        f"| {args.model} | {usage.get('total_tokens', '?')} "
+        f"| <$0.01 | content={c['message']['content']!r} "
+        f"finish={c['finish_reason']} {dt:.1f}s |\n"
+    )
     open(LEDGER, "a").write(line)
     print(line.strip())
 

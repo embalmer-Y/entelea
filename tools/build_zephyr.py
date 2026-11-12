@@ -29,25 +29,37 @@ NATIVE_BOARDS = ("native_sim", "native_sim/native/64", "native_sim/native/32")
 # Exit 3 when west is importable: Zephyr would then inherit the whole west
 # workspace module set instead of the explicit one.
 WEST_PROBE = (
-    "import importlib.util, sys\n"
-    "sys.exit(3 if importlib.util.find_spec('west') else 0)"
+    "import importlib.util, sys\nsys.exit(3 if importlib.util.find_spec('west') else 0)"
 )
 # 模块白名单=dependencies.json 单一来源（F 批起含 nanopb/mbedtls/
 # tf_psa_crypto——真网/真云面模块；commit pin 由 check_dependencies.py
 # 交叉校验，防 json 自改）。
-PINNED_MODULES = {dep["id"] for dep in json.loads(
-    (Path(__file__).resolve().parents[1]
-     / "build-support/dependencies.json").read_text())["dependencies"]}
+PINNED_MODULES = {
+    dep["id"]
+    for dep in json.loads(
+        (
+            Path(__file__).resolve().parents[1] / "build-support/dependencies.json"
+        ).read_text()
+    )["dependencies"]
+}
 # Managed CMake variables: set only by this tool after verification. Extra
 # --cmake-arg values must not override them (review defect 6: a later
 # -DBOARD=... silently repointed the build while the SDK stayed verified
 # for the original board).
 MANAGED_CMAKE_VARS = (
-    "BOARD", "BOARD_ROOT", "ZEPHYR_BASE", "ZEPHYR_MODULES",
-    "ZEPHYR_TOOLCHAIN_VARIANT", "ZEPHYR_SDK_INSTALL_DIR",
-    "Python3_EXECUTABLE", "CMAKE_C_COMPILER",
-    "CMAKE_PROJECT_INCLUDE", "CMAKE_PROJECT_TOP_LEVEL_INCLUDES",
-    "CMAKE_HOME_DIRECTORY", "DTC_OVERLAY_FILE", "DTC_ROOT",
+    "BOARD",
+    "BOARD_ROOT",
+    "ZEPHYR_BASE",
+    "ZEPHYR_MODULES",
+    "ZEPHYR_TOOLCHAIN_VARIANT",
+    "ZEPHYR_SDK_INSTALL_DIR",
+    "Python3_EXECUTABLE",
+    "CMAKE_C_COMPILER",
+    "CMAKE_PROJECT_INCLUDE",
+    "CMAKE_PROJECT_TOP_LEVEL_INCLUDES",
+    "CMAKE_HOME_DIRECTORY",
+    "DTC_OVERLAY_FILE",
+    "DTC_ROOT",
     "CMAKE_TOOLCHAIN_FILE",
 )
 
@@ -76,7 +88,7 @@ def preflight(root, args):
     zephyr_base = Path(args.zephyr_base).resolve()
     if not app.is_dir() or (app / "CMakeLists.txt").is_file() is False:
         raise BuildError(f"App directory has no CMakeLists.txt: {app}")
-    if not root.resolve() in app.parents:
+    if root.resolve() not in app.parents:
         raise BuildError(f"App outside repository: {app}")
     if not (zephyr_base / "VERSION").is_file():
         raise BuildError(f"Not a Zephyr base (no VERSION): {zephyr_base}")
@@ -84,8 +96,16 @@ def preflight(root, args):
     # 1. Pinned source verification (read-only; reuses the R01 checker).
     checker = str(root / "tools" / "check_dependencies.py")
 
-    run([sys.executable, checker, "--dependency", "zephyr",
-         "--checkout", str(zephyr_base)])
+    run(
+        [
+            sys.executable,
+            checker,
+            "--dependency",
+            "zephyr",
+            "--checkout",
+            str(zephyr_base),
+        ]
+    )
 
     # Explicit module selection: only pinned dependency ids, each verified
     # read-only at its pinned commit/patch state. No implicit workspace.
@@ -100,8 +120,16 @@ def preflight(root, args):
                 f"(allowed: {', '.join(sorted(PINNED_MODULES))})"
             )
         module_path = Path(path).resolve()
-        run([sys.executable, checker, "--dependency", name,
-             "--checkout", str(module_path)])
+        run(
+            [
+                sys.executable,
+                checker,
+                "--dependency",
+                name,
+                "--checkout",
+                str(module_path),
+            ]
+        )
         modules.append(str(module_path))
 
     # Managed esptool shim: the frozen venv's console script carries a stale
@@ -116,7 +144,7 @@ def preflight(root, args):
         toolbin = root / "build" / ".toolbin"
         toolbin.mkdir(parents=True, exist_ok=True)
         shim = toolbin / "esptool"
-        shim.write_text(f"#!/bin/sh\nexec {esppy} -m esptool \"$@\"\n")
+        shim.write_text(f'#!/bin/sh\nexec {esppy} -m esptool "$@"\n')
         shim.chmod(0o755)
         env_path = str(toolbin) + os.pathsep + os.environ.get("PATH", "")
         print(f"[preflight] esptool shim: {shim} -> {esppy} -m esptool")
@@ -139,7 +167,9 @@ def preflight(root, args):
             raise BuildError(f"--python interpreter not found: {python}")
         probe = subprocess.run([str(python), "-c", WEST_PROBE])
         if probe.returncode == 3:
-            raise BuildError(f"--python must not import west (implicit workspace modules): {python}")
+            raise BuildError(
+                f"--python must not import west (implicit workspace modules): {python}"
+            )
         if probe.returncode != 0:
             raise BuildError(f"cannot probe --python interpreter: {python}")
         run([str(python), "--version"])
@@ -202,7 +232,9 @@ def preflight(root, args):
     if build_dir is None:
         slug = re.sub(r"[^a-z0-9._-]+", "-", args.board.lower()).strip("-")
         build_dir = root / "build" / f"r02-{slug}"
-    build_dir = (root / build_dir).resolve() if not build_dir.is_absolute() else build_dir
+    build_dir = (
+        (root / build_dir).resolve() if not build_dir.is_absolute() else build_dir
+    )
     allowed_root = (root / "build").resolve()
     if allowed_root not in build_dir.parents:
         raise BuildError(f"Build directory must live under {allowed_root}: {build_dir}")
@@ -211,7 +243,9 @@ def preflight(root, args):
     if cache.is_file():
         text = cache.read_text(errors="replace")
         cached_board = re.search(r"^BOARD:STRING=(.+)$", text, re.MULTILINE)
-        cached_home = re.search(r"^CMAKE_HOME_DIRECTORY:INTERNAL=(.+)$", text, re.MULTILINE)
+        cached_home = re.search(
+            r"^CMAKE_HOME_DIRECTORY:INTERNAL=(.+)$", text, re.MULTILINE
+        )
         if cached_board and cached_board.group(1).strip() != args.board:
             raise BuildError(
                 f"Build directory {build_dir} caches BOARD={cached_board.group(1)}; "
@@ -230,8 +264,12 @@ def preflight(root, args):
                 f"--cmake-arg must not redirect {flag.split(' ')[0]} "
                 "(source/build directories are managed by the entry)"
             )
-        if flag.startswith("-C") or flag.startswith("--preset") or \
-                flag.startswith("--toolchain") or flag.startswith("-U"):
+        if (
+            flag.startswith("-C")
+            or flag.startswith("--preset")
+            or flag.startswith("--toolchain")
+            or flag.startswith("-U")
+        ):
             raise BuildError(
                 f"--cmake-arg must not inject {flag.split(' ')[0]} "
                 "(init scripts/presets/toolchain/unset are entry-managed)"
@@ -245,8 +283,16 @@ def preflight(root, args):
                 f"--cmake-arg must not override managed variable {var} "
                 "(use the dedicated entry options)"
             )
-    cmake_args = ["cmake", "-S", str(app), "-B", str(build_dir), "-G", "Ninja",
-                  f"-DBOARD={args.board}"]
+    cmake_args = [
+        "cmake",
+        "-S",
+        str(app),
+        "-B",
+        str(build_dir),
+        "-G",
+        "Ninja",
+        f"-DBOARD={args.board}",
+    ]
     if args.board_root:
         board_root = Path(args.board_root).resolve()
         if not board_root.is_dir():
@@ -258,7 +304,9 @@ def preflight(root, args):
     cmake_args += list(args.cmake_arg or [])
     print(f"[preflight] app={app}")
     print(f"[preflight] board={args.board} build={build_dir}")
-    print(f"[preflight] zephyr={zephyr_base} modules={env['ZEPHYR_MODULES'] or '(none)'}")
+    print(
+        f"[preflight] zephyr={zephyr_base} modules={env['ZEPHYR_MODULES'] or '(none)'}"
+    )
     return env, cmake_args, build_dir
 
 
@@ -284,8 +332,11 @@ def verify_effective_config(build_dir, args, modules):
         ("BOARD", cached("BOARD"), args.board),
         ("ZEPHYR_BASE", cached("ZEPHYR_BASE"), str(Path(args.zephyr_base).resolve())),
         # Actual source directory (a second -S would land here).
-        ("CMAKE_HOME_DIRECTORY", cached("CMAKE_HOME_DIRECTORY"),
-         str(Path(args.app).resolve())),
+        (
+            "CMAKE_HOME_DIRECTORY",
+            cached("CMAKE_HOME_DIRECTORY"),
+            str(Path(args.app).resolve()),
+        ),
     ]
     if is_native(args.board):
         cc = shutil.which(args.host_cc)
@@ -295,11 +346,17 @@ def verify_effective_config(build_dir, args, modules):
         # point at the verified toolchain inside the verified SDK.
         sdk = Path(args.sdk).resolve()
         expected_cc = sdk / "gnu" / args.toolchain / "bin" / f"{args.toolchain}-gcc"
-        checks.append(("CMAKE_C_COMPILER", cached("CMAKE_C_COMPILER"),
-                       str(expected_cc)))
+        checks.append(
+            ("CMAKE_C_COMPILER", cached("CMAKE_C_COMPILER"), str(expected_cc))
+        )
     if args.python:
-        checks.append(("Python3_EXECUTABLE", cached("Python3_EXECUTABLE"),
-                       str(Path(args.python).absolute())))
+        checks.append(
+            (
+                "Python3_EXECUTABLE",
+                cached("Python3_EXECUTABLE"),
+                str(Path(args.python).absolute()),
+            )
+        )
     for name, actual, expected in checks:
         if actual is None:
             raise BuildError(f"Effective-config check: {name} missing from cache")
@@ -334,15 +391,21 @@ def verify_effective_config(build_dir, args, modules):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--app", required=True, help="App/test directory inside the repo")
-    parser.add_argument("--board", required=True, help="e.g. native_sim or a board name")
+    parser.add_argument(
+        "--app", required=True, help="App/test directory inside the repo"
+    )
+    parser.add_argument(
+        "--board", required=True, help="e.g. native_sim or a board name"
+    )
     parser.add_argument("--zephyr-base", required=True, help="Verified Zephyr checkout")
     parser.add_argument("--build-dir", help="Default build/r02-<board>")
     parser.add_argument("--sdk", help="Zephyr SDK root (board targets)")
     parser.add_argument("--sdk-version", help="Expected sdk_version content")
     parser.add_argument("--toolchain", help="e.g. riscv64-zephyr-elf (board targets)")
     parser.add_argument("--gcc-version", help="Expected target gcc version substring")
-    parser.add_argument("--host-cc", default="cc", help="Host compiler (native targets)")
+    parser.add_argument(
+        "--host-cc", default="cc", help="Host compiler (native targets)"
+    )
     parser.add_argument(
         "--python",
         help="Pinned build interpreter (e.g. the frozen venv python with pyelftools)",
@@ -352,14 +415,20 @@ def main():
         help="Interpreter providing the esptool module (espressif targets); "
         "a managed shim is generated - the source venv is never modified",
     )
-    parser.add_argument("--board-root", help="Out-of-tree board directory inside the repo")
+    parser.add_argument(
+        "--board-root", help="Out-of-tree board directory inside the repo"
+    )
     parser.add_argument(
         "--module",
         action="append",
         help="Explicit pinned module as name=path (repeatable; verified read-only)",
     )
-    parser.add_argument("--cmake-arg", action="append", help="Extra -D args (repeatable)")
-    parser.add_argument("--build", action="store_true", help="Also compile after configure")
+    parser.add_argument(
+        "--cmake-arg", action="append", help="Extra -D args (repeatable)"
+    )
+    parser.add_argument(
+        "--build", action="store_true", help="Also compile after configure"
+    )
     parser.add_argument("--dry-run", action="store_true", help="Preflight only")
     args = parser.parse_args()
 

@@ -1,0 +1,5 @@
+# Python lint settings for tools/ and factory/forge/ (ruff, PEP 8 based).
+[lint.per-file-ignores]
+# Retired drivers must refuse to run before any import (budget gate bypass).
+"factory/forge/packer/run_factory_fix.py" = ["E402"]
+"factory/forge/packer/run_factory_fix2.py" = ["E402"]

@@ -15,6 +15,7 @@ RF1 #10 硬闸：
 
 用法：run_factory.py <run_dir> [--run-tokens N] [--max-iter N]
 """
+
 import argparse
 import json
 import re
@@ -68,30 +69,33 @@ def factory_tokens_used(text: str) -> int:
     return used
 
 
-def budget_gate(used: int, run_tokens: int,
-                cap: int = FACTORY_CAP_TOKENS) -> str | None:
+def budget_gate(
+    used: int, run_tokens: int, cap: int = FACTORY_CAP_TOKENS
+) -> str | None:
     """超限抛 BudgetError；返回预警文本或 None。"""
     if run_tokens <= 0:
         raise BudgetError("per-run token cap must be > 0")
     if used >= cap:
         raise BudgetError(f"factory budget exhausted: {used}/{cap}")
     if used + run_tokens > cap:
-        raise BudgetError(
-            f"projected {used}+{run_tokens} exceeds factory cap {cap}")
+        raise BudgetError(f"projected {used}+{run_tokens} exceeds factory cap {cap}")
     if used + run_tokens >= WARN_RATIO * cap:
         return f"factory budget >=80% after this run: {used + run_tokens}/{cap}"
     return None
 
 
-def ledger_row(run: str, model: str, tokens: int | None, run_cap: int,
-               note: str) -> str:
+def ledger_row(
+    run: str, model: str, tokens: int | None, run_cap: int, note: str
+) -> str:
     if tokens is None:
         cell, cost = f"~{run_cap}(估)", f"≈¥{run_cap * YUAN_PER_TOKEN:.3f}(估)"
         note += "；usage 未读出，按本轮上限记"
     else:
         cell, cost = str(tokens), f"¥{tokens * YUAN_PER_TOKEN:.3f}"
-    return (f"| {time.strftime('%Y-%m-%d')} | 工厂 {run}（SDK 产 wasm） "
-            f"| {model} | {cell} | {cost} | {note} |\n")
+    return (
+        f"| {time.strftime('%Y-%m-%d')} | 工厂 {run}（SDK 产 wasm） "
+        f"| {model} | {cell} | {cost} | {note} |\n"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -120,8 +124,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     wasm = run_dir / "app.wasm"
     if wasm.exists():
-        print(f"FAIL: {wasm} exists (prior evidence is not overwritten)",
-              file=sys.stderr)
+        print(
+            f"FAIL: {wasm} exists (prior evidence is not overwritten)", file=sys.stderr
+        )
         return 2
 
     from openhands.sdk import LLM, Agent, Conversation, Tool
@@ -130,18 +135,28 @@ def main(argv: list[str] | None = None) -> int:
 
     cred = json.loads(CRED.read_text())
     model = cred.get("model", MODEL_DEFAULT)
-    llm = LLM(model=f"openai/{model}", api_key=cred["llm_api_key"],
-              base_url=cred["llm_base_url"],
-              input_cost_per_token=1.0, output_cost_per_token=1.0)
-    agent = Agent(llm=llm, tools=[Tool(name=FileEditorTool.name),
-                                  Tool(name=TerminalTool.name)])
+    llm = LLM(
+        model=f"openai/{model}",
+        api_key=cred["llm_api_key"],
+        base_url=cred["llm_base_url"],
+        input_cost_per_token=1.0,
+        output_cost_per_token=1.0,
+    )
+    agent = Agent(
+        llm=llm, tools=[Tool(name=FileEditorTool.name), Tool(name=TerminalTool.name)]
+    )
     run_dir.mkdir(parents=True, exist_ok=True)
-    conv = Conversation(agent=agent, workspace=str(FORGE),
-                        max_iteration_per_run=args.max_iter,
-                        max_budget_per_run=float(args.run_tokens))
+    conv = Conversation(
+        agent=agent,
+        workspace=str(FORGE),
+        max_iteration_per_run=args.max_iter,
+        max_budget_per_run=float(args.run_tokens),
+    )
     brief = (FORGE / "tasks/factory-brief.md").read_text()
-    task = (brief + "\n\n## 本次 run 的交付目录（绝对路径）\n\n"
-            f"{wasm} —— 只写这一个文件；完成后停止。\n")
+    task = (
+        brief + "\n\n## 本次 run 的交付目录（绝对路径）\n\n"
+        f"{wasm} —— 只写这一个文件；完成后停止。\n"
+    )
     t0 = time.time()
     note = "未交付"
     rc = 1
@@ -152,8 +167,7 @@ def main(argv: list[str] | None = None) -> int:
             print("FAIL: agent 未交付 app.wasm", file=sys.stderr)
         else:
             data = wasm.read_bytes()
-            if (len(data) > 64 * 1024
-                    or data[:8] != b"\x00asm\x01\x00\x00\x00"):
+            if len(data) > 64 * 1024 or data[:8] != b"\x00asm\x01\x00\x00\x00":
                 note = f"app.wasm 形状不符 {len(data)}B"
                 print(f"FAIL: {note}", file=sys.stderr)
             else:
@@ -170,8 +184,15 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:  # noqa: BLE001 —— 读不出按上限记
             print(f"warn: usage 读取失败：{exc}", file=sys.stderr)
         with LEDGER.open("a") as f:
-            f.write(ledger_row(run_dir.name, model, tokens, args.run_tokens,
-                               f"{note} / {time.time() - t0:.0f}s"))
+            f.write(
+                ledger_row(
+                    run_dir.name,
+                    model,
+                    tokens,
+                    args.run_tokens,
+                    f"{note} / {time.time() - t0:.0f}s",
+                )
+            )
     print(f"{'OK' if rc == 0 else 'FAIL'}: {note}，tokens≈{tokens}")
     return rc
 

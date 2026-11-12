@@ -11,6 +11,7 @@
              RF1 #10：旧形 br_if 在递减之前回边，spin(N>=1) 死循环）
   hang(N)  = 无条件死循环（loop br 0；尾 const 0 满足静态 result）
 """
+
 import sys
 from pathlib import Path
 
@@ -42,48 +43,90 @@ def build() -> bytes:
     # function section：3 函数全 type0
     funcs = leb_u(3) + bytes([0x00, 0x00, 0x00])
     # export section：run/spin/hang -> func 0/1/2
-    exps = (leb_u(3)
-            + name_bytes("run") + bytes([0x00, 0x00])
-            + name_bytes("spin") + bytes([0x00, 0x01])
-            + name_bytes("hang") + bytes([0x00, 0x02]))
+    exps = (
+        leb_u(3)
+        + name_bytes("run")
+        + bytes([0x00, 0x00])
+        + name_bytes("spin")
+        + bytes([0x00, 0x01])
+        + name_bytes("hang")
+        + bytes([0x00, 0x02])
+    )
     # code bodies（locals=00 前缀）
-    run = bytes([0x00,               # locals 0
-                 0x20, 0x00,         # local.get 0
-                 0x41, 0x02,         # i32.const 2
-                 0x6C,               # i32.mul
-                 0x41, 0x01,         # i32.const 1
-                 0x6A,               # i32.add
-                 0x0B])              # end
-    spin = bytes([0x00,              # locals 0
-                  0x02, 0x40,        # block $b
-                  0x03, 0x40,        #   loop $l
-                  0x20, 0x00,        #     local.get 0
-                  0x41, 0x00,        #     i32.const 0
-                  0x4C,              #     i32.le_s
-                  0x0D, 0x01,        #     br_if $b（N<=0 跳出）
-                  0x20, 0x00,        #     local.get 0
-                  0x41, 0x01,        #     i32.const 1
-                  0x6B,              #     i32.sub
-                  0x21, 0x00,        #     local.set 0
-                  0x0C, 0x00,        #     br $l（递减后回边）
-                  0x0B,              #   end loop
-                  0x0B,              # end block
-                  0x41, 0x00,        # i32.const 0（result）
-                  0x0B])             # end func
-    hang = bytes([0x00,              # locals 0
-                  0x03, 0x40,        # loop
-                  0x0C, 0x00,        #   br $l（无条件回边）
-                  0x0B,              # end loop
-                  0x41, 0x00,        # i32.const 0（静态 result——
-                                     #  验证器要求不可达也满足）
-                  0x0B])             # end func
-    code = (leb_u(3)
-            + leb_u(len(run)) + run
-            + leb_u(len(spin)) + spin
-            + leb_u(len(hang)) + hang)
-    mod = (b"\x00asm\x01\x00\x00\x00"
-           + section(1, types) + section(3, funcs)
-           + section(7, exps) + section(10, code))
+    run = bytes(
+        [
+            0x00,  # locals 0
+            0x20,
+            0x00,  # local.get 0
+            0x41,
+            0x02,  # i32.const 2
+            0x6C,  # i32.mul
+            0x41,
+            0x01,  # i32.const 1
+            0x6A,  # i32.add
+            0x0B,
+        ]
+    )  # end
+    spin = bytes(
+        [
+            0x00,  # locals 0
+            0x02,
+            0x40,  # block $b
+            0x03,
+            0x40,  #   loop $l
+            0x20,
+            0x00,  #     local.get 0
+            0x41,
+            0x00,  #     i32.const 0
+            0x4C,  #     i32.le_s
+            0x0D,
+            0x01,  #     br_if $b（N<=0 跳出）
+            0x20,
+            0x00,  #     local.get 0
+            0x41,
+            0x01,  #     i32.const 1
+            0x6B,  #     i32.sub
+            0x21,
+            0x00,  #     local.set 0
+            0x0C,
+            0x00,  #     br $l（递减后回边）
+            0x0B,  #   end loop
+            0x0B,  # end block
+            0x41,
+            0x00,  # i32.const 0（result）
+            0x0B,
+        ]
+    )  # end func
+    hang = bytes(
+        [
+            0x00,  # locals 0
+            0x03,
+            0x40,  # loop
+            0x0C,
+            0x00,  #   br $l（无条件回边）
+            0x0B,  # end loop
+            0x41,
+            0x00,  # i32.const 0（静态 result——
+            #  验证器要求不可达也满足）
+            0x0B,
+        ]
+    )  # end func
+    code = (
+        leb_u(3)
+        + leb_u(len(run))
+        + run
+        + leb_u(len(spin))
+        + spin
+        + leb_u(len(hang))
+        + hang
+    )
+    mod = (
+        b"\x00asm\x01\x00\x00\x00"
+        + section(1, types)
+        + section(3, funcs)
+        + section(7, exps)
+        + section(10, code)
+    )
     return mod
 
 

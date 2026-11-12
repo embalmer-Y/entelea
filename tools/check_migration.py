@@ -179,8 +179,15 @@ def validate(data, root, sources=False):
             )
             require(
                 subprocess.run(
-                    ["git", "-C", str(root), "merge-base", "--is-ancestor",
-                     commit, "HEAD"],
+                    [
+                        "git",
+                        "-C",
+                        str(root),
+                        "merge-base",
+                        "--is-ancestor",
+                        commit,
+                        "HEAD",
+                    ],
                     capture_output=True,
                     check=False,
                 ).returncode

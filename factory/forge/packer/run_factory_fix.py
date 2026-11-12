@@ -2,7 +2,10 @@
 """D-3 反馈修正轮：设备闸（WAMR fast interp）拒绝 run001 的模块——
 WASM 验证失败（spin 导出的 br_if 分支栈型不匹配：无 loop 包裹、
 br_if 0 直指函数尾 label 而栈上无 result 值）。附错误事实让 agent 修。"""
-raise SystemExit("retired (RF1): one-shot run002/run003 driver; it bypasses the budget gate and would overwrite evidence. Use run_factory.py.")
+
+raise SystemExit(
+    "retired (RF1): one-shot run002/run003 driver; it bypasses the budget gate and would overwrite evidence. Use run_factory.py."
+)
 import json
 import sys
 import time
@@ -45,17 +48,24 @@ type/function/export/code 四段一致性；每函数体以 locals 计数开头�
 
 def main() -> int:
     cred = json.loads(CRED.read_text())
-    llm = LLM(model=f"openai/{MODEL}", api_key=cred["llm_api_key"],
-              base_url=cred["llm_base_url"])
-    agent = Agent(llm=llm, tools=[Tool(name=FileEditorTool.name),
-                                  Tool(name=TerminalTool.name)])
+    llm = LLM(
+        model=f"openai/{MODEL}",
+        api_key=cred["llm_api_key"],
+        base_url=cred["llm_base_url"],
+    )
+    agent = Agent(
+        llm=llm, tools=[Tool(name=FileEditorTool.name), Tool(name=TerminalTool.name)]
+    )
     RUN_DIR.mkdir(parents=True, exist_ok=True)
     # run001 产物拷入 run002 作为修改起点
     (RUN_DIR / "app.wasm").write_bytes(
-        (FORGE / "artifacts/run001/app.wasm").read_bytes())
+        (FORGE / "artifacts/run001/app.wasm").read_bytes()
+    )
     conv = Conversation(agent=agent, workspace=str(FORGE))
-    conv.send_message(BRIEF + f"\n\n## 本次 run 交付目录\n\n{RUN_DIR}/app.wasm"
-                      " —— 覆盖修改这一个文件；完成后停止。\n\n" + FEEDBACK)
+    conv.send_message(
+        BRIEF + f"\n\n## 本次 run 交付目录\n\n{RUN_DIR}/app.wasm"
+        " —— 覆盖修改这一个文件；完成后停止。\n\n" + FEEDBACK
+    )
     t0 = time.time()
     conv.run()
     dt = time.time() - t0
@@ -70,9 +80,11 @@ def main() -> int:
             tokens += u.prompt_tokens + u.completion_tokens
     cost = tokens * 4.0 / 1_000_000
     with LEDGER.open("a") as f:
-        f.write(f"| {time.strftime('%Y-%m-%d')} | 工厂 run002（SDK 修 spin） "
-                f"| {MODEL} | {tokens} | ¥{cost:.3f} "
-                f"| app.wasm {len(data)}B / {dt:.0f}s |\n")
+        f.write(
+            f"| {time.strftime('%Y-%m-%d')} | 工厂 run002（SDK 修 spin） "
+            f"| {MODEL} | {tokens} | ¥{cost:.3f} "
+            f"| app.wasm {len(data)}B / {dt:.0f}s |\n"
+        )
     print(f"OK: run002 app.wasm {len(data)}B，{dt:.0f}s，tokens≈{tokens}")
     return 0
 

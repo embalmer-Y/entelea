@@ -7,6 +7,7 @@
 文本地标不能证明任意 map 未被删改，应与相应 ELF 对拍。用法：
     python3 tools/check_board_ram.py build/<app>/zephyr/zephyr.map [--limit 552960]
 """
+
 import argparse
 import re
 import sys
@@ -47,10 +48,7 @@ def output_sections(mapfile: str) -> list[tuple[str, int, int]]:
                 region = REGION.match(line)
                 if region:
                     origin, length = int(region[1], 16), int(region[2], 16)
-                    region_ok = (
-                        HP_LO <= origin < HP_HI and
-                        0 < length <= HP_HI - origin
-                    )
+                    region_ok = HP_LO <= origin < HP_HI and 0 < length <= HP_HI - origin
                 if line.strip() == "Linker script and memory map":
                     in_map = True
                 continue
@@ -80,7 +78,9 @@ def output_sections(mapfile: str) -> list[tuple[str, int, int]]:
     ordered = sorted(sections, key=lambda section: section[1])
     for previous, current in zip(ordered, ordered[1:]):
         if previous[1] + previous[2] > current[1]:
-            raise ValueError(f"overlapping output sections: {previous[0]}, {current[0]}")
+            raise ValueError(
+                f"overlapping output sections: {previous[0]}, {current[0]}"
+            )
     return sections
 
 
