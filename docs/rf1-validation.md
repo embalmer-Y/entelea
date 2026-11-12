@@ -196,7 +196,7 @@ R13 保持 pending。
 - 未测与边界：
   1. `build-support/build-c5-firmware.sh` 未运行（它会对 IDF 副本执行 patch-idf，并覆盖产物与 sha256）；
      仅路径已改，需授权后再执行。
-  2. 旧副本 `/home/emb/project/deps/esp-hosted-mcu` 与 `deps/.eh-comp` 仍保留，删除待确认。
+  2. 旧副本 `/home/emb/project/deps/esp-hosted-mcu` 与 `deps/.eh-comp` 已于 2026-11-12 删除（删除前核对 `.deps/esp-hosted-mcu` HEAD 为 `2e3f6c8`）。
   3. 历史验证文档中的旧路径（`../entelea-legacy/.deps/...`）未改写，随历史文档处理。
   4. 板级烧录与真机验证未执行（未授权）；native_sim 结果不代表真板行为。
   5. ruff 版本由 Zephyr 官方依赖固定为 0.14.2，未采用此前计划的 0.17.4。
