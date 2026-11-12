@@ -399,7 +399,7 @@
         "R06"
       ],
       "status": "done",
-      "note": "历史试用与工厂范围见 docs/r12-validation.md。RF1 已绑定候选摘要并收紧恢复，但用户确认权限/预算未绑定运行时，稳定集与数据晋升未闭合；Forge 工作区无独立 Git 锚点，见 docs/rf1-validation.md。",
+      "note": "历史试用与工厂范围见 docs/r12-validation.md。RF1 已绑定候选摘要并收紧恢复；确认权限/预算已与运行时授权绑定（WP2），稳定集准入已实施（WP3，D-E），数据晋升未闭合；Forge 版本锚点与隔离见 docs/rf1-validation.md。",
       "evidence_paths": [
         "docs/r12-validation.md"
       ],
@@ -427,7 +427,8 @@
       "implementation_commit": "29d6cde",
       "review_commit": "22b126d",
       "wp2_commit": "41786e3",
-      "note": "已修复并复验多项迁移缺陷。WP2（41786e3）：试用确认权限列表与运行时 natives 授权取交集，候选摘要由设备从已验签字节计算，装载门摘要与装载字节同趟比对，步数封顶取最小值。仍 blocked：稳定集准入（D-E）未实施；工厂位图到权限列表的映射待 owner 决定；hw_flash_persist 试用持久化闸按决定移出（SRAM 预算）；VS Code CMake 入口待选择 kit。原生同址主体依赖可信宿主，不宣称隔离。未推送，未执行真机/真云操作。"
+      "wp3_commit": "7c8d935",
+      "note": "已修复并复验多项迁移缺陷。WP1：CMake Tools 入口已恢复（kit 已选，Build 与 RunCtest 通过）。WP2（41786e3）：试用确认权限列表与运行时 natives 授权取交集，候选摘要由设备从已验签字节计算，装载门摘要与装载字节同趟比对，步数封顶取最小值。WP3（7c8d935）：稳定集准入（D-E）已实施，稳定记录经 KV 持久（偏离计划“双副本 meta”，待 owner 确认），非候选槽纯计算可执行（owner 确认 pure_compute_allowed）。仍 blocked：持久经历（WP6）、D12 运行时闸（WP4）、原生信任边界（WP5）、Lua 可行性（WP7）、Forge 版本锚点（WP8）、整体复核与验收（WP9–WP10）；工厂位图到权限列表的映射待 owner 决定；hw_flash_persist 试用持久化闸按决定移出（SRAM 预算）。原生同址主体依赖可信宿主，不宣称隔离。未推送，未执行真机/真云操作。"
     },
     {
       "id": "R13",
