@@ -20,6 +20,8 @@ factory permission mapping); R13 product acceptance remains pending. See
   the companion product context.
 - The sibling `entelea-legacy` is frozen. Never modify its source, delete its
   caches, or remove its Git object store: this tree is a linked worktree.
+- Do not recursively ingest legacy code, dependency trees, environments, build
+  caches or logs; query fixed source objects and asset IDs as needed.
 - Read legacy assets from the pinned commits in the ledger. Inventory coverage
   is not a claim that every source line was audited.
 - Work only within an explicitly authorized batch. Record exact source selections and target paths,
