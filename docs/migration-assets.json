@@ -53,7 +53,7 @@
       "planned_root": "build-support",
       "first_batch": "R01",
       "status": "implemented",
-      "implemented_scope": "R01公共底座；不含设备后端/运行时/产品"
+      "implemented_scope": "R01公共底座与环境重建入口（setup-env.sh、.venv 哈希锁，2026-11-23 从零重建验证）；不含设备后端/运行时/产品"
     },
     {
       "id": "M-CONTRACT",
@@ -452,7 +452,8 @@
       "layout_commits": ["7fa5fd6", "5cbdcf7", "177933d"],
       "doc_consistency_commit": "f977fa2",
       "quality_debt_commit": "3013f07",
-      "note": "已修复并复验多项迁移缺陷。WP1：CMake Tools 入口已恢复（kit 已选，Build 与 RunCtest 通过）。WP2（41786e3）：试用确认权限列表与运行时 natives 授权取交集，候选摘要由设备从已验签字节计算，装载门摘要与装载字节同趟比对，步数封顶取最小值。WP3（5eff2ed，取代首版 7c8d935 的 KV 存储）：稳定集准入（D-E）已实施，稳定项与试用段同一双副本 meta 记录原子持久（owner 裁决），非候选槽纯计算可执行（owner 确认 pure_compute_allowed）。WP4a（12c6e93）：D12 按 UTC 日界计日额 200，持久记录经预留步长写入，并绑定互斥、墙钟与持久端口（Zephyr 与 Linux 宿主各一套）；主机与 native_sim 验证通过，板级墙钟待 SNTP 接线。依赖布局（layout_commits，2026-11-12）：Zephyr 经 west 固定于 .deps，Forge 并入 factory/forge，历史 r01–r16 验证记录删除并以 removed_evidence_docs 锚定；主机、native_sim 套件、板级编译与 RAM 红线、Linux 云编译与治理检查均通过。WP4b（30954d1）：d12 改名为 guard（代码、测试、CMake 选项、DT 标签、日志前缀、阈值文档），主机、native_sim、板级编译与 RAM、Linux 云编译与治理检查均已复验；hw_fault_stop 超红线为既有问题，owner 决定删除（本批次已移除，历史见 55559c2）。仍 blocked：持久经历（WP6）、原生信任边界（WP5）、Lua 可行性（WP7）、Forge 版本锚点（WP8）、整体复核与验收（WP9–WP10）；工厂位图到权限列表的映射待 owner 决定；hw_flash_persist 试用持久化闸按决定移出（SRAM 预算）。原生同址主体依赖可信宿主，不宣称隔离。文档一致性修订（f977fa2，仅文档与注释，不改行为）：更正与实现不符的文档、注释及本台账 M-CONFIG/M-APP/M-DELIVERY/M-TEST/M-FACTORY 与 R04/R05 的状态文字；未落地项与新环境受阻项见 RF1 记录“文档一致性修订记录”。质量债批次（3013f07，仅测试与检查，不改固件行为）：架构检查器补回四条旧 L5 机械规则，新增样式与空白门，native_sim 增至 269 个用例；存储测试复位钩子不清上次复位原因的缓存、运行时种类两套编码并存，两项待裁决，见 RF1 记录“质量债批次验证记录”。未推送，未执行真机/真云操作。"
+      "environment_commit": "d5089a9",
+      "note": "已修复并复验多项迁移缺陷。WP1：CMake Tools 入口已恢复（kit 已选，Build 与 RunCtest 通过）。WP2（41786e3）：试用确认权限列表与运行时 natives 授权取交集，候选摘要由设备从已验签字节计算，装载门摘要与装载字节同趟比对，步数封顶取最小值。WP3（5eff2ed，取代首版 7c8d935 的 KV 存储）：稳定集准入（D-E）已实施，稳定项与试用段同一双副本 meta 记录原子持久（owner 裁决），非候选槽纯计算可执行（owner 确认 pure_compute_allowed）。WP4a（12c6e93）：D12 按 UTC 日界计日额 200，持久记录经预留步长写入，并绑定互斥、墙钟与持久端口（Zephyr 与 Linux 宿主各一套）；主机与 native_sim 验证通过，板级墙钟待 SNTP 接线。依赖布局（layout_commits，2026-11-12）：Zephyr 经 west 固定于 .deps，Forge 并入 factory/forge，历史 r01–r16 验证记录删除并以 removed_evidence_docs 锚定；主机、native_sim 套件、板级编译与 RAM 红线、Linux 云编译与治理检查均通过。WP4b（30954d1）：d12 改名为 guard（代码、测试、CMake 选项、DT 标签、日志前缀、阈值文档），主机、native_sim、板级编译与 RAM、Linux 云编译与治理检查均已复验；hw_fault_stop 超红线为既有问题，owner 决定删除（本批次已移除，历史见 55559c2）。仍 blocked：持久经历（WP6）、原生信任边界（WP5）、Lua 可行性（WP7）、Forge 版本锚点（WP8）、整体复核与验收（WP9–WP10）；工厂位图到权限列表的映射待 owner 决定；hw_flash_persist 试用持久化闸按决定移出（SRAM 预算）。原生同址主体依赖可信宿主，不宣称隔离。文档一致性修订（f977fa2，仅文档与注释，不改行为）：更正与实现不符的文档、注释及本台账 M-CONFIG/M-APP/M-DELIVERY/M-TEST/M-FACTORY 与 R04/R05 的状态文字；未落地项与新环境受阻项见 RF1 记录“文档一致性修订记录”。质量债批次（3013f07，仅测试与检查，不改固件行为）：架构检查器补回四条旧 L5 机械规则，新增样式与空白门，native_sim 增至 269 个用例；存储测试复位钩子不清上次复位原因的缓存、运行时种类两套编码并存，两项待裁决，见 RF1 记录“质量债批次验证记录”。环境固化批次（d5089a9，仅新增工具与文档）：新增可复现的环境搭建入口与 .venv 哈希锁，从零重建后在新环境里完成 native_sim、板级交叉编译与宿主验证，见 RF1 记录“环境固化批次验证记录”。未推送，未执行真机/真云操作。"
 
     },
     {
