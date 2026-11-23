@@ -136,8 +136,8 @@ main(void)
 
 		CHK(entelea_storage_audit_append(&e, 0) == ENTELEA_OK,
 		    "P1 audit append");
-		printk("[hw-flash] P1: kv/audit written; system_fail -> SW "
-		       "reset <=~5s\n");
+		printk("[hw-flash] P1: kv/audit written; system_fail -> WDT "
+		       "reset (~8.8s measured)\n");
 		entelea_safety_system_fail(ENTELEA_FAIL_BOOT(7));
 	}
 	for (;;) {

@@ -1,17 +1,17 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* Byte-for-byte synced with
- * platform/zephyr/tests/wasm/src/wamr_compat.c (review P3-6 note: drift is
- * exposed by the gate/test dual-build surfaces). */
-/* WAMR x Zephyr 4.4 compatibility shim (M2b.2a; zero upstream-patch
- * discipline).
+/* Code-identical to platform/zephyr/tests/wasm/src/wamr_compat.c (only the
+ * comments differ: this copy is the English translation). Review P3-6 note:
+ * drift is exposed by the gate/test dual-build surfaces. */
+/* WAMR x Zephyr compatibility shim (M2b.2a; introduced on Zephyr 4.4, pinned
+ * version 4.5; zero upstream-patch discipline).
  * WAMR-2.4.5's zephyr platform layer
  * (core/shared/platform/zephyr/zephyr_platform.c) calls
  * __stdout_hook_install, which Zephyr >= 3.x has removed (the legacy printf
- * hook mechanism). On Zephyr 4.4, printk works natively and no hook needs to
- * be installed; this shim only satisfies the link symbol. picolibc's Zephyr
- * integration provides the same symbol (lib/libc/picolibc/stdio.c), so the
- * shim is compiled only for libcs without that implementation (minimal-libc,
- * native_sim baseline; verified on xiao_esp32s3, 2026-09-26).
+ * hook mechanism). On Zephyr 4.4 and 4.5, printk works natively and no hook
+ * needs to be installed; this shim only satisfies the link symbol. picolibc's
+ * Zephyr integration provides the same symbol (lib/libc/picolibc/stdio.c), so
+ * the shim is compiled only for libcs without that implementation
+ * (minimal-libc, native_sim baseline; verified on xiao_esp32s3, 2026-09-26).
  * Once WAMR no longer references it from the platform layer, the shim may be
  * removed (removal requires a rebuild and retest; DR-22 discipline). */
 #include <zephyr/kernel.h>

@@ -1,4 +1,4 @@
-# D12 产品验收阈值 · 保守方案 v1（owner 2026-11-10 已批准；[B] 项落地见 r16 验证记录（已删除，锚点见台账 removed_evidence_docs））
+# D12 产品验收阈值 · 保守方案 v1（owner 2026-11-10 已批准；[B] 项落地见 r16 验证记录（已删除，锚点见台账 removed_evidence_docs），与当前代码的对照见 §11）
 
 > 依据：docs/board-osptek-p4c5-resource-budget.md 实测数据 + r02-r15
 > 真机验证记录。原则：**① 已验证实现值直接冻结（零改动最保守）
@@ -87,3 +87,19 @@
 - **[C] 项**（唤醒/媒体）：随产品定义/上游 PR 再启。
 
 > 数值修订规则：任何阈值放宽需附新实测数据；收紧随时可做。
+
+## 11. 落地情况对照（文档一致性修订）
+
+批准文本以上文为准；本节只记录各项与当前代码的对应关系，原 r16 验证记录
+已删除（锚点见台账 removed_evidence_docs）。
+
+| 项 | 当前代码 | 说明 |
+|---|---|---|
+| B1 静态 RAM 红线 | `tools/check_board_ram.py` | 构建后手动运行，`build_zephyr.py` 不自动调用 |
+| B2 wasm 默认配额 | `entelea_wasm_call_default`，1×10^8 | 代码中的实际配额上限同为 1×10^8，没有 2×10^9 clamp；比 §6 的绝对上限更严，属“收紧随时可做” |
+| B3 事件丢弃阈值 | 仅计数器 `entelea_evt_queue_dropped()` | **未落地**：没有“连续 3 周期丢弃即闸失败”的判定，r16 只把它记为验收批判据 dropped==0 |
+| B4–B6 429 冷却 / 频度 / 风暴 | `framework/services/config/guard.c` | 6 次/60 s、E_BUSY 冷却 60 s、连续 3 败闩锁；日额由 RF1 WP4a 改为持久化的 200 次/UTC 日 |
+| B7/B8 复位循环保护 / 冷却 | `platform/zephyr/guard_bootguard.c`、`guard.c` | 计数为**连续**异常复位，没有一小时窗口（无 RTC 的板只能如此；仅 POR 清零）；异常复位后 wasm 与云调用冷却 60 s |
+| §2 停止路径时间戳打印 | 仅记录 estop 闩锁时刻（`entelea_safety_estop_latched_at`） | **未落地**：没有 system_fail 到输出写完成的专门打印，属验收批测量项（需仪器） |
+| §5 运行时内核堆余量 ≥64 KB | 无 | **未落地**：没有 heap 水位打印或检查，r16 落地表也未列入 |
+| B9 24 h soak | 无 | soak 数据的回收与判据结果未在仓库内记录 |

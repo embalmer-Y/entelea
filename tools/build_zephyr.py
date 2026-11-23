@@ -1,7 +1,7 @@
 """Verified Zephyr build entry for Entelea (R02).
 
 Explicit preflight before any CMake invocation (build-support/README.md
-"R02 构建入口" contract):
+"工作区、Zephyr 构建与 SDK 目录合同" section):
 
 1. Verify the pinned Zephyr checkout (commit + full approved patch set +
    staged/untracked/mode diffs) by reusing the read-only dependency checker.

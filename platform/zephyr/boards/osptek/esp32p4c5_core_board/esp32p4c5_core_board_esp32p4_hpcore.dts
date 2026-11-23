@@ -7,7 +7,9 @@
  * Adapted from in-tree waveshare/esp32p4_wifi6_dev_kit (same P4 SoC family).
  * Board facts (osptek docs + esptool probe 2026-10-30): 16MB NOR flash,
  * 32MB embedded PSRAM, CH343 USB-UART bridge on UART0 (GPIO37/38),
- * ESP32-P4 rev v3.2. No on-board LED/buttons (88-pin stamp core board).
+ * ESP32-P4 rev v3.2 (the Zephyr SoC revision selected by
+ * Kconfig.esp32p4c5_core_board is REV_3_1). No on-board LED/buttons
+ * (88-pin stamp core board).
  * C5 companion wiring (c5-p4-connection.png, row-aligned + esp-hosted
  * slot convention cross-check with waveshare C6 board): SDIO pads
  * P4 GPIO14/15/16/17/18/19 = D0/D1/D2/D3/CLK/CMD, reset P4 GPIO54 ->
@@ -16,9 +18,10 @@
  * handshake P4 GPIO6 <-> C5 GPIO2 (not modeled by the current
  * esp_hosted_mcu binding). Enabled: C5 runs an esp-hosted 3.x slave
  * firmware (owner-confirmed 2026-10-30) matching the driver contract.
- * Required pinned-driver patches and network validation boundaries are
- * documented in docs/development.md and docs/testing.md. Enumeration
- * alone does not establish scan, association, DHCP or TLS acceptance.
+ * Required pinned-driver patches are listed in build-support/README.md and
+ * build-support/dependencies.json; network validation boundaries are in
+ * docs/rf1-validation.md. Enumeration alone does not establish scan,
+ * association, DHCP or TLS acceptance.
  */
 
 /dts-v1/;

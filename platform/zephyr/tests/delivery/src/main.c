@@ -928,8 +928,8 @@ ZTEST(framework_trial, test_admission_field_validation_keeps_state)
 		      "空列表=无权限合法");
 }
 
-/* D-E：晋升需 ACTIVE 且第二次确认的同一字节；经 KV 持久，重启后仍有效；撤销
- * 即失效；摘要不符与槽域外被拒。 */
+/* D-E：晋升需 ACTIVE 且第二次确认的同一字节；稳定项与试用段同一双副本 meta 记录
+ * 持久（owner 裁决，取代首版 KV），重启后仍有效；撤销即失效；摘要不符与槽域外被拒。 */
 ZTEST(framework_trial, test_stable_promote_persists_and_revokes)
 {
 	entelea_trial_candidate_t c;

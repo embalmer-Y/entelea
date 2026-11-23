@@ -10,8 +10,8 @@
 global/start/elem/data 段（设备 WASI 关、池模式无 memory 段）。
 单一类型 `(i32)->(i32)`（0x60 01 7f 01 7f），三函数 run/spin/hang 全用类型 0。
 
-- run: `local.get0; i32.const 2; i32.shl; local.get0; i32.add; i32.const 1; i32.add`
-  （shl 代替 mul 实现 2N+1；无符号差异等价）
+- run: `local.get 0; i32.const 2; i32.mul; i32.const 1; i32.add`
+  （即 2N+1，与 packer/wasm_gen.py 一致）
 - spin（RF1 #10 修正形，packer/wasm_gen.py 为准）：
   `block; loop; local.get0; i32.const0; i32.le_s; br_if 1; local.get0;
    i32.const1; i32.sub; local.set0; br 0; end; end; i32.const0`

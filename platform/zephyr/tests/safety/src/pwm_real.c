@@ -5,7 +5,7 @@
  * - 后端失败传播：pwm_set 失败 → commit E_IO、影子/golden 不更新（修复前
  *   返回成功且 shadow 已更新）；
  * - poweron 后端失败 → E_IO（boot 将 fail-safe）；force 路径失败计数。
- * 假设备 cycles_per_sec = 1：捕获值即 ns。 */
+ * 假设备 cycles_per_sec = 1e9（1 ns 分辨率）：捕获值即 ns。 */
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/pwm.h>

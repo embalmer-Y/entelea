@@ -27,8 +27,8 @@ Software Agent SDK 为编程引擎；本目录 = Forge 工厂面，2026-11-12 �
 - `packer/` — TSAP v2 打包签名器（字节格式与设备 R05 验签管线对拍）
 - `tasks/` — SDK 任务书（工厂 App 规格说明）
 - `artifacts/` — 工厂产物（按 run 编号：.tsap 包 + candidate.json + C 头）。
-  失败轮次 run001–003 的产物已删除（历史见提交 55559c2，败因记于
-  `AGENTS.md`）；
+  失败轮次 run001–003 的产物已删除（删除提交 8f63d3f，删除前的版本见提交
+  55559c2，败因记于 `AGENTS.md`）；
   run004 = `wasm_gen.py` 确定性组装 + 公开测试根签名（RF1，非 SDK 直产、
   无云调用），是设备 `hw_factory_intake` 默认头。
 - `gate/gate_run.sh` 默认仅运行两个 native_sim 模式及 PENDING 跨重启

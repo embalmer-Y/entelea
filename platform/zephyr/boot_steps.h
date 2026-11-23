@@ -25,7 +25,9 @@ extern const entelea_boot_step_t
  * false). The assembly layer queries it after boot: true = do not start
  * business, keep outputs at the safe initial state, feed the watchdog
  * continuously (exit only via POR). Business board images must link the
- * guard. */
+ * guard: minimal, hw_cloud_chat and hw_factory_intake do; hw_flash_persist
+ * and hw_wifi_netmon currently do not (open item, see
+ * docs/rf1-validation.md). */
 bool
 entelea_platform_guard_bootguard(void);
 bool

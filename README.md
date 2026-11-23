@@ -13,7 +13,10 @@ R13 仍待完整框架/产品验收。逐项范围、已验证内容和阻塞见
 - [框架 Wiki](docs/wiki/README.md)：模块职责、调用链、平台差异和限制。
 - 旧源码在相邻 `entelea-legacy`，主基线
   `e54047b51519fa449dfe4a338af8d126bed8fac4`；旧 Forge 为其子模块 `agent`（ca5219e7）。
-- 新目录是 linked worktree；旧目录包含共享 Git 对象库，**不能删除**。
+- 原开发机上，新目录是 linked worktree，旧目录包含共享 Git 对象库，
+  **不能删除**。独立克隆可用 `git show e54047b:<路径>` 读旧主仓库源码；
+  旧 Forge 基线 `ca5219e7` 未发布到远端，`check_migration.py --sources`
+  及 4 项治理单测需要相邻的 `entelea-legacy`。
 - 本地 `rebuild` 分支；远端历史与当前状态应以 Git 实际查询为准。
 
 已认可 D01–D12 的建议方向，D03 调整为首期设计覆盖 Lua；

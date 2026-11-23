@@ -32,7 +32,9 @@ R13 保持 pending。
 | 5 | KV 满页重启后压实先擦含其他 App 唯一记录的页，数据丢失 | 重启保持活动满页；先读取并确认活动页拥有全部待保留记录，否则拒绝擦除；[store 测试](../platform/zephyr/tests/store/src/main.c)覆盖满页、唯一目标页和故障 | 非安全布局返回 `E_STATE`；维护恢复尚未定义 |
 | 6 | KV/Audit 撕裂、损坏或读失败被解释成有效记录/空状态 | 新记录加 CRC、独立提交标记和回读；故障显式传播；[store 测试](../platform/zephyr/tests/store/src/main.c)注入逐阶段写失败、读失败和受保护位翻转 | CRC 非防篡改；旧记录仍可读但无法证明完整性，真断电未测 |
 | 7 | Wasm 二次装载在返回 `E_BUSY` 前卸载活模块；验证/读 I/O 被误报为签名/范围错误 | 空闲检查先于修改共享模块，保留底层错误；[Wasm 测试](../platform/zephyr/tests/wasm/src/main.c)再次调用活实例及注入 I/O | 使用固定 WAMR，非其他运行时证明 |
-| 8 | Wasm 调用者可替换实例 principal；宽返回类型有单槽缓冲越界风险 | 装载时绑定主体并检查导出 ABI；[Wasm 测试](../platform/zephyr/tests/wasm/src/main.c)测换主体和参数/返回类型 | 试用确认权限已与运行时 natives 授权取交集（WP2）；稳定集准入见下。 || 9 | 待确认包可执行；展示字段与确认、装载无关联；诊断自确认冒充用户 | 候选槽在装载/调用时核对状态和摘要，确认核对字段与纪元；[Wasm 测试](../platform/zephyr/tests/wasm/src/main.c)、[试用测试](../platform/zephyr/tests/delivery/src/main.c)覆盖待确认、改字节、过期确认和恢复 | **部分修复**：摘要由设备计算、授权与步数已绑定（WP2）；非候选槽及 `trial_end` 后的稳定集准入（D-E）未实施，纯计算仍可执行但无 natives 权限；串行存储假设下的并发改槽未证明。API 不验证真实用户身份/交互，诊断自动确认不是用户验收 || 10 | Forge 组装的 `spin(N)` 在 `N>=1` 死循环，SDK 工厂隔离/预算不符合承诺 | 独立 Forge 工作区修正生成循环并用真实 Wasm 执行、限额负测；当前 WAMR 回归覆盖指令配额 | **部分修复**：该工作区非 Git 仓库、无独立提交锚点；产品隔离、外发限制和 SDK 精确 token 硬上限未证明；SDK 直产替换为确定性组装的方向仍需确认 |
+| 8 | Wasm 调用者可替换实例 principal；宽返回类型有单槽缓冲越界风险 | 装载时绑定主体并检查导出 ABI；[Wasm 测试](../platform/zephyr/tests/wasm/src/main.c)测换主体和参数/返回类型 | 试用确认权限已与运行时 natives 授权取交集（WP2）；稳定集准入见下。 |
+| 9 | 待确认包可执行；展示字段与确认、装载无关联；诊断自确认冒充用户 | 候选槽在装载/调用时核对状态和摘要，确认核对字段与纪元；[Wasm 测试](../platform/zephyr/tests/wasm/src/main.c)、[试用测试](../platform/zephyr/tests/delivery/src/main.c)覆盖待确认、改字节、过期确认和恢复 | **部分修复**：摘要由设备计算、授权与步数已绑定（WP2）；非候选槽及 `trial_end` 后的稳定集准入（D-E）未实施，纯计算仍可执行但无 natives 权限；串行存储假设下的并发改槽未证明。API 不验证真实用户身份/交互，诊断自动确认不是用户验收 |
+| 10 | Forge 组装的 `spin(N)` 在 `N>=1` 死循环，SDK 工厂隔离/预算不符合承诺 | 独立 Forge 工作区修正生成循环并用真实 Wasm 执行、限额负测；当前 WAMR 回归覆盖指令配额 | **部分修复**：该工作区非 Git 仓库、无独立提交锚点；产品隔离、外发限制和 SDK 精确 token 硬上限未证明；SDK 直产替换为确定性组装的方向仍需确认 |
 | 11 | 每次模型请求仅计一次却可多次传输；未知 I/O 自动重试；云诊断绕过门；时间窗/冷却失效；HTTPS 等待读取无总预算 | 每次尝试单独过门，仅 `E_NOT_SENT` 自动重试；云诊断接入模型门；修复时间回退、零时刻、冷却及读写共享预算；[assist](../platform/zephyr/tests/assist/src/main.c)、[D12](../platform/zephyr/tests/guard/src/main.c)与离线 HTTPS 故障测试 | 同步 DNS、连接及 TLS 后端内部仍可能阻塞，不能称端到端硬截止；200 次/日已由 WP4a 实现（持久预留，见下） |
 | 12 | 复位风暴第 3 次未停，retained RAM 失败被忽略；业务镜像用弱桩或忽略 SAFE-HALT | 更正阈值、故障保守处理，并将保护装入对应镜像；[bootguard 测试](../platform/zephyr/tests/guard/src/bootguard.c)注入读写/复位原因故障 | 连续异常复位不是“一小时内三次”；当前源码的物理复位与 retained RAM 未在真机验证 |
 | 13 | WAMR `register_natives` 返回 `false` 仍报告成功 | 按 bool 检查；[Wasm 测试](../platform/zephyr/tests/wasm/src/main.c)注入注册失败 | 生产与测试初始化路径应保持一致 |
@@ -215,6 +217,55 @@ R13 保持 pending。
 - 排障：hw_cloud_chat 与 hw_wifi_netmon 首次失败，原因是复用的构建目录缓存了旧的 `ZEPHYR_MODULES`（仅 hal_espressif），nanopb 未进入模块集，Kconfig 中止。删除目录后，以 `--module nanopb`（云应用另加 mbedtls、tf_psa_crypto）重建通过。
 - 未测与边界：未烧录、未运行板级程序，未做真机验证；native_sim 结果不代表真板行为。
 
+### 文档一致性修订记录（仅文档与注释，不改行为）
+
+逐项对照文档与实现后修订，提交号见台账 RF1 批注。代码行为、测试、持久格式
+与构建产物未变；板级 5 个镜像的静态 SRAM 与上表逐字节一致。
+
+- 更正与实现不符的陈述：板级资源预算表与阈值方案的 Wasm 配额（代码上限
+  为 1×10^8，没有 2×10^9 钳制）；构建说明中不存在的空白样式检查与构建入口
+  引用的 README 小节；本记录里已删除的可选探针参数；Forge README/AGENTS 的
+  提交号、`run` 指令编码与失败轮次产物大小。
+- 阈值方案新增 §11“落地情况对照”：标明 §5 运行时堆余量、§6 事件丢弃判定、
+  §2 停止路径时间戳打印未落地，B9 soak 结果无在树记录，复位保护没有
+  一小时窗口。
+- 状态文字：台账 M-CONFIG、M-APP、M-DELIVERY、M-TEST、M-FACTORY 与
+  R04/R05 备注按 WP2–WP4a 的实现更新；Wiki 的 Forge 位置、`guard` 改名和
+  linked worktree 表述（后者仅在原开发机成立；旧 Forge 基线 `ca5219e7`
+  未发布到远端）。
+- 注释与提示：`commit.c` 文件头、稳定记录的持久方式、假 PWM 周期、测试私钥
+  位置、WAMR 垫片版本、云应用 TLS 堆、板级 DTS、`boot_steps.h`；
+  `hw_flash_persist` 的复位提示语由“SW reset <=~5s”改为实测的 WDT 复位。
+- `.editorconfig` 对 `*.patch` 关闭行尾空白裁剪（6 个补丁含 18 行单空格
+  上下文行，字节被 SHA-256 钉死）；`wiki/runtime.md` 重复行与本记录
+  反例表的挤行已修。
+
+验证（独立克隆，真实命令与退出码；该环境没有相邻的 `entelea-legacy`）：
+
+- `ctest --test-dir build/r01-venv --output-on-failure`：退出码 8，7 项中 5 项
+  通过；`migration_sources` 失败，`governance_tests` 109 项中 105 项通过，
+  失败的 4 项与 `migration_sources` 同因（`Git check failed in
+  ../entelea-legacy`），属环境受阻，改动前后相同。
+- `python3 tools/check_migration.py --sources`：同样受阻，退出码 1；仅元数据
+  模式通过（800 条源项、117 个资产）。
+- `check_architecture.py`、`check_dependencies.py` 通过；6 个补丁与钉死摘要
+  一致；`ruff check` 与 `ruff format --check`（tools 与 factory/forge，18 个
+  文件）通过；文档 95 个相对链接无断链。
+- native_sim：16 个套件与 5 个构建变体共 21 项全部通过，计数与 WP4b 一致。
+- 板级交叉编译（未烧录）：minimal 91,124、hw_flash_persist 98,040、
+  hw_wifi_netmon 280,120、hw_cloud_chat 481,648、hw_factory_intake 449,268
+  字节，红线 552,960，与上表一致。
+
+本批未改（非文字改动或需所有者裁决）：
+
+1. 阈值方案 §5 运行时堆余量、§6 事件丢弃判定、§2 停止路径时间戳打印的落地。
+2. 引导程序未定型：`Kconfig.sysbuild` 缺省 MCUboot，`image.cmake` 仅在
+   simple-boot 下生效，应用目录没有 sysbuild 文件。
+3. estop 仅在 `minimal` 的 overlay 绑定；`hw_flash_persist`、`hw_wifi_netmon`
+   未链接启动保护。
+4. `tests/contracts/main.c` 第 273、274、278 行的断言不经过框架代码；21 个
+   公共函数没有测试直接调用。
+
 ## 对照原规划和批准修订
 
 | 批次 | 当前范围与未完成项 |
@@ -277,7 +328,6 @@ cd /home/emb/project/entelea
   --python .venv/bin/python3 \
   --build-dir build/rf1-delivery-epoch-after-fix --build
 # 在独立临时目录运行 build/rf1-delivery-epoch-after-fix/zephyr/zephyr.exe
-# 可选的失败探针另加 --cmake-arg=-DTEST_TRIAL_PERMISSION_GAP=ON
 ```
 
 模拟 flash 变体另加 `--cmake-arg=-DTEST_FLASH_BACKEND=ON` 和

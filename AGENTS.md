@@ -20,7 +20,8 @@ product acceptance remains pending. See `docs/rf1-validation.md`.
   intelligence / simulated intelligence at framework level; companion only in
   the companion product context.
 - The sibling `entelea-legacy` is frozen. Never modify its source, delete its
-  caches, or remove its Git object store: this tree is a linked worktree.
+  caches, or remove its Git object store: on the original development machine
+  this tree is a linked worktree of it (a standalone clone has no sibling).
 - Do not recursively ingest legacy code, dependency trees, environments, build
   caches or logs; query fixed source objects and asset IDs as needed.
 - Read legacy assets from the pinned commits in the ledger. Inventory coverage

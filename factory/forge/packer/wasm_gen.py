@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Forge 最小 wasm 组装器（D-3）：任务书三导出模块的确定性字节组装。
 
-背景如实：SDK 三轮产物（run001 84B/run002 94B）均被设备 WAMR 验证
-拒（分支栈型/hang 尾值）。R12 合同=Forge 掌握产物约束——本组装器
-为工厂线的确定性后端（LLM 产码→确定性组装→签名；wabt 不入依赖）。
+背景如实：SDK 三轮产物（run001 87B、run002 94B、run003 91B；删除前的
+版本见提交 55559c2）均被设备 WAMR 验证拒（分支栈型/hang 尾值）。R12
+合同=Forge 掌握产物约束——本组装器为工厂线的确定性后端（LLM 产码→
+确定性组装→签名；wabt 不入依赖）。
 
 模块（与 tasks/factory-brief.md 规格一致）：
   run(N)   = 2N+1

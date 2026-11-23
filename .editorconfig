@@ -14,3 +14,8 @@ tab_width = 8
 [*.py]
 indent_style = space
 indent_size = 4
+
+# Patch bytes are pinned by SHA-256 (build-support/dependencies.json) and
+# some context lines are a single space: editors must not trim them.
+[*.patch]
+trim_trailing_whitespace = false

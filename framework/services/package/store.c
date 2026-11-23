@@ -100,8 +100,10 @@ entelea_pkg_stage_chunk(uint8_t slot, uint32_t off, const void *buf,
 	return ENTELEA_OK;
 }
 
-/* Fixed test root (public material from old Q-29 item 4; the private key
- * lives in the old Forge fixtures). Test trust is not production trust. */
+/* Fixed test root (public material from old Q-29 item 4; the matching test
+ * private key is committed as test_root_sk.inc under
+ * platform/zephyr/tests/{pkg,wasm}/src). Test trust is not production
+ * trust. */
 const uint8_t entelea_pkg_test_root_pub[32] = {
 	0xf0, 0x84, 0xa4, 0xe5, 0x6f, 0x68, 0xb6, 0xab, 0x5c, 0xbe, 0xe8,
 	0x60, 0x3c, 0x59, 0xa4, 0x2a, 0xc2, 0xef, 0x26, 0x51, 0xc4, 0x93,

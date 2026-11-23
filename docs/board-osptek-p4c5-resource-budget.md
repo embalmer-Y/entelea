@@ -12,7 +12,7 @@
 |---|---|---|
 | HP SRAM（sramhp@0x4ff00000） | 768 KB | 主运行 RAM（dram0 段+noinit 从中划） |
 | 其中 nocache 窗（sramhp_nocache） | 16 KB | DMA 一致性窗口（PMA 非 cache 映射） |
-| LP SRAM | 32 KB | LP 域（未用） |
+| LP SRAM | 32 KB | LP 域；仅 guard 的复位风暴计数使用 retained RAM（`guardretained`），其余未用 |
 | PSRAM（psram0，叠封） | 32 MB | **Zephyr 面未启用**（esp32p4 无上游 SPIRAM 堆集成；A-1 论证后不依赖） |
 | NOR flash（boya） | 16 MB | 分区表 0x2000 布局（storage 1MB@0x120000） |
 | RTC VBAT | — | 88-pin pad 84（严禁悬空，接 3.3V） |
@@ -23,8 +23,8 @@
 |---|---|---|---|---|
 | r14-minimal | 安全常驻监督 | 69 KB | 699 KB | bss 含全量 RAM 镜像数组（未裁 NO_RAM_BACKEND 的历史面） |
 | r02-hwgate | WDT 硬件闸 | 72 KB | 697 KB | 同上 |
-| r14-lvlprobe | 电平测量探针 | 70 KB | 699 KB | 同上 |
-| r14-tf-final | TF 对拍探针 | 77 KB | 134 KB | NO_RAM_BACKEND=1（对照行：裁剪后 -565 KB） |
+| r14-lvlprobe | 电平测量探针 | 70 KB | 699 KB | 同上；该应用已删除（d7a8e1b） |
+| r14-tf-final | TF 对拍探针 | 77 KB | 134 KB | NO_RAM_BACKEND=1（对照行：裁剪后 -565 KB；为该次构建的变体，现存 `tf_probe` 默认不定义，数值见“RF1 静态红线复核”） |
 | r03-hwflash | flash 持久闸 | 83 KB | 150 KB | NO_RAM_BACKEND=1 |
 | f1-wifi-gate | WiFi/netmon 闸 | 231 KB | 511 KB | esp_hosted+网络栈 |
 | d3-gate-board | 工厂闭环（WAMR+验签） | 173 KB | 543 KB | WAMR RISCV32_ILP32F |
@@ -75,7 +75,7 @@ r15-cloud 的约 403 KB 只列出了两个数据段，不是整个静态 HP SRAM
 | estop 闩→clear 释放 | 无 clear 命令面（后续批） | — |
 | MWDT 硬件复位 | 8.8s（实测）→r02 记录 | hw-gate P2 |
 | TLS1.3 完整握手+chat 往返 | 两轮成功（reply=ok usage 24+80/24+84） | r15 真机；延迟未单独计时（留阈值批） |
-| WAMR 指令配额 | clamp 2×10^9（E-2 定案） | wasm_host |
+| WAMR 指令配额 | 默认 1×10^8，并同为实际配额上限（min(请求换算, 确认步数, 1×10^8)）；D12 v1 落地后取代原 E-2 的 2×10^9 clamp | wasm_host.c |
 | 唤醒时间 | **无睡眠面**（defer——板无 deep-sleep 实现，测量待产品定义） | — |
 
 ## 5. 教训沉淀（配置面"为什么"）

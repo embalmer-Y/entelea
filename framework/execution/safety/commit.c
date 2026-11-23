@@ -5,9 +5,9 @@
  * Internal flow: table lookup -> ACTIVE check -> clamp -> slew -> current
  * limit -> final critical section (irq_lock re-checks forced, so an estop ISR
  * racing this thread's final write is caught).
- * Changes from the old implementation: the audit ring and exception
- * propagation (R03) and source tagging / arbitration gating (R04) are not
- * migrated; in R02, rejections are observable through return codes and state.
+ * Relative to the old implementation: every rejected commit (each early
+ * return) is persisted through the R03 audit sink, and control-source
+ * arbitration arrived with R04 (set_arb in channel.c, commit_src here).
  * commit_locked is kept for the R04 atomic budget check-and-commit path.
  */
 #include <string.h>

@@ -59,6 +59,8 @@ Linux 使用部分同源机制和 POSIX 垫片；按已批准的 R-V5 当前主�
 ## 构建与来源
 
 公共主机目标、受控 Zephyr 入口和依赖检查见
-[构建说明](../../build-support/README.md)。新树是 linked worktree，
-冻结的 `entelea-legacy` 包含共享 Git 对象库；不要修改或删除旧树。
+[构建说明](../../build-support/README.md)。在原开发机上，新树是 linked
+worktree，冻结的 `entelea-legacy` 包含共享 Git 对象库；不要修改或删除旧树。
+独立克隆可用提交 `e54047b` 读取旧主仓库源码，但旧 Forge 基线
+`ca5219e7` 未发布到远端。
 OpenHands Software Agent SDK 属于独立 Forge 工程，不进入设备运行时。
