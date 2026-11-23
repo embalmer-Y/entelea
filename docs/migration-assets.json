@@ -101,7 +101,7 @@
       "planned_root": "framework/services/config",
       "first_batch": "R03",
       "status": "in_progress",
-      "implemented_scope": "provisioning 与部分运行限额已有；每日/小时窗口和产品级阈值未闭合"
+      "implemented_scope": "provisioning 与部分运行限额已有；每日额已由 RF1 WP4a 持久化（板级墙钟待 SNTP），一小时复位窗口和产品级阈值未闭合"
     },
     {
       "id": "M-OBSERVABILITY",
@@ -149,7 +149,7 @@
       "planned_root": "framework/services/app",
       "first_batch": "R05",
       "status": "in_progress",
-      "implemented_scope": "TSAP 与单实例 WAMR 在 framework/services/package；Lua 真 VM 可行性和试用权限绑定未完成"
+      "implemented_scope": "TSAP 与单实例 WAMR 在 framework/services/package；试用权限绑定已由 RF1 WP2 实施，Lua 真 VM 可行性未完成"
     },
     {
       "id": "M-NETWORK",
@@ -229,7 +229,7 @@
       "planned_root": "framework/services/delivery",
       "first_batch": "R12",
       "status": "in_progress",
-      "implemented_scope": "试用状态、设备计算摘要、授权（确认列表∩宿主授权）与步数已绑定（41786e3）；稳定集准入、晋升和并发改槽未闭合"
+      "implemented_scope": "试用状态、设备计算摘要、授权（确认列表∩宿主授权）与步数已绑定（41786e3）；稳定集准入与晋升已由 RF1 WP3（5eff2ed）实施，数据晋升和并发改槽未闭合"
     },
     {
       "id": "M-FACTORY",
@@ -237,7 +237,7 @@
       "planned_root": "integrations/forge",
       "first_batch": "R12",
       "status": "in_progress",
-      "implemented_scope": "设备侧窄合同在 framework/services/delivery；独立 Forge 工作区已有独立 Git 基线 ec24f00（不属于 Entelea 提交），产品隔离、外发与版本锚点的产品保障仍未闭合"
+      "implemented_scope": "设备侧窄合同在 framework/services/delivery；Forge 工厂已按所有者决定（2026-11-12）并入本仓库 factory/forge/（快照自 ec24f00；planned_root 为原规划位置），产品隔离、外发与版本锚点的产品保障仍未闭合"
     },
     {
       "id": "M-PRODUCT",
@@ -252,7 +252,7 @@
       "planned_root": "tests",
       "first_batch": "R01",
       "status": "in_progress",
-      "implemented_scope": "主机与 native_sim 合同/负测和部分板级交叉构建；本轮 CTest 入口不可用，当前源码物理验收未完成"
+      "implemented_scope": "主机与 native_sim 合同/负测和部分板级交叉构建；CTest 入口已恢复（原开发机 7/7；独立克隆缺 ../entelea-legacy 时 migration_sources 与 4 项治理单测受阻），当前源码物理验收未完成"
     }
   ],
   "batches": [
@@ -308,7 +308,7 @@
         "R02"
       ],
       "status": "done",
-      "note": "历史机制交付见 docs/r04-validation.md。RF1 修复过期主体、并发与未知时钟；公开 C 句柄依赖可信宿主，不证明同地址空间防伪；试用授权未绑定，见 docs/rf1-validation.md。",
+      "note": "历史机制交付见 docs/r04-validation.md。RF1 修复过期主体、并发与未知时钟；公开 C 句柄依赖可信宿主，不证明同地址空间防伪；试用授权已由 RF1 WP2 绑定，见 docs/rf1-validation.md。",
       "evidence_paths": [
         "docs/r04-validation.md"
       ],
@@ -321,7 +321,7 @@
         "R04"
       ],
       "status": "done",
-      "note": "历史 TSAP、Wasm 与 Lua 合同证据见 docs/r05-validation.md。RF1 修复 Wasm 生命周期/身份/ABI；Lua C 机制桩未证明真实 VM 资源或中断，权限/预算绑定未闭合，见 docs/rf1-validation.md。",
+      "note": "历史 TSAP、Wasm 与 Lua 合同证据见 docs/r05-validation.md。RF1 修复 Wasm 生命周期/身份/ABI；Lua C 机制桩未证明真实 VM 资源或中断；权限/预算绑定已由 RF1 WP2 实施，见 docs/rf1-validation.md。",
       "evidence_paths": [
         "docs/r05-validation.md"
       ],
@@ -450,7 +450,8 @@
       "wp4a_commit": "12c6e93",
       "wp4b_commit": "30954d1",
       "layout_commits": ["7fa5fd6", "5cbdcf7", "177933d"],
-      "note": "已修复并复验多项迁移缺陷。WP1：CMake Tools 入口已恢复（kit 已选，Build 与 RunCtest 通过）。WP2（41786e3）：试用确认权限列表与运行时 natives 授权取交集，候选摘要由设备从已验签字节计算，装载门摘要与装载字节同趟比对，步数封顶取最小值。WP3（5eff2ed，取代首版 7c8d935 的 KV 存储）：稳定集准入（D-E）已实施，稳定项与试用段同一双副本 meta 记录原子持久（owner 裁决），非候选槽纯计算可执行（owner 确认 pure_compute_allowed）。WP4a（12c6e93）：D12 按 UTC 日界计日额 200，持久记录经预留步长写入，并绑定互斥、墙钟与持久端口（Zephyr 与 Linux 宿主各一套）；主机与 native_sim 验证通过，板级墙钟待 SNTP 接线。依赖布局（layout_commits，2026-11-12）：Zephyr 经 west 固定于 .deps，Forge 并入 factory/forge，历史 r01–r16 验证记录删除并以 removed_evidence_docs 锚定；主机、native_sim 套件、板级编译与 RAM 红线、Linux 云编译与治理检查均通过。WP4b（30954d1）：d12 改名为 guard（代码、测试、CMake 选项、DT 标签、日志前缀、阈值文档），主机、native_sim、板级编译与 RAM、Linux 云编译与治理检查均已复验；hw_fault_stop 超红线为既有问题，owner 决定删除（本批次已移除，历史见 55559c2）。仍 blocked：持久经历（WP6）、原生信任边界（WP5）、Lua 可行性（WP7）、Forge 版本锚点（WP8）、整体复核与验收（WP9–WP10）；工厂位图到权限列表的映射待 owner 决定；hw_flash_persist 试用持久化闸按决定移出（SRAM 预算）。原生同址主体依赖可信宿主，不宣称隔离。未推送，未执行真机/真云操作。"
+      "doc_consistency_commit": "f977fa2",
+      "note": "已修复并复验多项迁移缺陷。WP1：CMake Tools 入口已恢复（kit 已选，Build 与 RunCtest 通过）。WP2（41786e3）：试用确认权限列表与运行时 natives 授权取交集，候选摘要由设备从已验签字节计算，装载门摘要与装载字节同趟比对，步数封顶取最小值。WP3（5eff2ed，取代首版 7c8d935 的 KV 存储）：稳定集准入（D-E）已实施，稳定项与试用段同一双副本 meta 记录原子持久（owner 裁决），非候选槽纯计算可执行（owner 确认 pure_compute_allowed）。WP4a（12c6e93）：D12 按 UTC 日界计日额 200，持久记录经预留步长写入，并绑定互斥、墙钟与持久端口（Zephyr 与 Linux 宿主各一套）；主机与 native_sim 验证通过，板级墙钟待 SNTP 接线。依赖布局（layout_commits，2026-11-12）：Zephyr 经 west 固定于 .deps，Forge 并入 factory/forge，历史 r01–r16 验证记录删除并以 removed_evidence_docs 锚定；主机、native_sim 套件、板级编译与 RAM 红线、Linux 云编译与治理检查均通过。WP4b（30954d1）：d12 改名为 guard（代码、测试、CMake 选项、DT 标签、日志前缀、阈值文档），主机、native_sim、板级编译与 RAM、Linux 云编译与治理检查均已复验；hw_fault_stop 超红线为既有问题，owner 决定删除（本批次已移除，历史见 55559c2）。仍 blocked：持久经历（WP6）、原生信任边界（WP5）、Lua 可行性（WP7）、Forge 版本锚点（WP8）、整体复核与验收（WP9–WP10）；工厂位图到权限列表的映射待 owner 决定；hw_flash_persist 试用持久化闸按决定移出（SRAM 预算）。原生同址主体依赖可信宿主，不宣称隔离。文档一致性修订（f977fa2，仅文档与注释，不改行为）：更正与实现不符的文档、注释及本台账 M-CONFIG/M-APP/M-DELIVERY/M-TEST/M-FACTORY 与 R04/R05 的状态文字；未落地项与新环境受阻项见 RF1 记录“文档一致性修订记录”。未推送，未执行真机/真云操作。"
 
     },
     {
