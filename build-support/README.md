@@ -15,6 +15,32 @@ cmake --build build/common-only
 编译器须有其配套runtime。本机Clang缺ASan库，使用现有GCC验证，
 不是禁用检查制造通过。BUILD_TESTING=OFF默认不构建旧void适配库。
 
+## 搭建开发环境
+
+[setup-env.sh](setup-env.sh) 按下文的目录合同重建整套环境，可重复执行：
+每一步都用仓库自己的只读检查器（`tools/check_dependencies.py`）核验，
+不会静默回退到未固定的来源。它只拉取、应用批准补丁和安装，不构建、
+不烧录、不调用模型。
+
+主机前置条件（Ubuntu/Debian）：cmake、ninja、带 32 位支持的 gcc
+（gcc-multilib；native_sim 是 32 位目标）、gperf、设备树编译器、perl、xz，
+以及不是 apt 包的 uv（提供 CPython 3.12）。加 `--system` 时脚本用 sudo
+调用 apt 安装其中的 apt 包。直连 GitHub 很慢的网络可加
+`--proxy <https 前缀>`；经代理取得的源码仍按固定提交和官方 SHA-256 核验。
+
+```sh
+build-support/setup-env.sh --system   # 首次：连同主机包
+build-support/setup-env.sh            # 之后：补齐缺失的，核验已有的
+```
+
+`.venv` 不在现场解析依赖，而是按带哈希的
+[requirements-zephyr.lock](requirements-zephyr.lock) 安装（CPython 3.12、
+Linux，167 个包；由 uv 对 Zephyr、hal_espressif、nanopb 的依赖文件编译而
+成，west 被排除在外），所以解释器内容可以从零复现；再生成锁的命令写在
+该文件头部。Zephyr 构建须把 `.venv/bin` 放在 PATH 最前：esp-hosted 的
+nanopb 生成步骤由 `#!/usr/bin/env python3` 启动的包装脚本执行，需要
+`.venv` 里的 grpcio-tools，系统并不安装 `protoc`。
+
 ## 工作区、Zephyr 构建与 SDK 目录合同
 
 现有 Zephyr 入口为 `tools/build_zephyr.py`，按目标核验固定源码、
@@ -26,7 +52,7 @@ cmake --build build/common-only
 | 受管源码 | 仓库忽略的 `.deps/`：`zephyrproject/`（`west init -l` 绑定固定 Zephyr 4.5 提交 41d10b5；模块由 `west update` 按 west.yml 拉取；应用 6 个已批准补丁）、`wamr/`、`esp-hosted-mcu/`、`lua/`、`zephyr-sdk-1.0.1/` |
 | 外部源码与产物 | 仓库外 `/home/emb/project/deps/`：ESP-IDF v5.5.4 与 C5 固件产物（路径写入构建脚本与 `c5-firmware.json`） |
 | 构建产物 | 统一放本仓库 `build/<batch>-<target>`；可再生，不作证据保存 |
-| Python 环境 | 构建：仓库内 `.venv/`（CPython 3.12，`uv venv --seed`；Zephyr 依赖经 `west packages pip` 安装，ruff 随之固定为 0.14.2）。west 另放 `/home/emb/project/envs/west`，构建解释器不得可导入 west（否则 Zephyr 继承整个工作区模块集，`build_zephyr.py` 拒绝）。OpenHands：`/home/emb/project/envs/openhands`，由带哈希锁 `factory/forge/requirements-openhands.lock` 同步 |
+| Python 环境 | 构建：仓库内 `.venv/`（CPython 3.12，`uv venv --seed`；依赖按带哈希的 `requirements-zephyr.lock` 安装，由 `setup-env.sh` 执行，ruff 随之固定为 0.14.2）。west 另放 `/home/emb/project/envs/west`（1.5.0），构建解释器不得可导入 west（否则 Zephyr 继承整个工作区模块集，`build_zephyr.py` 拒绝）。OpenHands：`/home/emb/project/envs/openhands`，由带哈希锁 `factory/forge/requirements-openhands.lock` 同步（该环境已决定不再使用，见规划 10.6） |
 | Zephyr SDK | `.deps/zephyr-sdk-1.0.1/`（仓库忽略），`build_zephyr.py --sdk` 设置 `ZEPHYR_SDK_INSTALL_DIR` 与 `ZEPHYR_TOOLCHAIN_VARIANT=zephyr`（官方方式，不注册 CMake 包、不执行 setup、不修改 shell 配置） |
 
 本机 SDK 为 `sdk_version` `1.0.1`，实际 RISC-V GCC 为 `14.3.0`，

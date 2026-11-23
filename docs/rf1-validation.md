@@ -334,6 +334,43 @@ R13 保持 pending。
 4. 事件总线没有退订接口，订阅是进程级的静态资源；新增订阅者的测试要避开
    其他用例的容量断言，启动用例因此放在 store 套件而不是 core。
 
+### 环境固化批次验证记录（仅新增工具与文档，不改固件行为）
+
+按规划 10.6 的裁决，把在新机器上重建环境的过程固化为可复现的入口；提交号
+见台账 RF1 批注。
+
+- `build-support/setup-env.sh`：幂等重建 `.venv`、west 环境、带批准补丁的
+  Zephyr、四个固定模块、WAMR/Lua/esp-hosted-mcu 和 Zephyr SDK 1.0.1。
+  每一步用 `tools/check_dependencies.py` 核验；提交号和补丁只取自
+  `dependencies.json`，没有回退到未固定来源的路径，west 不进入 `.venv`。
+- `build-support/requirements-zephyr.lock`：`.venv` 的带哈希锁（CPython
+  3.12、Linux，167 个包，west 被排除），取代原先现场解析依赖的做法。
+  clang-format 23.1.5 与 `tools/check_style.py` 要求的版本由单测交叉核对。
+- `tools/tests/test_setup_env.py`：8 项治理单测（脚本语法与帮助、未知选项
+  拒绝、提交号不得写死在脚本里、west 不入锁、每个钉定的包都有哈希、锁头部
+  的再生成命令）。
+- 构建说明新增“搭建开发环境”，写明此前没有记录的前置条件：32 位编译支持、
+  主机工具、uv，以及 Zephyr 构建须把 `.venv/bin` 放在 PATH 最前。
+
+验证（真实命令与退出码）：
+
+- 幂等重跑：在现有环境上 `setup-env.sh` 退出码 0，各阶段识别为已就绪并完成
+  核验。第一次重跑暴露并修正了脚本的两个缺陷（补丁列表的读取、`west list`
+  的参数），上述结果是修正之后的。
+- 从零重建：把仓库克隆到临时目录，`setup-env.sh --proxy <镜像前缀>` 退出
+  码 0，全部阶段通过检查器。随后在该环境里：
+  - native_sim `safety` 套件构建与运行退出码 0，12/12；
+  - 板级 `hw_wifi_netmon` 交叉编译退出码 0（经过 nanopb 生成和 RISC-V
+    工具链），静态 SRAM 280,120 字节，与本记录中的数值相同；
+  - 宿主 CTest 5/7，失败的 2 项原因同前；`.venv` 中 west 不可导入。
+- 锁：对现有 `.venv` 带哈希安装的结果是“无改动”；在全新环境按锁同步后
+  关键模块可导入，clang-format 23.1.5、ruff 0.14.2。
+- `unittest discover -s tools/tests`：134 项，失败的 4 项原因同前。
+
+没有实测的两处：`--system`（用 apt 安装主机包）没有在脚本里跑过，因为本机的
+主机包在脚本写成之前已经装好，它只是一条 `apt-get install`；直连 GitHub 的
+路径也没有在脚本里跑过，本机直连约 20 KB/s，测试走的是镜像前缀。
+
 ## 对照原规划和批准修订
 
 | 批次 | 当前范围与未完成项 |
