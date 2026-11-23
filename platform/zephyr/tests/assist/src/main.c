@@ -64,9 +64,8 @@ bind_guard_fake(void)
 	guard_wall.user = &fake_utc_s;
 	guard_rec_present = false;
 	entelea_guard_test_reset();
-	zassert_ok(
-		entelea_clock_init(&guard_clock, fake_read_ms, &fake_now,
-				   0xD12));
+	zassert_ok(entelea_clock_init(&guard_clock, fake_read_ms, &fake_now,
+				      0xD12));
 	zassert_ok(entelea_guard_bind_clock(&guard_clock));
 	zassert_ok(entelea_platform_guard_lock_init(&guard_lock));
 	zassert_ok(entelea_guard_bind_lock(&guard_lock));

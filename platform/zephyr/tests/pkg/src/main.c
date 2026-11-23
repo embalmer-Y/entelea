@@ -6,6 +6,7 @@
 #include <zephyr/ztest.h>
 #include <entelea/appstore.h>
 #include <entelea/package.h>
+#include <entelea/sha256.h>
 #include <entelea/storage.h>
 #include <entelea/trust.h>
 #include "crypto/tweetnacl.h"
@@ -378,6 +379,82 @@ ZTEST(framework_pkg, test_stage_chain_and_activate)
 	zassert_equal(entelea_pkg_activate(1), ENTELEA_OK);
 	zassert_equal(entelea_pkg_active(&slot), ENTELEA_OK);
 	zassert_equal(slot, 1);
+}
+
+ZTEST(framework_pkg, test_slot_read_returns_staged_bytes)
+{
+	struct pkgb p;
+	uint8_t buf[32];
+
+	build_pkg(&p, MAN, sizeof(MAN), WASM, sizeof(WASM), 0);
+	stage_pkg(0, &p);
+
+	/* The staged package comes back byte for byte through the slot-read
+	 * surface that the load chain uses. */
+	zassert_equal(entelea_pkg_slot_read(0, 0, buf, sizeof(buf)),
+		      ENTELEA_OK);
+	zassert_mem_equal(buf, p.b, sizeof(buf), "header bytes");
+	zassert_equal(entelea_pkg_slot_read(0, p.n - 4, buf, 4), ENTELEA_OK);
+	zassert_mem_equal(buf, p.b + p.n - 4, 4, "last signature bytes");
+
+	/* Out-of-domain requests are refused, never clamped. */
+	zassert_equal(entelea_pkg_slot_read(ENTELEA_APP_SLOT_COUNT, 0, buf, 4),
+		      ENTELEA_E_PARAM);
+	zassert_equal(
+		entelea_pkg_slot_read(0, ENTELEA_APP_SLOT_SIZE - 2, buf, 4),
+		ENTELEA_E_RANGE);
+}
+
+ZTEST(framework_pkg, test_file_digest_matches_common_sha256)
+{
+	struct pkgb p;
+	static uint8_t big[1500]; /* the package embeds the payload twice */
+	uint8_t stream[32];
+	uint8_t oneshot[32];
+	uint8_t cap[PKG_MAX];
+
+	for (size_t i = 0; i < sizeof(big); i++) {
+		big[i] = (uint8_t) (i * 7 + 3);
+	}
+	build_pkg(&p, MAN, sizeof(MAN), big, sizeof(big), 0);
+	/* Header + manifest + wasm + COSE (payload copy + signature): at least
+	 * six 512-byte read chunks, and it fits the build buffer. */
+	zassert_true(p.n > 3072 && p.n <= PKG_MAX, "multi-chunk package");
+	stage_pkg(0, &p);
+
+	/* The streaming digest the trial gate relies on equals the common
+	 * one-shot SHA-256, a separate implementation, over the staged bytes. */
+	zassert_equal(entelea_pkg_file_digest(0, p.n, stream), ENTELEA_OK);
+	zassert_equal(entelea_sha256(p.b, p.n, oneshot), ENTELEA_OK);
+	zassert_mem_equal(stream, oneshot, 32, "whole-package digest");
+
+	/* The single-pass capture returns the same digest and copies the
+	 * window that straddles the first read-chunk boundary. */
+	zassert_equal(
+		entelea_pkg_file_digest_capture(0, p.n, stream, 500, 40, cap),
+		ENTELEA_OK);
+	zassert_mem_equal(stream, oneshot, 32);
+	zassert_mem_equal(cap, p.b + 500, 40, "captured window");
+	zassert_equal(
+		entelea_pkg_file_digest_capture(0, p.n, stream, 0, 0, NULL),
+		ENTELEA_OK, "no capture asked");
+	zassert_mem_equal(stream, oneshot, 32);
+
+	/* Domain errors are refused before anything is read. */
+	zassert_equal(entelea_pkg_file_digest(0, 0, stream), ENTELEA_E_PARAM);
+	zassert_equal(
+		entelea_pkg_file_digest(0, ENTELEA_APP_SLOT_SIZE + 1, stream),
+		ENTELEA_E_PARAM, "len beyond the slot");
+	zassert_equal(
+		entelea_pkg_file_digest(ENTELEA_APP_SLOT_COUNT, 1, stream),
+		ENTELEA_E_PARAM, "slot out of range");
+	zassert_equal(entelea_pkg_file_digest(0, 1, NULL), ENTELEA_E_PARAM);
+	zassert_equal(entelea_pkg_file_digest_capture(0, p.n, stream, p.n - 4,
+						      8, cap),
+		      ENTELEA_E_PARAM, "capture window beyond len");
+	zassert_equal(
+		entelea_pkg_file_digest_capture(0, p.n, stream, 0, 4, NULL),
+		ENTELEA_E_PARAM, "capture without a buffer");
 }
 
 ZTEST_SUITE(framework_pkg, NULL, pkg_setup, NULL, NULL, NULL);

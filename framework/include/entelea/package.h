@@ -39,8 +39,7 @@ typedef struct {
 	uint32_t manifest_off;
 	uint32_t wasm_off;
 	uint32_t cose_off;
-	uint32_t
-		pkg_len; /* pkg length = end of COSE sig; 0 if unverified */
+	uint32_t pkg_len; /* pkg length = end of COSE sig; 0 if unverified */
 } entelea_tsap_view_t;
 
 static inline uint32_t

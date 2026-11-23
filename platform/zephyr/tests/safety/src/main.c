@@ -5,12 +5,16 @@
  * 新增单通道 detach/recover 机制面用例（旧 T-PERIPH 语义的机制子集））。
  * 有状态顺序场景：合并为单一用例断言链 = 规格链（ztest 用例序不保证）。
  */
+#include <errno.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/irq_offload.h>
 #include <zephyr/ztest.h>
 #include <stdio.h>
 #include <entelea/events.h>
 #include <entelea/safety.h>
+/* The write lock is this module's private contract that R04 reuses for its
+ * atomic budget check-and-commit; the lock-held commit is tested through it. */
+#include "../../../../../framework/execution/safety/internal.h"
 
 static uint64_t virt_now;
 static bool clock_fail_next; /* 一次性读失败注入 */
@@ -509,4 +513,240 @@ ZTEST(framework_safety, test_poweron_writes_driver)
 	zassert_equal(w[0].value_u, 1U, "写值 = 声明 poweron（GPIO true）");
 	/* 无节点板（native_sim）estop 面空操作成功。 */
 	zassert_equal(entelea_safety_estop_init(), ENTELEA_OK);
+}
+
+/* ---- Direct coverage of the observation and lock-held surfaces ---- */
+
+ZTEST(framework_safety, test_summary_counts_channels_by_state)
+{
+	entelea_safety_summary_t sum;
+	static const entelea_out_channel_t sum_a = {
+		.uid = "sum-a",
+		.kind = ENTELEA_CH_GPIO,
+		.poweron = { .b = false },
+		.linkloss = { .b = false },
+		.fault = { .b = false },
+	};
+	static const entelea_out_channel_t sum_b = {
+		.uid = "sum-b",
+		.kind = ENTELEA_CH_PWM,
+		.poweron = { .u = 0 },
+		.linkloss = { .u = 0 },
+		.fault = { .u = 0 },
+		.limits = { .min = 0, .max = 1000 },
+	};
+
+	entelea_safety_test_reset();
+	zassert_equal(entelea_safety_bind_clock(&virt_clock), ENTELEA_OK);
+	virt_now = 0;
+	zassert_equal(entelea_safety_summary(NULL), ENTELEA_E_PARAM);
+
+	zassert_equal(entelea_safety_summary(&sum), ENTELEA_OK);
+	zassert_equal(sum.channels, 0, "no registration yet");
+
+	zassert_equal(entelea_safety_register_channel(&sum_a), ENTELEA_OK);
+	zassert_equal(entelea_safety_register_channel(&sum_b), ENTELEA_OK);
+	zassert_equal(entelea_safety_poweron_init(), ENTELEA_OK);
+	zassert_equal(entelea_safety_summary(&sum), ENTELEA_OK);
+	zassert_equal(sum.channels, 2);
+	zassert_equal(sum.by_state[ENTELEA_ST_SAFE_POWERON], 2);
+	zassert_equal(sum.by_state[ENTELEA_ST_ACTIVE], 0);
+
+	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
+	zassert_equal(entelea_safety_summary(&sum), ENTELEA_OK);
+	zassert_equal(sum.by_state[ENTELEA_ST_ACTIVE], 2);
+	zassert_equal(sum.by_state[ENTELEA_ST_SAFE_POWERON], 0);
+
+	entelea_safety_force_all_fault();
+	zassert_equal(entelea_safety_summary(&sum), ENTELEA_OK);
+	zassert_equal(sum.by_state[ENTELEA_ST_SAFE_FAULT], 2);
+	zassert_equal(sum.by_state[ENTELEA_ST_ACTIVE], 0);
+	zassert_equal(sum.channels, 2, "estop keeps the registrations");
+}
+
+ZTEST(framework_safety, test_value_encode_matches_written_record)
+{
+	entelea_out_value_t v = { 0 };
+	entelea_write_rec_t w[2];
+	static const entelea_out_channel_t enc_pwr = {
+		.uid = "enc-pwr",
+		.kind = ENTELEA_CH_POWER,
+		.poweron = { .pwr = { .en = false, .ma = 0 } },
+		.linkloss = { .pwr = { .en = false, .ma = 0 } },
+		.fault = { .pwr = { .en = false, .ma = 0 } },
+		.limits = { .current_limit_ma = 1000 },
+	};
+
+	/* GPIO: the boolean alone decides the word. */
+	v.b = true;
+	zassert_equal(entelea_value_encode(ENTELEA_CH_GPIO, v), 1U);
+	v.b = false;
+	zassert_equal(entelea_value_encode(ENTELEA_CH_GPIO, v), 0U);
+	/* PWM and the other unit kinds: the raw word. */
+	v.u = 777;
+	zassert_equal(entelea_value_encode(ENTELEA_CH_PWM, v), 777U);
+	/* POWER: enable flag in bit 31, milliamps in the low 31 bits. */
+	v.pwr.en = true;
+	v.pwr.ma = 500;
+	zassert_equal(entelea_value_encode(ENTELEA_CH_POWER, v), 0x800001F4U);
+	v.pwr.en = false;
+	v.pwr.ma = 0x7FFFFFFF;
+	zassert_equal(entelea_value_encode(ENTELEA_CH_POWER, v), 0x7FFFFFFFU);
+
+	/* The write-sequence record stores this very encoding. */
+	entelea_safety_test_reset();
+	zassert_equal(entelea_safety_bind_clock(&virt_clock), ENTELEA_OK);
+	virt_now = 0;
+	zassert_equal(entelea_safety_register_channel(&enc_pwr), ENTELEA_OK);
+	zassert_equal(entelea_safety_poweron_init(), ENTELEA_OK);
+	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
+	v.pwr.en = true;
+	v.pwr.ma = 250;
+	zassert_equal(entelea_safety_commit("enc-pwr", v), ENTELEA_OK);
+	/* poweron_init recorded the declared poweron value; activation writes
+	 * nothing back, so the commit is the second recorded write. */
+	zassert_equal(entelea_driver_sim_writes("enc-pwr", w, 2), 2);
+	zassert_equal(w[0].value_u, 0U, "poweron en=false ma=0 encodes to 0");
+	zassert_equal(w[1].value_u, 0x800000FAU, "record uses value_encode");
+}
+
+ZTEST(framework_safety, test_unbound_hardware_backends_report_absence)
+{
+	/* native_sim binds no DT node: the real backends report the absence
+	 * explicitly instead of silently succeeding in software. */
+	zassert_equal(entelea_drv_gpio_init(), -ENODEV);
+#ifdef ENTELEA_DRV_PWM
+	zassert_equal(entelea_drv_pwm_init(), 0, "bound fake PWM is ready");
+#else
+	zassert_equal(entelea_drv_pwm_init(), -ENODEV);
+	zassert_equal(entelea_drv_pwm_err_count(), 0U);
+#endif
+	/* No estop-gpios property: the raw level read is unbound. */
+	zassert_equal(entelea_safety_estop_level_raw(), -1);
+}
+
+ZTEST(framework_safety, test_commit_locked_under_write_lock)
+{
+	/* No assertion may run between lock and unlock: a failed zassert
+	 * returns from the test and would leave the lock held. */
+	entelea_result_t r1;
+	entelea_result_t r2;
+	entelea_result_t r3;
+	entelea_out_value_t rb = { 0 };
+	const entelea_out_value_t on = { .b = true };
+	static const entelea_out_channel_t lk_ch = {
+		.uid = "lk-ch",
+		.kind = ENTELEA_CH_GPIO,
+		.poweron = { .b = false },
+		.linkloss = { .b = false },
+		.fault = { .b = false },
+	};
+
+	entelea_safety_test_reset();
+	zassert_equal(entelea_safety_bind_clock(&virt_clock), ENTELEA_OK);
+	virt_now = 0;
+	zassert_equal(entelea_safety_register_channel(&lk_ch), ENTELEA_OK);
+	zassert_equal(entelea_safety_poweron_init(), ENTELEA_OK);
+
+	/* In a safe state the lock-held form is refused like the plain commit. */
+	entelea_safety_write_lock();
+	r1 = entelea_safety_commit_locked("lk-ch", on, NULL);
+	entelea_safety_write_unlock();
+	zassert_equal(r1, ENTELEA_E_STATE);
+
+	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
+	entelea_safety_write_lock();
+	r1 = entelea_safety_commit_locked("no-such-channel", on, NULL);
+	r2 = entelea_safety_commit_locked("lk-ch", on, NULL);
+	entelea_safety_write_unlock();
+	zassert_equal(r1, ENTELEA_E_NOTFOUND);
+	zassert_equal(r2, ENTELEA_OK);
+	zassert_equal(entelea_safety_readback("lk-ch", &rb), ENTELEA_OK);
+	zassert_true(rb.b, "the shadow holds the committed value");
+}
+
+static int estop_seen;
+static int state_seen;
+static uint32_t estop_trigger_ms;
+
+static void
+count_estop(const entelea_event_t *evt, void *user)
+{
+	const entelea_estop_evt_t *payload = evt->data;
+
+	ARG_UNUSED(user);
+	estop_trigger_ms = payload->t_ms;
+	estop_seen++;
+}
+
+static void
+count_state(const entelea_event_t *evt, void *user)
+{
+	ARG_UNUSED(evt);
+	ARG_UNUSED(user);
+	state_seen++;
+}
+
+ZTEST(framework_safety, test_estop_event_is_backfilled_once_per_latch)
+{
+	entelea_ch_state_t st;
+	static const entelea_out_channel_t ev_ch = {
+		.uid = "ev-ch",
+		.kind = ENTELEA_CH_GPIO,
+		.poweron = { .b = false },
+		.linkloss = { .b = false },
+		.fault = { .b = false },
+	};
+
+	entelea_safety_test_reset();
+	zassert_equal(entelea_safety_bind_clock(&virt_clock), ENTELEA_OK);
+	virt_now = 0;
+	zassert_equal(entelea_safety_register_channel(&ev_ch), ENTELEA_OK);
+	zassert_equal(entelea_safety_poweron_init(), ENTELEA_OK);
+	zassert_equal(
+		entelea_evt_subscribe(ENTELEA_EVT_ESTOP, count_estop, NULL),
+		ENTELEA_OK);
+	zassert_equal(entelea_evt_subscribe(ENTELEA_EVT_SAFE_STATE_CHANGED,
+					    count_state, NULL),
+		      ENTELEA_OK);
+	estop_seen = 0;
+	state_seen = 0;
+
+	/* Nothing is forced yet: the patrol has no edge to announce. */
+	entelea_safety_estop_deferred_publish();
+	zassert_equal(estop_seen, 0);
+
+	/* A link transition is one historical state-change event. */
+	zassert_equal(entelea_safety_set_link(true), ENTELEA_OK);
+	zassert_equal(state_seen, 1);
+
+	/* The estop ISR path publishes nothing itself: no callback runs from
+	 * interrupt context. */
+	virt_now = 42;
+	entelea_safety_force_all_fault();
+	zassert_equal(state_seen, 1);
+	zassert_equal(estop_seen, 0);
+
+	/* The patrol backfills exactly one estop event per latch. */
+	entelea_safety_estop_deferred_publish();
+	zassert_equal(estop_seen, 1);
+	zassert_equal(estop_trigger_ms, 42U, "carries the trigger time");
+	entelea_safety_estop_deferred_publish();
+	zassert_equal(estop_seen, 1);
+
+	/* While latched, a link change moves no SAFE_FAULT channel. */
+	zassert_equal(entelea_safety_set_link(false), ENTELEA_OK);
+	zassert_equal(state_seen, 1);
+
+	/* clear_fault releases the latch: with the link down the channel
+	 * returns to SAFE_LINKLOSS, and the announcement is re-armed. */
+	zassert_equal(entelea_safety_clear_fault(), ENTELEA_OK);
+	zassert_equal(state_seen, 2);
+	zassert_equal(entelea_safety_channel_state("ev-ch", &st), ENTELEA_OK);
+	zassert_equal(st, ENTELEA_ST_SAFE_LINKLOSS);
+
+	/* A second estop is a new edge and is announced again. */
+	entelea_safety_force_all_fault();
+	entelea_safety_estop_deferred_publish();
+	zassert_equal(estop_seen, 2);
 }

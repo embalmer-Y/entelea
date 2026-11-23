@@ -13,6 +13,7 @@
 #include <entelea/supervision.h>
 #include <entelea/wdt.h>
 #include "boot_steps.h"
+#include "clock.h"
 
 #ifdef CONFIG_FLASH_MAP
 #include "flash_store.h"
@@ -767,6 +768,76 @@ ZTEST(framework_store, test_boot_table_has_storage_step)
 	zassert_equal(ENTELEA_PLATFORM_BOOT_STEP_COUNT, 6);
 	zassert_ok(strcmp(entelea_platform_boot_steps[4].name, "storage_init"));
 	zassert_not_null(entelea_platform_boot_steps[4].fn);
+}
+
+/* ---- 启动表真实执行：六步全过 → BOOT_DONE（此前只有失败路径被执行过） ---- */
+static uint8_t boot_seen_idx[ENTELEA_PLATFORM_BOOT_STEP_COUNT];
+static int32_t boot_seen_res[ENTELEA_PLATFORM_BOOT_STEP_COUNT];
+static const char *boot_seen_name[ENTELEA_PLATFORM_BOOT_STEP_COUNT];
+static int boot_steps_seen;
+static int boot_done_seen;
+
+static void
+record_boot_step(const entelea_event_t *evt, void *user)
+{
+	const entelea_boot_step_evt_t *p = evt->data;
+
+	ARG_UNUSED(user);
+	if (boot_steps_seen < ENTELEA_PLATFORM_BOOT_STEP_COUNT) {
+		boot_seen_idx[boot_steps_seen] = p->idx;
+		boot_seen_res[boot_steps_seen] = p->result;
+		boot_seen_name[boot_steps_seen] = p->name;
+	}
+	boot_steps_seen++;
+}
+
+static void
+record_boot_done(const entelea_event_t *evt, void *user)
+{
+	ARG_UNUSED(evt);
+	ARG_UNUSED(user);
+	boot_done_seen++;
+}
+
+ZTEST(framework_store, test_boot_table_runs_all_steps_to_done)
+{
+	static entelea_clock_t platform_clock;
+	/* 顺序是规格（与 core 的守卫一致），此处逐事件对拍执行结果。 */
+	static const char *const expected[] = {
+		"estop_gpio",	     "safety_poweron", "wdt_start",
+		"supervision_ready", "storage_init",   "guard_bootguard",
+	};
+
+	entelea_safety_test_reset();
+	entelea_wdt_test_reset();
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	/* 装配顺序同 minimal 镜像的 main：先绑时钟，再执行启动表。 */
+	zassert_ok(entelea_platform_clock_init(&platform_clock));
+	zassert_ok(entelea_evt_bind_clock(&platform_clock));
+	zassert_ok(entelea_wdt_bind_clock(&platform_clock));
+	zassert_ok(entelea_safety_bind_clock(&platform_clock));
+	boot_steps_seen = 0;
+	boot_done_seen = 0;
+	zassert_ok(entelea_evt_subscribe(ENTELEA_EVT_BOOT_STEP,
+					 record_boot_step, NULL));
+	zassert_ok(entelea_evt_subscribe(ENTELEA_EVT_BOOT_DONE,
+					 record_boot_done, NULL));
+
+	entelea_supervision_boot(entelea_platform_boot_steps,
+				 ENTELEA_PLATFORM_BOOT_STEP_COUNT);
+
+	/* 执行器返回即全部步骤成功：任一步失败时它不返回（受控停机）。 */
+	zassert_equal(boot_steps_seen, ENTELEA_PLATFORM_BOOT_STEP_COUNT,
+		      "每步恰好一条 BOOT_STEP");
+	for (int i = 0; i < ENTELEA_PLATFORM_BOOT_STEP_COUNT; i++) {
+		zassert_equal(boot_seen_idx[i], i, "第 %d 步的序号", i);
+		zassert_equal(boot_seen_res[i], ENTELEA_OK, "第 %d 步成功", i);
+		zassert_ok(strcmp(boot_seen_name[i], expected[i]),
+			   "第 %d 步名称", i);
+	}
+	zassert_equal(boot_done_seen, 1, "最后一步之后恰好一条 BOOT_DONE");
+	/* 巡检已在运行：收尾取消，后续用例从干净的看门狗开始。 */
+	entelea_wdt_test_reset();
 }
 
 /* ---- META 跨逻辑副本边界（板级批 review P2-1）：分段翻译正确 ---- */
@@ -1750,6 +1821,126 @@ ZTEST(framework_store, test_rf1_meta_read_respects_capacity)
 		      ENTELEA_OK, "恰等容量可读");
 	zassert_equal(len, sizeof(w));
 	zassert_mem_equal(exact, w, sizeof(w));
+}
+
+/* ---- Direct coverage of the shared port and the provisioning validator ---- */
+
+ZTEST(framework_store, test_storage_port_sizes_and_direct_read)
+{
+	uint8_t buf[8];
+	static const uint8_t pattern[4] = { 0x11, 0x22, 0x33, 0x44 };
+
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	/* Each namespace reports its own logical size (the package slots are
+	 * the two 256 KB ones); an identifier outside the enum has none. */
+	zassert_equal(entelea_storage_part_size(ENTELEA_PART_META), 1024);
+	zassert_equal(entelea_storage_part_size(ENTELEA_PART_NOINIT), 256);
+	zassert_equal(entelea_storage_part_size(ENTELEA_PART_AUDIT), 8192);
+	zassert_equal(entelea_storage_part_size(ENTELEA_PART_PROV), 4096);
+	zassert_equal(entelea_storage_part_size(ENTELEA_PART_TRUST), 8192);
+	zassert_equal(entelea_storage_part_size(ENTELEA_PART_KV), 8192);
+	zassert_equal(entelea_storage_part_size(ENTELEA_PART_SLOT_A), 262144);
+	zassert_equal(entelea_storage_part_size(ENTELEA_PART_SLOT_B), 262144);
+	zassert_equal(entelea_storage_part_size(ENTELEA_PART_COUNT), 0);
+
+	/* The shared port is the cross-module path: what is written in one
+	 * namespace reads back there and nowhere else. */
+	zassert_equal(entelea_storage_write(ENTELEA_PART_TRUST, 100, pattern,
+					    sizeof(pattern)),
+		      ENTELEA_OK);
+	zassert_equal(entelea_storage_read(ENTELEA_PART_TRUST, 100, buf,
+					   sizeof(pattern)),
+		      ENTELEA_OK);
+	zassert_mem_equal(buf, pattern, sizeof(pattern));
+	zassert_equal(entelea_storage_read(ENTELEA_PART_KV, 100, buf,
+					   sizeof(pattern)),
+		      ENTELEA_OK);
+	zassert_not_equal(memcmp(buf, pattern, sizeof(pattern)), 0,
+			  "namespace isolation");
+
+	/* Out-of-range reads are refused and leave the buffer untouched. */
+	memset(buf, 0x5A, sizeof(buf));
+	zassert_equal(entelea_storage_read(ENTELEA_PART_NOINIT, 254, buf, 4),
+		      ENTELEA_E_RANGE, "past the end");
+	zassert_equal(
+		entelea_storage_read(ENTELEA_PART_NOINIT, 0xFFFFFFFEU, buf, 4),
+		ENTELEA_E_RANGE, "offset + length wraps");
+	zassert_equal(entelea_storage_read(ENTELEA_PART_COUNT, 0, buf, 4),
+		      ENTELEA_E_RANGE, "unknown namespace");
+	zassert_equal(buf[0], 0x5A, "refused read writes nothing");
+	zassert_equal(entelea_storage_read(ENTELEA_PART_NOINIT, 256, buf, 0),
+		      ENTELEA_OK, "empty read at the end is in range");
+}
+
+ZTEST(framework_store, test_prov_validate_never_touches_live_state)
+{
+	struct cb c;
+	struct cb other;
+
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	entelea_prov_maint_test_reset();
+	build_prov(&c, "node-live", "cube-9", "tcp/10.0.0.1:7447", 500, 1, 0, 0,
+		   -1, NULL);
+	zassert_equal(entelea_prov_write_test(c.b, c.n), ENTELEA_OK);
+	zassert_equal(entelea_prov_load(), ENTELEA_OK);
+
+	/* A well-formed record validates... */
+	build_prov(&other, "node-other", "cube-1", "tcp/10.0.0.2:7447", 300, 1,
+		   0, 0, -1, NULL);
+	zassert_equal(entelea_prov_validate(other.b, other.n), ENTELEA_OK);
+	/* ...without replacing the loaded record. */
+	zassert_ok(strcmp(entelea_prov()->node_id, "node-live"));
+	zassert_equal(entelea_prov()->power_budget_ma, 500);
+
+	/* Bad arguments are parameter errors. */
+	zassert_equal(entelea_prov_validate(NULL, 4), ENTELEA_E_PARAM);
+	zassert_equal(entelea_prov_validate(other.b, 0), ENTELEA_E_PARAM);
+	/* Out-of-domain values, unknown versions and truncation fail closed. */
+	build_prov(&other, "n", "c", "tcp/x:1", 200, 2, 9, 0, -1, NULL);
+	zassert_equal(entelea_prov_validate(other.b, other.n), ENTELEA_E_IO,
+		      "deploy_mode out of domain");
+	build_prov(&other, "n", "c", "tcp/x:1", 200, 3, 0, 0, -1, NULL);
+	zassert_equal(entelea_prov_validate(other.b, other.n), ENTELEA_E_IO,
+		      "unknown version");
+	build_prov(&other, "node-other", "cube-1", "tcp/10.0.0.2:7447", 300, 1,
+		   0, 0, -1, NULL);
+	zassert_equal(entelea_prov_validate(other.b, other.n - 1), ENTELEA_E_IO,
+		      "truncated record");
+}
+
+ZTEST(framework_store, test_fail_reason_hook_leaves_trace)
+{
+	uint8_t rec[8];
+	uint16_t len = 0;
+	bool fresh = true;
+
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	/* The hook system_fail calls before halting: the storage
+	 * implementation leaves a little-endian u32 trace that the next init
+	 * consumes (the init side is covered by test_system_fail_reason_persisted).
+	 * This case deliberately does not call init: test_reset does not clear the
+	 * reported-trace cache, and this suite runs in name order. */
+	entelea_safety_record_fail_reason(0x00C0FFEE);
+	zassert_equal(entelea_storage_noinit_get(rec, &len, &fresh),
+		      ENTELEA_OK);
+	zassert_false(fresh, "the hook left a trace");
+	zassert_equal(len, sizeof(uint32_t));
+	zassert_equal((uint32_t) rec[0] | ((uint32_t) rec[1] << 8) |
+			      ((uint32_t) rec[2] << 16) |
+			      ((uint32_t) rec[3] << 24),
+		      0x00C0FFEE, "reason is recorded little-endian");
+
+	/* The trace is one-shot and never interpreted: reason 0 is still a
+	 * trace, which tells "recorded zero" apart from "nothing recorded". */
+	fresh = false;
+	entelea_safety_record_fail_reason(0);
+	zassert_equal(entelea_storage_noinit_get(rec, &len, &fresh),
+		      ENTELEA_OK);
+	zassert_false(fresh);
+	zassert_equal(len, sizeof(uint32_t));
+	zassert_equal(rec[0] | (rec[1] << 8) | (rec[2] << 16) | (rec[3] << 24),
+		      0);
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
 }
 
 ZTEST_SUITE(framework_store, NULL, store_setup, NULL, store_after, NULL);

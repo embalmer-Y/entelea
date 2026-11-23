@@ -170,6 +170,94 @@ class ArchitectureTests(unittest.TestCase):
         self.write("tests/diagnostics/unlisted.c", "gpio_pin_set(0, 1);")
         self.rejected("Unclassified")
 
+    # Restored legacy L5 rules.
+
+    def test_descriptor_requires_three_safe_states(self):
+        self.policy["zephyr_framework"].append("framework/execution/safety/ch.c")
+        self.write(
+            "framework/execution/safety/ch.c",
+            'static const entelea_out_channel_t ch = {\n\t.uid = "u",\n'
+            "\t.poweron = {0},\n};\n",
+        )
+        self.rejected(r"Descriptor misses \.linkloss, \.fault")
+        self.write(
+            "framework/execution/safety/ch.c",
+            'static const entelea_out_channel_t ch = {\n\t.uid = "u",\n'
+            "\t.poweron = {0}, .linkloss = {0}, .fault = {0},\n};\n",
+        )
+        self.assertEqual(ARCH.validate(self.root, self.policy), 5)
+
+    def test_descriptor_in_tests_may_be_incomplete(self):
+        # Tests carry the incomplete-descriptor negative case on purpose.
+        self.policy["platform_zephyr"].append("platform/zephyr/tests/t.c")
+        self.write(
+            "platform/zephyr/tests/t.c",
+            "static const entelea_out_channel_t ch = {0};\n",
+        )
+        self.assertEqual(ARCH.validate(self.root, self.policy), 5)
+
+    def test_estop_path_forbids_blocking_calls(self):
+        self.policy["zephyr_framework"].append("framework/execution/safety/force.c")
+        self.write(
+            "framework/execution/safety/force.c",
+            "void entelea_safety_force_all_fault(void)\n{\n"
+            "\tk_mutex_lock(&m, K_FOREVER);\n}\n",
+        )
+        self.rejected("Estop path uses k_mutex_lock")
+        # A comment that names a forbidden symbol is not a call.
+        self.write(
+            "framework/execution/safety/force.c",
+            "/* printk is forbidden here: the estop path stays ISR-direct. */\n"
+            "void entelea_safety_force_all_fault(void)\n{\n\tforced = 1;\n}\n",
+        )
+        self.assertEqual(ARCH.validate(self.root, self.policy), 5)
+
+    def test_estop_entry_must_exist_in_its_file(self):
+        self.policy["zephyr_framework"].append("framework/execution/safety/force.c")
+        self.write(
+            "framework/execution/safety/force.c", "int other(void) { return 0; }\n"
+        )
+        self.rejected("Estop entry point not found")
+
+    def test_estop_driver_gate_forbids_logging(self):
+        self.write("framework/runtime/supervision/fw.c", 'printk("x");\n')
+        self.policy["protected_output_sources"] = ["framework/runtime/supervision/fw.c"]
+        self.rejected("Estop path uses printk")
+
+    def test_provisioning_has_no_write_path(self):
+        self.policy["zephyr_framework"].append("framework/services/config/prov.c")
+        self.write(
+            "framework/services/config/prov.c",
+            "extern int entelea_storage_write(int part);\n"
+            "int f(void) { return entelea_storage_write(0); }\n",
+        )
+        self.rejected("Provisioning write path")
+        self.write(
+            "framework/services/config/prov.c",
+            "int f(void) { return entelea_storage_read(0); }\n",
+        )
+        self.assertEqual(ARCH.validate(self.root, self.policy), 5)
+
+    def test_app_slot_partition_only_in_package_store(self):
+        self.policy["zephyr_framework"].append("framework/services/net/n.c")
+        self.write(
+            "framework/services/net/n.c",
+            "int f(void) { return ENTELEA_PART_SLOT_A; }\n",
+        )
+        self.rejected("App slot partition outside the package store")
+        self.write(
+            "framework/include/entelea/x.h",
+            "#define X ENTELEA_PART_SLOT_B\n",
+        )
+        self.rejected("App slot partition outside the package store")
+        (self.root / "framework/include/entelea/x.h").unlink()
+        self.write(
+            "framework/services/net/n.c",
+            "/* ENTELEA_PART_SLOT_A is not ours to write. */\n"
+            "int f(void) { return 0; }\n",
+        )
+        self.assertEqual(ARCH.validate(self.root, self.policy), 5)
+
 
 class DependencyTests(unittest.TestCase):
     def setUp(self):

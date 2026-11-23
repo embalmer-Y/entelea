@@ -266,6 +266,74 @@ R13 保持 pending。
 4. `tests/contracts/main.c` 第 273、274、278 行的断言不经过框架代码；21 个
    公共函数没有测试直接调用。
 
+### 质量债批次验证记录（仅测试与检查，不改固件行为）
+
+按规划 10.6 的裁决补测试与检查，提交号见台账 RF1 批注。生产源码没有行为
+改动：`package.h` 只做了 clang-format 的换行归位，板级 5 个镜像的静态 SRAM
+与上表逐字节相同。
+
+恢复与新增的检查：
+
+- `tools/check_architecture.py` 补回四条旧 L5 机械安全规则，只扫生产源码：
+  通道描述符必须声明三个安全态；estop 入口函数体与保护驱动源不得出现分配、
+  锁、队列、`printk` 或协议栈符号；provisioning 装载源不得有存储写调用；
+  包槽分区标识只允许出现在存储端口、包存储及其公共头。各配负测与放行用例。
+  旧 L5 的常量出处注释规则和内核 checkpatch 严格门没有恢复：前者依赖旧出处
+  词汇（77 个数值常量里 52 个不满足），后者在当前源码上有 951 条发现，主要
+  是块注释与 SPDX 注释约定。两者都是需要所有者裁决的风格约定。
+- 新增 `tools/check_style.py`：clang-format 23.1.5（实测与现有布局一致，
+  其他版本被拒绝）对全部第一方 C/H 做只检查，加受跟踪文本文件的空白卫生
+  检查。豁免被钉死字节的补丁、上游 TweetNaCl 源码、生成的工厂产物和取证
+  日志。`package.h`、`tests/assist`、`tests/guard`、`tests/contracts` 四个
+  此前没有按该版本归位的文件已格式化，前三个逐个标记不变。
+
+新增与修正的测试。native_sim 合计由 247 增至 269 个用例（含变体）；默认
+配置的 16 个套件由 196 增至 209：
+
+| 套件 | 之前 | 之后 | 新增内容 |
+|---|---|---|---|
+| safety / safety-pwm | 7 / 14 | 12 / 19 | 按状态计数；输出值编码与写记录对拍；未绑定的硬件后端显式报告缺席；持锁提交；estop 事件每次闩锁恰补发一次并携带触发时刻；安全态变化事件 |
+| pkg | 9 | 11 | 包槽直接读取；装载门依赖的流式 SHA-256 与公共库的另一实现在多分块包上对拍；单趟捕获窗口 |
+| store / store-flash | 33 / 32 | 37 / 36 | 各分区大小与共享端口的隔离读取、越界拒绝；provisioning 校验不改已装载状态；失败原因钩子的留痕；六步启动表真实执行到 `BOOT_DONE` |
+| r04 | 12 | 13 | 权限列表解析：定长输入、空列表、畸形列表整体拒绝 |
+| guard | 33 | 34 | 日额经生产 KV 适配器（`guard_store.c`）持久：落盘、掉电后仅凭记录重建、用尽后重启仍用尽、跨日恢复 |
+| 宿主 `common_contracts` | — | — | `tests/contracts` 中三处不经过框架代码的断言，换成运行时种类、计量单位、效果与调用状态取值的钉定，App 结构布局的静态断言，以及预算字段上“无截止时间不等于 0 毫秒截止时间”的时间契约行为 |
+
+此前列出的 21 个没有测试直接调用的公共函数，按裁决只补安全、存储、配置与
+授权相关的；本批之后其中 14 个有了直接调用，仍未被任何测试引用的 7 个是
+`entelea_be16`、`entelea_be32`、`entelea_tsap_parse_fields`、
+`entelea_periph_count`、`entelea_power_budget_ma`、
+`entelea_power_used_ma`、`entelea_pubq_pop`。
+
+验证（独立克隆，真实命令与退出码；该环境没有相邻的 `entelea-legacy`）：
+
+- native_sim：16 个套件与 5 个构建变体共 21 项全部通过，269 个用例 0 失败。
+- 板级交叉编译（未烧录）：5 个镜像全部通过，静态 SRAM 与上表相同。
+- `ctest --test-dir build/r01-venv --output-on-failure`：退出码 8，7 项中 5 项
+  通过。`migration_sources` 与 `governance_tests` 的失败原因与上一节相同，
+  属环境受阻；`governance_tests` 由 109 项增至 126 项。
+- 带 ASan/UBSan 的宿主配置：`common_contracts` 与 `guard_runtime_host` 通过。
+- `python3 tools/check_style.py`：通过，145 个第一方 C 源与 clang-format
+  23.1.5 一致，空白卫生无发现。`python3 tools/check_architecture.py`：通过。
+- `ruff check` 与 `ruff format --check`（tools 与 factory/forge，20 个文件）、
+  `check_dependencies.py`、`check_migration.py`（仅元数据）通过；
+  `check_migration.py --sources` 仍受阻，退出码 1。
+- Forge 离线预算单测 15 项，1 项因无用量台账跳过。
+
+本批发现但没有改的问题：
+
+1. 存储的测试复位钩子 `entelea_storage_test_reset()` 只擦分区，不清 noinit
+   模块缓存的上次复位原因；而 ztest 按用例名排序执行。既有的
+   `test_system_fail_reason_persisted` 此前只是碰巧排在前面才通过，新用例
+   因此刻意不调用 `entelea_storage_init()`。是否补全复位钩子待裁决。
+2. 运行时种类有两套编码并存：`app.h` 的 `entelea_runtime_kind_t`
+   （Wasm=1，Lua=2）与工厂候选结构的 `payload_kind`（0=wasm，1=lua）。
+   没有发现混用，但属于易错点。
+3. `entelea_perm_parse_list` 对空列表不清权限表，依赖调用方先清零。三个
+   生产调用方都这样做，已由用例钉住。
+4. 事件总线没有退订接口，订阅是进程级的静态资源；新增订阅者的测试要避开
+   其他用例的容量断言，启动用例因此放在 store 套件而不是 core。
+
 ## 对照原规划和批准修订
 
 | 批次 | 当前范围与未完成项 |

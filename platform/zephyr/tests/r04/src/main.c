@@ -799,4 +799,56 @@ ZTEST(framework_r04, test_task_start_requires_known_monotonic_time)
 	entelea_perm_test_reset();
 }
 
+ZTEST(framework_r04, test_perm_parse_list)
+{
+	/* Length-explicit input: the list is not NUL-terminated. */
+	static const char grant[] = "gpio:read:0;pwm:write:1";
+	entelea_perm_table_t t;
+	entelea_principal_t ctx;
+	char long_decl[70];
+
+	zassert_equal(entelea_perm_parse_list(NULL, 1, &t), ENTELEA_E_PARAM);
+	zassert_equal(entelea_perm_parse_list(grant, sizeof(grant) - 1, NULL),
+		      ENTELEA_E_PARAM);
+
+	/* An empty list grants nothing and leaves the table exactly as passed:
+	 * the caller must zero it first (every production caller does). */
+	entelea_perm_table_init(&t);
+	zassert_equal(entelea_perm_parse_list("", 0, &t), ENTELEA_OK);
+	zassert_equal(entelea_perm_parse_list(NULL, 0, &t), ENTELEA_OK);
+	zassert_equal(t.grant[ENTELEA_PERM_GPIO][ENTELEA_PERM_READ], 0U);
+
+	/* The list grants exactly its entries, read through a bound handle. */
+	zassert_equal(entelea_perm_parse_list(grant, sizeof(grant) - 1, &t),
+		      ENTELEA_OK);
+	zassert_equal(entelea_principal_bind(&ctx, 42, &t), ENTELEA_OK);
+	zassert_equal(entelea_perm_check(ctx, ENTELEA_PERM_GPIO,
+					 ENTELEA_PERM_READ, 0),
+		      ENTELEA_OK);
+	zassert_equal(entelea_perm_check(ctx, ENTELEA_PERM_PWM,
+					 ENTELEA_PERM_WRITE, 1),
+		      ENTELEA_OK);
+	zassert_equal(entelea_perm_check(ctx, ENTELEA_PERM_GPIO,
+					 ENTELEA_PERM_WRITE, 0),
+		      ENTELEA_E_PERM);
+	zassert_equal(
+		entelea_perm_check(ctx, ENTELEA_PERM_PWM, ENTELEA_PERM_READ, 1),
+		ENTELEA_E_PERM);
+
+	/* A malformed list is refused as a whole: an empty segment, a bad
+	 * declaration anywhere, or a segment past the 63-byte limit. */
+	entelea_perm_table_init(&t);
+	zassert_equal(entelea_perm_parse_list("gpio:read:0;", 12, &t),
+		      ENTELEA_E_PARAM, "trailing separator");
+	zassert_equal(entelea_perm_parse_list(";gpio:read:0", 12, &t),
+		      ENTELEA_E_PARAM, "leading separator");
+	zassert_equal(
+		entelea_perm_parse_list("gpio:read:0;bogus:read:0", 23, &t),
+		ENTELEA_E_PARAM, "second declaration invalid");
+	memset(long_decl, 'a', sizeof(long_decl));
+	zassert_equal(entelea_perm_parse_list(long_decl, sizeof(long_decl), &t),
+		      ENTELEA_E_PARAM, "segment past 63 bytes");
+	entelea_perm_test_reset();
+}
+
 ZTEST_SUITE(framework_r04, NULL, r04_setup, NULL, NULL, NULL);

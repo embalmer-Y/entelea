@@ -20,6 +20,8 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/services/package/store.c
   ${ENTELEA_ROOT}/framework/services/package/lua_feasibility.c
   ${ENTELEA_ROOT}/framework/services/package/crypto/tweetnacl.c
+  # Independent SHA-256 implementation for the file-digest cross-check.
+  ${ENTELEA_ROOT}/framework/common/sha256.c
 )
 target_compile_definitions(app PRIVATE ENTELEA_TEST=1)
 # tweetnacl 上游致密风格（PROVENANCE 登记的第三方警告基线豁免）

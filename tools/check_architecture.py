@@ -1,4 +1,4 @@
-"""Validate exact build source classification and applicable R01 constraints."""
+"""Validate source classification, the R01 constraints and the restored L5 rules."""
 
 import argparse
 import json
@@ -22,11 +22,129 @@ DIRECT_CLOCK = re.compile(
 # The driver ops table is the safety module's private write path; a public
 # reference outside the module is an output-protection bypass (R02 defect 1).
 DRIVER_TABLE = re.compile(r"\bentelea_drivers\b")
+# Restored mechanical safety rules of the legacy L5 checker that the rules
+# below did not cover. They scan production sources only; the test trees
+# carry the negative cases on purpose.
+DESCRIPTOR_INIT = re.compile(r"\bentelea_out_channel_t\s+\w+\s*=\s*\{")
+SAFE_STATE_FIELDS = (".poweron", ".linkloss", ".fault")
+ESTOP_ENTRY_FILE = "framework/execution/safety/force.c"
+ESTOP_DEFINITION = re.compile(r"\bentelea_safety_force_all_fault\s*\([^;{]*\)\s*\{")
+# The estop path runs in interrupt context: its call graph has no allocation,
+# blocking, queueing, logging or protocol-stack call.
+ESTOP_FORBIDDEN = re.compile(
+    r"\b(?:k_(?:malloc|calloc|free|mutex\w*|sem\w*|msgq\w*|fifo\w*|queue\w*"
+    r"|work\w*|sleep)|net_\w+|zenoh\w*|printk)\b"
+)
+PROVISIONING_SUFFIX = "/config/prov.c"
+PROVISIONING_WRITE = re.compile(r"\bentelea_storage_(?:write|erase\w*)\s*\(")
+# App package slots are written only through the package store's stage chain,
+# so their partition identifiers belong to the storage port and that store.
+SLOT_PARTITION = re.compile(r"\bENTELEA_PART_SLOT_[AB]\b")
+SLOT_PARTITION_FILES = {
+    "framework/include/entelea/storage.h",
+    "framework/services/storage/part.c",
+    "framework/services/package/store.c",
+}
 
 
 def fail(condition, message):
     if not condition:
         raise ValueError(message)
+
+
+def strip_comments(text):
+    """Blank out // and /* */ comments, keeping every newline and column."""
+    out = list(text)
+    state = "code"
+    i = 0
+    while i < len(text):
+        char = text[i]
+        pair = text[i : i + 2]
+        if state == "code":
+            if pair in ("//", "/*"):
+                state = "line" if pair == "//" else "block"
+                out[i] = out[i + 1] = " "
+                i += 2
+                continue
+            if char in "\"'":
+                state = char
+            i += 1
+        elif state == "block":
+            out[i] = "\n" if char == "\n" else " "
+            if pair == "*/":
+                out[i + 1] = " "
+                state = "code"
+                i += 2
+                continue
+            i += 1
+        elif state == "line":
+            if char == "\n":
+                state = "code"
+            else:
+                out[i] = " "
+            i += 1
+        else:  # inside a string or character literal
+            if char == "\\":
+                i += 1
+            elif char == state:
+                state = "code"
+            i += 1
+    return "".join(out)
+
+
+def brace_block(text, start):
+    """Text inside the braces that open at ``start`` (index just after ``{``)."""
+    depth = 1
+    for index in range(start, len(text)):
+        depth += {"{": 1, "}": -1}.get(text[index], 0)
+        if depth == 0:
+            return text[start:index]
+    return text[start:]
+
+
+def line_of(text, index):
+    return text.count("\n", 0, index) + 1
+
+
+def restored_safety_errors(texts, gates):
+    """Violations of the restored L5 rules; ``texts`` maps paths to source."""
+    code = {path: strip_comments(text) for path, text in texts.items()}
+    errors = []
+    for path, text in sorted(code.items()):
+        for match in DESCRIPTOR_INIT.finditer(text):
+            block = brace_block(text, match.end())
+            missing = [field for field in SAFE_STATE_FIELDS if field not in block]
+            if missing:
+                errors.append(
+                    f"Descriptor misses {', '.join(missing)}: "
+                    f"{path}:{line_of(text, match.start())}"
+                )
+        if path.endswith(PROVISIONING_SUFFIX):
+            for number, line in enumerate(text.split("\n"), 1):
+                if PROVISIONING_WRITE.search(line):
+                    errors.append(f"Provisioning write path: {path}:{number}")
+        if path not in SLOT_PARTITION_FILES:
+            for number, line in enumerate(text.split("\n"), 1):
+                if SLOT_PARTITION.search(line):
+                    errors.append(
+                        f"App slot partition outside the package store: {path}:{number}"
+                    )
+    if ESTOP_ENTRY_FILE in code:
+        text = code[ESTOP_ENTRY_FILE]
+        definitions = list(ESTOP_DEFINITION.finditer(text))
+        if not definitions:
+            errors.append(
+                f"Estop entry point not found (check ineffective): {ESTOP_ENTRY_FILE}"
+            )
+        for match in definitions:
+            for forbidden in ESTOP_FORBIDDEN.finditer(brace_block(text, match.end())):
+                errors.append(
+                    f"Estop path uses {forbidden.group(0)}: {ESTOP_ENTRY_FILE}"
+                )
+    for path in sorted(set(gates)):
+        for forbidden in ESTOP_FORBIDDEN.finditer(code.get(path, "")):
+            errors.append(f"Estop path uses {forbidden.group(0)}: {path}")
+    return errors
 
 
 def checked_path(root, path):
@@ -133,6 +251,7 @@ def validate(root, policy):
         isinstance(gates, list) and len(gates) == len(set(gates)),
         "Invalid protection source list",
     )
+    production = {}
     # R02: the only approved write path is the reviewed driver dispatch in the
     # Zephyr-built safety group. Gates must never cover host-built sources.
     for gate in gates:
@@ -144,6 +263,11 @@ def validate(root, policy):
     for group, paths in groups.items():
         for path in paths:
             text = checked_path(root, path).read_text()
+            if "/tests/" not in path and group in {
+                "zephyr_framework",
+                "platform_zephyr",
+            }:
+                production[path] = text
             if not group.startswith("diagnostic:") and path not in set(gates):
                 fail(
                     OUTPUT.search(text) is None,
@@ -175,16 +299,25 @@ def validate(root, policy):
                     DRIVER_TABLE.search(text) is None,
                     f"Driver table bypass outside safety module: {path}",
                 )
-    headers = root / "framework/include/entelea"
-    for file in headers.rglob("*.h"):
-        for include in re.findall(r'#\s*include\s*[<"]([^>"]+)', file.read_text()):
+    headers = {}
+    for directory in (root / "framework/include/entelea", root / "platform"):
+        for file in directory.rglob("*.h"):
+            path = file.relative_to(root).as_posix()
+            if "/tests/" not in path:
+                headers[path] = file.read_text()
+    for file in sorted(headers):
+        if not file.startswith("framework/include/entelea/"):
+            continue
+        for include in re.findall(r'#\s*include\s*[<"]([^>"]+)', headers[file]):
             fail(
                 include in {"stdbool.h", "stddef.h", "stdint.h"}
                 or include.startswith("entelea/"),
-                f"Non-public dependency in header {file.name}: {include}",
+                f"Non-public dependency in header {Path(file).name}: {include}",
             )
             if include.startswith("entelea/"):
                 checked_path(root, "framework/include/" + include)
+    errors = restored_safety_errors({**production, **headers}, gates)
+    fail(not errors, errors[0] if errors else "")
     return len(seen)
 
 
@@ -203,8 +336,8 @@ def main():
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1
     print(
-        f"PASS: {count} exactly classified C sources; mechanical classification "
-        "and output-gate constraints only, not physical safety"
+        f"PASS: {count} exactly classified C sources; mechanical classification, "
+        "output-gate and restored L5 constraints only, not physical safety"
     )
     return 0
 

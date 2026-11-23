@@ -16,6 +16,10 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/common/time.c
   ${ENTELEA_ROOT}/platform/zephyr/guard_bootguard.c
   ${ENTELEA_ROOT}/platform/zephyr/guard_ports.c
+  # Production daily-cap persistence: the KV adapter over the storage port.
+  ${ENTELEA_ROOT}/platform/zephyr/guard_store.c
+  ${ENTELEA_ROOT}/framework/services/storage/kv.c
+  ${ENTELEA_ROOT}/framework/services/storage/part.c
 )
 target_link_options(app PUBLIC -Wl,--wrap=z_impl_hwinfo_get_reset_cause
   -Wl,--wrap=z_impl_hwinfo_clear_reset_cause

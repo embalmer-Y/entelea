@@ -7,6 +7,8 @@
 #include <zephyr/ztest.h>
 #include <zephyr/sys/atomic.h>
 #include <entelea/guard.h>
+#include <entelea/kv.h>
+#include <entelea/storage.h>
 #include <entelea/time.h>
 #include "guard_ports.h"
 
@@ -242,8 +244,7 @@ ZTEST(framework_guard, test_busy_cooldown_survives_clock_fault)
 	entelea_guard_model_note(ENTELEA_E_BUSY);
 	fake_fail = false;
 	fake_now = 2000;
-	zassert_equal(entelea_guard_model_allow(), ENTELEA_E_BUSY,
-		      "冷却补立");
+	zassert_equal(entelea_guard_model_allow(), ENTELEA_E_BUSY, "冷却补立");
 	fake_now = 2000 + 60000;
 	zassert_equal(entelea_guard_model_allow(), ENTELEA_OK);
 }
@@ -292,8 +293,7 @@ ZTEST(framework_guard, test_reset_guard_threshold_and_por)
 	zassert_equal(c, 0);
 	zassert_false(entelea_guard_reset_guard(true, true, &c));
 	zassert_false(entelea_guard_reset_guard(true, true, &c));
-	zassert_true(entelea_guard_reset_guard(true, true, &c),
-		     "第 3 次即停");
+	zassert_true(entelea_guard_reset_guard(true, true, &c), "第 3 次即停");
 	zassert_equal(c, ENTELEA_GUARD_RESET_STORM_MAX);
 	zassert_true(entelea_guard_reset_guard(true, true, &c));
 	zassert_equal(c, ENTELEA_GUARD_RESET_STORM_MAX, "饱和不回绕");
@@ -472,4 +472,87 @@ ZTEST(framework_guard, test_concurrent_admission_respects_daily_cap)
 	}
 	zassert_equal(atomic_get(&conc_ok), 4, "并发不超日额余量");
 	zassert_equal(entelea_guard_model_calls(), 4);
+}
+
+/* ---- 生产持久端口：guard_store.c（KV 适配器），非内存假端口 ---- */
+
+#define GUARD_KV_TAG_D12G 0x44313247U /* "D12G"，同 guard_store.c */
+
+/* 重启并绑定生产 KV 适配器：内存状态清零，日额只能来自 KV 记录。 */
+static void
+reboot_on_kv(void)
+{
+	static entelea_guard_store_t kv_store;
+
+	entelea_guard_test_reset();
+	zassert_ok(entelea_clock_init(&clk, fake_read, &fake_now, 1));
+	zassert_ok(entelea_guard_bind_clock(&clk));
+	zassert_ok(entelea_guard_bind_lock(&lock));
+	zassert_ok(entelea_guard_bind_wallclock(&wall));
+	zassert_ok(entelea_platform_guard_store_init(&kv_store));
+	zassert_ok(entelea_guard_bind_store(&kv_store));
+}
+
+/* 测试侧独立解码 KV 里的 12 字节日额记录（格式见 guard.c）。 */
+static void
+read_kv_daily(uint16_t *reserved, uint32_t *day)
+{
+	uint8_t raw[ENTELEA_GUARD_REC_LEN];
+
+	zassert_equal(entelea_kv_load(GUARD_KV_TAG_D12G, raw, sizeof(raw)),
+		      ENTELEA_GUARD_REC_LEN);
+	zassert_mem_equal(raw, "D12G", 4, "magic");
+	zassert_equal(raw[4], 1, "version");
+	zassert_equal(raw[5], 0, "flags");
+	*reserved = (uint16_t) (raw[6] | (raw[7] << 8));
+	*day = (uint32_t) raw[8] | ((uint32_t) raw[9] << 8) |
+	       ((uint32_t) raw[10] << 16) | ((uint32_t) raw[11] << 24);
+}
+
+/* 真实 KV 端口上的日额：首次放行即落盘 → 掉电后仅凭 KV 记录重建（计数
+ * 取预留值，保守）→ 用尽后重启仍用尽 → 跨 UTC 日界恢复并换日记录。 */
+ZTEST(framework_guard, test_daily_cap_persists_through_kv_store)
+{
+	uint16_t reserved = 0;
+	uint32_t day = 0;
+	uint8_t raw[ENTELEA_GUARD_REC_LEN];
+
+	bind(1000);
+	zassert_ok(entelea_storage_test_reset());
+	entelea_kv_test_reset();
+	reboot_on_kv();
+
+	/* 新设备：无记录。 */
+	zassert_equal(entelea_kv_load(GUARD_KV_TAG_D12G, raw, sizeof(raw)),
+		      ENTELEA_E_NOTFOUND);
+	/* 首次放行预留一步，并按生产格式落盘。 */
+	zassert_equal(entelea_guard_model_allow(), ENTELEA_OK);
+	read_kv_daily(&reserved, &day);
+	zassert_equal(reserved, ENTELEA_GUARD_RESERVE_STEP);
+	zassert_equal(day, (uint32_t) DAY0);
+
+	/* 掉电重启：计数取持久预留值 10，本日只剩 190 次余量。 */
+	reboot_on_kv();
+	for (int i = 0; i < 190; i++) {
+		fake_now += 60000; /* 逐次出 60s 窗，只受日额约束 */
+		zassert_equal(entelea_guard_model_allow(), ENTELEA_OK,
+			      "余量 190");
+	}
+	fake_now += 60000;
+	zassert_equal(entelea_guard_model_allow(), ENTELEA_E_BUSY,
+		      "日额 200 用尽");
+	read_kv_daily(&reserved, &day);
+	zassert_equal(reserved, ENTELEA_GUARD_DAILY_MAX);
+
+	/* 再掉电重启：仅凭 KV 记录仍是用尽。 */
+	reboot_on_kv();
+	fake_now += 60000;
+	zassert_equal(entelea_guard_model_allow(), ENTELEA_E_BUSY,
+		      "重启不重置");
+	/* 跨 UTC 日界重新计数，记录换到新的一天。 */
+	fake_utc_s += DAY_SECS;
+	zassert_equal(entelea_guard_model_allow(), ENTELEA_OK, "次日重新计数");
+	read_kv_daily(&reserved, &day);
+	zassert_equal(day, (uint32_t) (DAY0 + 1));
+	zassert_equal(reserved, ENTELEA_GUARD_RESERVE_STEP);
 }

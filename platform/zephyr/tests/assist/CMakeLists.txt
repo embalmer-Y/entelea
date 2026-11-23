@@ -31,7 +31,6 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/execution/capability/desc.c
   ${ENTELEA_ROOT}/framework/execution/resource/power.c
   ${ENTELEA_ROOT}/framework/execution/task/task.c
-  ${ENTELEA_ROOT}/framework/runtime/supervision/wdt.c
   ${ENTELEA_ROOT}/framework/common/time.c
 )
 target_compile_definitions(app PRIVATE ENTELEA_TEST=1)
