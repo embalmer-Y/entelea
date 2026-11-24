@@ -13,6 +13,13 @@
  * skipped; committed but corrupt slots are reported explicitly. A read error
  * makes init not ready and read return a negative error code; a failed write
  * burns that slot and its seq.
+ * Foreign content (owner 2026-11-24): a slot carrying no marker of this ring
+ * (another firmware's data in the partition) is not a record of this ring.
+ * It is invisible like an uncommitted slot and is never reused; it does not
+ * stop the boot and does not erase the records that are ours. It goes away
+ * when its page is erased for the next write. An earlier version also
+ * required a non-erased magic; on the board that exposed this, 4 of the 128
+ * foreign slots started with the erased pattern.
  * Adjustments from the old implementation: boot printing stays in the
  * platform layer (this module is printk-free and is consumed through the
  * read API). The full in-memory ring (old commit.c surface) belongs to the
@@ -33,6 +40,7 @@ static struct {
 	uint8_t active_page; /* 0/1 */
 	uint8_t next_slot; /* next write slot in active page, 0..63 */
 	uint32_t next_seq; /* global monotonic (from 1; 0/0xFFFFFFFF unused) */
+	unsigned foreign; /* slots of foreign content seen by the last scan */
 } au;
 
 /* Slot layout (64B, little-endian):
@@ -58,6 +66,7 @@ enum slot_kind {
 	SLOT_INCOMPLETE,
 	SLOT_VALID,
 	SLOT_CORRUPT,
+	SLOT_FOREIGN,
 };
 
 static void
@@ -113,16 +122,40 @@ slot_read(uint8_t page, uint8_t i, uint8_t *s)
 		       ENTELEA_E_IO;
 }
 
+static bool
+slot_erased(const uint8_t *s)
+{
+	for (uint32_t k = 0; k < AUDIT_SLOT_SZ; k++) {
+		if (s[k] != 0xFF) {
+			return false;
+		}
+	}
+	return true;
+}
+
 static enum slot_kind
 slot_kind(const uint8_t *s)
 {
 	uint32_t seq = entelea_get_le32(s + OFF_SEQ);
 	uint32_t commit = entelea_get_le32(s + OFF_COMMIT);
-	bool fields_valid = entelea_get_le32(s + OFF_MAGIC) == AUDIT_MAGIC &&
-			    seq != 0 && seq != UINT32_MAX;
+	uint32_t magic = entelea_get_le32(s + OFF_MAGIC);
+	bool fields_valid =
+		magic == AUDIT_MAGIC && seq != 0 && seq != UINT32_MAX;
 	bool legacy = entelea_get_le32(s + OFF_CRC) == UINT32_MAX &&
 		      commit == UINT32_MAX;
 
+	/* Foreign: none of the three markers of this ring is present. Content
+	 * like that was not written by this ring (for example another
+	 * firmware's data in the partition; owner 2026-11-24). The only slots
+	 * of ours without a marker are erased ones and writes cut short before
+	 * the tag was written; those need the same treatment. Any marker
+	 * present makes the slot ours, and a damaged record of ours stays
+	 * SLOT_CORRUPT. */
+	if (magic != AUDIT_MAGIC &&
+	    entelea_get_le16(s + OFF_TAG) != AUDIT_TAG_MAGIC &&
+	    commit != AUDIT_TAG_COMMIT) {
+		return slot_erased(s) ? SLOT_INCOMPLETE : SLOT_FOREIGN;
+	}
 	if (legacy) {
 		return fields_valid ? SLOT_VALID : SLOT_INCOMPLETE;
 	}
@@ -138,10 +171,16 @@ slot_kind(const uint8_t *s)
 	return SLOT_VALID;
 }
 
+/* A write of ours cut short by power loss: the body goes in first, so the
+ * magic and the never-written tail are still erased. Such a slot is not
+ * foreign content and is not reported as such. */
 static bool
-slot_erased(const uint8_t *s)
+cut_short_write(const uint8_t *s)
 {
-	for (uint32_t k = 0; k < AUDIT_SLOT_SZ; k++) {
+	if (entelea_get_le32(s + OFF_MAGIC) != UINT32_MAX) {
+		return false;
+	}
+	for (uint32_t k = OFF_COMMIT + 4; k < AUDIT_SLOT_SZ; k++) {
 		if (s[k] != 0xFF) {
 			return false;
 		}
@@ -170,8 +209,8 @@ slot_commit(uint8_t page, uint8_t i, const uint8_t *s)
 }
 
 /* Page scan: max valid seq plus used-slot count (last non-erased slot + 1;
- * bad slots are neither reused nor truncate the tail; valid slots after them
- * stay visible). Read errors fail explicitly. */
+ * bad and foreign slots are neither reused nor truncate the tail; valid slots
+ * after them stay visible). Read errors fail explicitly. */
 static entelea_result_t
 page_scan(uint8_t page, uint32_t *max_seq, uint8_t *used_slots)
 {
@@ -187,6 +226,9 @@ page_scan(uint8_t page, uint32_t *max_seq, uint8_t *used_slots)
 
 		if (kind == SLOT_CORRUPT) {
 			return ENTELEA_E_IO;
+		}
+		if (kind == SLOT_FOREIGN && !cut_short_write(s)) {
+			au.foreign++;
 		}
 		if (kind == SLOT_VALID &&
 		    entelea_get_le32(s + OFF_SEQ) > *max_seq) {
@@ -208,6 +250,7 @@ entelea_storage_audit_init(void)
 	uint8_t used_b;
 
 	au.ready = false;
+	au.foreign = 0;
 	if (page_scan(0, &seq_a, &used_a) != ENTELEA_OK ||
 	    page_scan(1, &seq_b, &used_b) != ENTELEA_OK) {
 		return ENTELEA_E_IO; /* Read error != empty ring: not ready */
@@ -224,6 +267,12 @@ entelea_storage_audit_init(void)
 	au.next_slot = used;
 	au.ready = true;
 	return ENTELEA_OK;
+}
+
+unsigned
+entelea_storage_audit_foreign_slots(void)
+{
+	return au.foreign;
 }
 
 entelea_result_t
@@ -270,9 +319,9 @@ entelea_storage_audit_read(entelea_storage_audit_entry_t *out, size_t max)
 		return ENTELEA_E_STATE;
 	}
 	/* Collect both pages (at most 128 transiently), then take the newest
-	 * max entries by seq. The buffer is static (a 4KB thread stack
-	 * overflowed in real-device tests); the read path is low-frequency,
-	 * single consumer. */
+	 * max entries by seq. Uncommitted and foreign slots are invisible. The
+	 * buffer is static (a 4KB thread stack overflowed in real-device
+	 * tests); the read path is low-frequency, single consumer. */
 	static entelea_storage_audit_entry_t all[AUDIT_SLOTS * AUDIT_PAGES];
 	size_t n = 0;
 

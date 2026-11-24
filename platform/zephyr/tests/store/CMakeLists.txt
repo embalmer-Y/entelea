@@ -34,6 +34,8 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/framework/execution/safety/drivers.c
 )
 target_compile_definitions(app PRIVATE ENTELEA_TEST=1)
+# 启动执行器经平台钩子用 printk 报告失败与跳过的步骤；用例捕获控制台断言。
+target_link_options(app PUBLIC -Wl,--wrap=printk)
 if(TEST_FLASH_BACKEND)
   # 板级批 A-1/A-2：同一套件走 flash 后端（native_sim=sim-flash
   # 真擦除语义）。EXPLICIT_ERASE 变体再强制 NOR 擦后写纪律。

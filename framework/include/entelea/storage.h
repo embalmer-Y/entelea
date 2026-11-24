@@ -134,12 +134,20 @@ typedef struct {
 	uint32_t value_u;
 } entelea_storage_audit_entry_t;
 
-/** [boot] Scans both pages to recover the cursor. Half-written or bad slots
- * are invisible and do not truncate the tail. A read error returns E_IO and
- * leaves the ring not ready (a failed read is not an empty ring). Appends
- * before ready are refused (E_STATE). */
+/** [boot] Scans both pages to recover the cursor. Half-written, bad and
+ * foreign slots are invisible and do not truncate the tail. A read error
+ * returns E_IO and leaves the ring not ready (a failed read is not an empty
+ * ring); so does a committed record of this ring that fails verification.
+ * Appends before ready are refused (E_STATE). */
 entelea_result_t
 entelea_storage_audit_init(void);
+
+/** [thread] Slots of foreign content the last audit_init scan found: content
+ * that carries none of this ring's markers (for example another firmware's
+ * data in the partition). The ring treats them as absent; they are reported
+ * so that the boot log can say so. 0 = none. */
+unsigned
+entelea_storage_audit_foreign_slots(void);
 
 /** [thread] Appends one entry. The body, CRC, magic, and independent commit
  * marker are written in order and read back. When the 64 slots are full, the

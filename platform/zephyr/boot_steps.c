@@ -1,12 +1,16 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* R02 platform assembly boot table: estop GPIO -> all-channel safe initial
- * state -> WDT start -> supervision ready (placeholder order anchor). Later
- * business batches only append steps at the tail. */
+/* R02 platform assembly boot table: boot guard -> estop GPIO -> all-channel
+ * safe initial state -> WDT -> supervision ready. Later business batches only
+ * append steps at the tail.
+ * Owner 2026-11-24: the boot guard runs first. A boot step that keeps failing
+ * resets the device on every boot, and a guard that runs last never got to
+ * count those resets. */
 #include <zephyr/sys/printk.h>
 #include <zephyr/toolchain.h> /* __weak */
 #include <entelea/guard.h>
 #include <entelea/safety.h>
 #include <entelea/storage.h>
+#include <entelea/supervision.h>
 #include <entelea/wdt.h>
 #include "boot_steps.h"
 #include "clock.h"
@@ -41,6 +45,47 @@ entelea_platform_guard_store_init(entelea_guard_store_t *store)
 	return ENTELEA_E_UNINIT;
 }
 
+/* Weak board-level flash backend stub (R03 board batch): by default there is
+ * no flash surface (RAM backend); targets linking
+ * platform/zephyr/flash_store.c get the strong implementation. */
+__weak entelea_result_t
+entelea_platform_storage_mount_flash(void)
+{
+	return ENTELEA_E_UNINIT;
+}
+
+static entelea_result_t
+mount_flash_backend(void)
+{
+	entelea_result_t m = entelea_platform_storage_mount_flash();
+
+	/* Mount contract (review P2-2 fix): weak stub E_UNINIT means the
+	 * target has no flash surface (legal passthrough to RAM); a strong
+	 * implementation returning any other error means **flash configured
+	 * but unusable**: the persistence guarantee is void. */
+	return m == ENTELEA_E_UNINIT ? ENTELEA_OK : m;
+}
+
+/* Boot executor hooks. The framework does not print; these lines are what a
+ * reset loop leaves on the console. */
+void
+entelea_supervision_boot_report(entelea_boot_report_t what, unsigned idx,
+				const char *name, entelea_result_t result)
+{
+	if (what == ENTELEA_BOOT_REPORT_SKIPPED) {
+		printk("[boot] step %u \"%s\" not run: SAFE-HALT\n", idx, name);
+	} else {
+		printk("[boot] step %u \"%s\" failed: %d -> fail-safe\n", idx,
+		       name, result);
+	}
+}
+
+bool
+entelea_supervision_boot_halted(void)
+{
+	return entelea_platform_guard_safe_halt();
+}
+
 static entelea_result_t
 step_guard_bootguard(void)
 {
@@ -71,6 +116,12 @@ step_guard_bootguard(void)
 	if (r != ENTELEA_OK) {
 		return r;
 	}
+	/* The persistent port lives in flash storage where there is one, and
+	 * this step runs before storage_init: mount the backend here first
+	 * (mounting is idempotent). A mount failure is not this step's to
+	 * report: storage_init fails safe on it. Here it only leaves the
+	 * port unbound. */
+	(void) mount_flash_backend();
 	/* A missing or failed persistent port does not block boot; the gate
 	 * fails closed while unbound. */
 	r = entelea_platform_guard_store_init(&guard_store);
@@ -83,15 +134,6 @@ step_guard_bootguard(void)
 	}
 	(void) entelea_platform_guard_bootguard();
 	return ENTELEA_OK; /* SAFE-HALT left to assembly layer (see above) */
-}
-
-/* Weak board-level flash backend stub (R03 board batch): by default there is
- * no flash surface (RAM backend); targets linking
- * platform/zephyr/flash_store.c get the strong implementation. */
-__weak entelea_result_t
-entelea_platform_storage_mount_flash(void)
-{
-	return ENTELEA_E_UNINIT;
 }
 
 static entelea_result_t
@@ -127,27 +169,37 @@ step_storage_init(void)
 	/* R03 tail append: storage init and noinit consumption. The last
 	 * abnormal-reset trace is reported via entelea_storage_last_reset
 	 * by the assembly/observation surface (printing stays in the
-	 * platform layer).
-	 * Board batch: mount the flash backend first. Mount contract
-	 * (review P2-2 fix): weak stub E_UNINIT means the target has no
-	 * flash surface (legal passthrough to RAM); a strong implementation
-	 * returning any other error means **flash configured but unusable**:
-	 * the persistence guarantee is void, so the boot step fails safe
-	 * (no silent fallback to an idle RAM backend). */
-	entelea_result_t m = entelea_platform_storage_mount_flash();
+	 * platform layer). */
+	entelea_result_t r = mount_flash_backend();
+	unsigned foreign;
 
-	if (m != ENTELEA_OK && m != ENTELEA_E_UNINIT) {
-		return m;
+	if (r != ENTELEA_OK) {
+		return r;
 	}
-	return entelea_storage_init();
+	r = entelea_storage_init();
+	if (r != ENTELEA_OK) {
+		return r;
+	}
+	foreign = entelea_storage_audit_foreign_slots();
+	if (foreign != 0) {
+		/* For instance a board whose storage partition still holds
+		 * the previous firmware's data. */
+		printk("[storage] audit ring: %u slots hold content that is "
+		       "not this ring's records; ignored, never reused\n",
+		       foreign);
+	}
+	return ENTELEA_OK;
 }
 
 const entelea_boot_step_t
 	entelea_platform_boot_steps[ENTELEA_PLATFORM_BOOT_STEP_COUNT] = {
-		{ "estop_gpio", step_estop_gpio },
-		{ "safety_poweron", step_safety_poweron },
-		{ "wdt_start", step_wdt_start },
-		{ "supervision_ready", step_supervision_ready },
-		{ "storage_init", step_storage_init },
-		{ "guard_bootguard", step_guard_bootguard },
+		{ "guard_bootguard", step_guard_bootguard,
+		  ENTELEA_BOOT_STEP_SAFE_STATE },
+		{ "estop_gpio", step_estop_gpio, ENTELEA_BOOT_STEP_SAFE_STATE },
+		{ "safety_poweron", step_safety_poweron,
+		  ENTELEA_BOOT_STEP_SAFE_STATE },
+		{ "wdt_start", step_wdt_start, ENTELEA_BOOT_STEP_SAFE_STATE },
+		{ "supervision_ready", step_supervision_ready,
+		  ENTELEA_BOOT_STEP_SAFE_STATE },
+		{ "storage_init", step_storage_init, 0 },
 	};

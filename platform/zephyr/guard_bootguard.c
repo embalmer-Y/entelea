@@ -14,7 +14,11 @@
  * POR). The decision is entelea_guard_reset_guard (pure policy).
  * An unreadable or uncleared reset cause, an unavailable retained device, or a
  * failed read or write all fail closed; only a pure POR may accept a readable
- * but uninitialized retained record. Returns true = SAFE-HALT. */
+ * but uninitialized retained record. Returns true = SAFE-HALT.
+ * This step runs first in the boot table (owner 2026-11-24): on the boot
+ * where SAFE-HALT is decided, the executor then runs only the steps that
+ * establish the safe state, so a business step that keeps failing cannot
+ * reset the device again. */
 #include <errno.h>
 #include <string.h>
 #include <zephyr/kernel.h>

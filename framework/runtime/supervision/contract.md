@@ -59,11 +59,27 @@
 ## 监督启动（boot）
 
 - 执行器消费平台装配表（platform/zephyr/boot_steps.c）；当前顺序：
-  estop_gpio → safety_poweron → wdt_start → supervision_ready（旧
-  core_init 占位更名）→ storage_init → guard_bootguard。每步完成发布 `BOOT_STEP`
-  （含失败步 result）；任一步失败 → `system_fail(FAIL_BOOT(i))` 后受控
-  停机（停喂 WDT → 兜底复位），不得半启动。全部成功发布 `BOOT_DONE`
-  后返回，main 转常驻监督空闲。
+  guard_bootguard → estop_gpio → safety_poweron → wdt_start →
+  supervision_ready（旧 core_init 占位更名）→ storage_init。顺序是规格：
+  新步骤只追加在尾部，既有次序只随所有者裁决改动（owner 2026-11-24：
+  启动保护由末步提到首步）。每步完成发布 `BOOT_STEP`（含失败步
+  result）；任一步失败 → `system_fail(FAIL_BOOT(i))` 后受控停机（停喂
+  WDT → 兜底复位），不得半启动。全部成功发布 `BOOT_DONE` 后返回，
+  main 转常驻监督空闲。
+- **步骤分类（owner 2026-11-24）**：带 `ENTELEA_BOOT_STEP_SAFE_STATE` 的
+  步骤建立或维持安全态（输出、看门狗、启动保护本身），每次启动都运行；
+  不带的是业务装配。启动保护判定 SAFE-HALT 的那次启动，业务步骤不运行、
+  不发布 `BOOT_STEP`，也不发 `BOOT_DONE`（没有东西启动完成），执行器
+  返回，装配层照常查询 SAFE-HALT 并保持。理由：持续失败的启动步骤会让
+  每次启动都以复位收场，排在它后面的保护永远计不到数（2026-11-24 真机
+  暴露，见 docs/rf1-validation.md）。
+- **报告**：执行器不打印。步骤失败与未运行经 `entelea_supervision_boot_report`
+  报告，平台层打印步骤序号、名字与返回码；`entelea_supervision_boot_halted`
+  是平台向执行器提供 SAFE-HALT 状态的查询。两者都有缺省（不打印、未
+  停机），不链接平台层的构建行为不变。
+- **仍是边界**：安全态步骤自身失败（estop 或上电安全态建立不了）照旧
+  失效保护并复位——设备进不了安全态时没有别的选择；装配阶段（main 里
+  执行器之前的时钟绑定）失败不经过启动保护。
 - 装配（main）在执行器前完成安全/事件/监督时钟绑定；绑定失败按
   `FAIL_BOOT(0)` fail-safe。部分镜像强制链接板级启动保护，受限停机
   判定由各自装配层消费；诊断镜像并非全部具备相同装配。

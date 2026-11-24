@@ -20,7 +20,20 @@ target_sources(app PRIVATE
   ${ENTELEA_ROOT}/platform/zephyr/guard_store.c
   ${ENTELEA_ROOT}/framework/services/storage/kv.c
   ${ENTELEA_ROOT}/framework/services/storage/part.c
+  # 启动表端到端：真实守卫排在首步，业务步骤持续失败时的复位风暴。
+  ${ENTELEA_ROOT}/platform/zephyr/boot_steps.c
+  ${ENTELEA_ROOT}/platform/zephyr/clock.c
+  ${ENTELEA_ROOT}/framework/services/storage/noinit.c
+  ${ENTELEA_ROOT}/framework/services/storage/audit.c
+  ${ENTELEA_ROOT}/framework/runtime/supervision/events.c
+  ${ENTELEA_ROOT}/framework/runtime/supervision/wdt.c
+  ${ENTELEA_ROOT}/framework/runtime/supervision/boot.c
+  ${ENTELEA_ROOT}/framework/execution/safety/channel.c
+  ${ENTELEA_ROOT}/framework/execution/safety/commit.c
+  ${ENTELEA_ROOT}/framework/execution/safety/force.c
+  ${ENTELEA_ROOT}/framework/execution/safety/drivers.c
 )
+# printk：用例捕获控制台，断言执行器报告了失败与未运行的步骤。
 target_link_options(app PUBLIC -Wl,--wrap=z_impl_hwinfo_get_reset_cause
   -Wl,--wrap=z_impl_hwinfo_clear_reset_cause
-  -Wl,--wrap=z_impl_device_is_ready)
+  -Wl,--wrap=z_impl_device_is_ready -Wl,--wrap=printk)

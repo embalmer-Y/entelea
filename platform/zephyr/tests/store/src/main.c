@@ -2,7 +2,11 @@
 /* R03 存储子闭环 1 测试（oracle 迁自旧 firmware/tests/store/src/main.c 的
  * meta/noinit 用例 + 新故障类别负测：越界/回绕/双损/CRC/one-shot/超长/
  * system_fail 留痕接线）。RAM 后端 = 测试隔离面，不冒充持久介质。 */
+#include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/util.h>
 #include <zephyr/ztest.h>
 #include <entelea/events.h>
 #include <entelea/kv.h>
@@ -766,8 +770,11 @@ ZTEST(framework_store, test_boot_table_has_storage_step)
 {
 	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
 	zassert_equal(ENTELEA_PLATFORM_BOOT_STEP_COUNT, 6);
-	zassert_ok(strcmp(entelea_platform_boot_steps[4].name, "storage_init"));
-	zassert_not_null(entelea_platform_boot_steps[4].fn);
+	zassert_ok(strcmp(entelea_platform_boot_steps[5].name, "storage_init"));
+	zassert_not_null(entelea_platform_boot_steps[5].fn);
+	zassert_ok(
+		strcmp(entelea_platform_boot_steps[0].name, "guard_bootguard"),
+		"守卫是首步（owner 2026-11-24）");
 }
 
 /* ---- 启动表真实执行：六步全过 → BOOT_DONE（此前只有失败路径被执行过） ---- */
@@ -804,8 +811,8 @@ ZTEST(framework_store, test_boot_table_runs_all_steps_to_done)
 	static entelea_clock_t platform_clock;
 	/* 顺序是规格（与 core 的守卫一致），此处逐事件对拍执行结果。 */
 	static const char *const expected[] = {
-		"estop_gpio",	     "safety_poweron", "wdt_start",
-		"supervision_ready", "storage_init",   "guard_bootguard",
+		"guard_bootguard", "estop_gpio",	"safety_poweron",
+		"wdt_start",	   "supervision_ready", "storage_init",
 	};
 
 	entelea_safety_test_reset();
@@ -838,6 +845,422 @@ ZTEST(framework_store, test_boot_table_runs_all_steps_to_done)
 	zassert_equal(boot_done_seen, 1, "最后一步之后恰好一条 BOOT_DONE");
 	/* 巡检已在运行：收尾取消，后续用例从干净的看门狗开始。 */
 	entelea_wdt_test_reset();
+}
+
+/* ---- 启动执行器：SAFE-HALT 与步骤失败（owner 2026-11-24） ----
+ * 执行器本身不打印，经平台钩子报告。这里链接时包装 printk 捕获控制台，
+ * 断言的是真正打印出来的那一行。 */
+static char console_text[2048];
+static size_t console_len;
+
+void
+__wrap_printk(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	if (console_len < sizeof(console_text) - 1) {
+		int n = vsnprintk(console_text + console_len,
+				  sizeof(console_text) - console_len, fmt, ap);
+
+		if (n > 0) {
+			console_len += MIN((size_t) n, sizeof(console_text) -
+							       1 - console_len);
+		}
+	}
+	vprintk(fmt, ap);
+	va_end(ap);
+}
+
+static void
+console_start(void)
+{
+	console_len = 0;
+	console_text[0] = '\0';
+}
+
+static bool
+console_has(const char *needle)
+{
+	return strstr(console_text, needle) != NULL;
+}
+
+/* 覆盖 boot_steps.c 的弱桩：本套件不链接板级守卫，SAFE-HALT 由用例给定。 */
+static bool fake_safe_halt;
+
+bool
+entelea_platform_guard_safe_halt(void)
+{
+	return fake_safe_halt;
+}
+
+/* 探针：数一数启动期间对审计分区的读。storage_init 要扫 128 个槽；
+ * 它没有运行时一次读也没有。 */
+static entelea_store_ops_t probe_base;
+static bool probe_mounted;
+static unsigned probe_audit_reads;
+
+static entelea_result_t
+probe_read(entelea_store_part_t part, uint32_t off, void *buf, uint32_t len)
+{
+	if (part == ENTELEA_PART_AUDIT) {
+		probe_audit_reads++;
+	}
+	return probe_base.read(part, off, buf, len);
+}
+
+static void
+probe_begin(void)
+{
+	entelea_store_ops_t ops = entelea_store_backend;
+
+	zassert_false(probe_mounted);
+	probe_base = entelea_store_backend;
+	ops.read = probe_read;
+	probe_audit_reads = 0;
+	zassert_equal(entelea_storage_mount(&ops), ENTELEA_OK);
+	probe_mounted = true;
+}
+
+static void
+probe_end(void)
+{
+	zassert_true(probe_mounted);
+	zassert_equal(entelea_storage_mount(&probe_base), ENTELEA_OK);
+	probe_mounted = false;
+}
+
+static int halt_steps_seen;
+static int halt_done_seen;
+static uint8_t halt_last_idx;
+static int32_t halt_last_result;
+
+static void
+record_halt_step(const entelea_event_t *evt, void *user)
+{
+	const entelea_boot_step_evt_t *p = evt->data;
+
+	ARG_UNUSED(user);
+	halt_steps_seen++;
+	halt_last_idx = p->idx;
+	halt_last_result = p->result;
+}
+
+static void
+record_halt_done(const entelea_event_t *evt, void *user)
+{
+	ARG_UNUSED(evt);
+	ARG_UNUSED(user);
+	halt_done_seen++;
+}
+
+/* 装配顺序同 minimal 镜像的 main；订阅只做一次（容量有限）。 */
+static void
+prepare_boot_observation(void)
+{
+	static entelea_clock_t platform_clock;
+	static bool subscribed;
+
+	entelea_safety_test_reset();
+	entelea_wdt_test_reset();
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	zassert_ok(entelea_platform_clock_init(&platform_clock));
+	zassert_ok(entelea_evt_bind_clock(&platform_clock));
+	zassert_ok(entelea_wdt_bind_clock(&platform_clock));
+	zassert_ok(entelea_safety_bind_clock(&platform_clock));
+	if (!subscribed) {
+		zassert_ok(entelea_evt_subscribe(ENTELEA_EVT_BOOT_STEP,
+						 record_halt_step, NULL));
+		zassert_ok(entelea_evt_subscribe(ENTELEA_EVT_BOOT_DONE,
+						 record_halt_done, NULL));
+		subscribed = true;
+	}
+	halt_steps_seen = 0;
+	halt_done_seen = 0;
+	console_start();
+}
+
+/* 在线程里跑一次启动表并限时等待：失败的启动停在失效保护里不返回，
+ * 用例因此报失败而不是挂死。返回 true = 执行器返回。 */
+K_THREAD_STACK_DEFINE(boot_run_stack, 8192);
+static struct k_thread boot_run_thread;
+
+static void
+boot_run_entry(void *p1, void *p2, void *p3)
+{
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+	entelea_supervision_boot(entelea_platform_boot_steps,
+				 ENTELEA_PLATFORM_BOOT_STEP_COUNT);
+}
+
+static bool
+run_boot_table(void)
+{
+	k_tid_t tid = k_thread_create(&boot_run_thread, boot_run_stack,
+				      K_THREAD_STACK_SIZEOF(boot_run_stack),
+				      boot_run_entry, NULL, NULL, NULL, 0, 0,
+				      K_NO_WAIT);
+	int joined = k_thread_join(tid, K_MSEC(300));
+
+	if (joined != 0) {
+		/* 真机上这里被复位取代。 */
+		k_thread_abort(tid);
+	}
+	return joined == 0;
+}
+
+ZTEST(framework_store, test_boot_safe_halt_runs_only_safe_state_steps)
+{
+	prepare_boot_observation();
+	probe_begin();
+	fake_safe_halt = true;
+	zassert_true(run_boot_table(), "SAFE-HALT 启动返回");
+	fake_safe_halt = false;
+	probe_end();
+
+	/* 守卫与 R02 四步照常建立安全态，都成功；业务步骤没有运行。 */
+	zassert_equal(halt_steps_seen, 5, "只运行安全态步骤");
+	zassert_equal(halt_last_idx, 4);
+	zassert_equal(halt_last_result, ENTELEA_OK);
+	zassert_equal(probe_audit_reads, 0, "storage_init 未运行");
+	zassert_equal(halt_done_seen, 0, "SAFE-HALT 启动不发 BOOT_DONE");
+	zassert_true(
+		console_has(
+			"[boot] step 5 \"storage_init\" not run: SAFE-HALT"),
+		"控制台说明哪一步没有运行：%s", console_text);
+	zassert_false(console_has("failed"), "没有步骤失败：%s", console_text);
+	zassert_equal(entelea_safety_test_fail_reason(), 0, "不走失效保护");
+	entelea_wdt_test_reset();
+
+	/* 对照：守卫没有决定 SAFE-HALT 的那次启动，六步全跑并发 BOOT_DONE。 */
+	prepare_boot_observation();
+	probe_begin();
+	zassert_true(run_boot_table(), "正常启动返回");
+	probe_end();
+	zassert_equal(halt_steps_seen, 6);
+	zassert_equal(halt_last_idx, 5);
+	zassert_equal(halt_last_result, ENTELEA_OK);
+	zassert_true(probe_audit_reads >= 128, "storage_init 扫描了审计环");
+	zassert_equal(halt_done_seen, 1);
+	zassert_false(console_has("[boot]"), "全部成功时不打印：%s",
+		      console_text);
+	entelea_wdt_test_reset();
+}
+
+/* 介质读失败：storage_init 每次启动都失败。 */
+static entelea_store_ops_t failing_base;
+static bool failing_mounted;
+
+static entelea_result_t
+failing_read(entelea_store_part_t part, uint32_t off, void *buf, uint32_t len)
+{
+	ARG_UNUSED(part);
+	ARG_UNUSED(off);
+	ARG_UNUSED(buf);
+	ARG_UNUSED(len);
+	return ENTELEA_E_IO;
+}
+
+ZTEST(framework_store, test_boot_step_failure_names_the_step_on_console)
+{
+	entelea_store_ops_t ops;
+
+	prepare_boot_observation();
+	failing_base = entelea_store_backend;
+	ops = failing_base;
+	ops.read = failing_read;
+	zassert_equal(entelea_storage_mount(&ops), ENTELEA_OK);
+	failing_mounted = true;
+
+	bool returned = run_boot_table();
+
+	zassert_equal(entelea_storage_mount(&failing_base), ENTELEA_OK);
+	failing_mounted = false;
+
+	/* 失败的启动保持停机、不返回；复位前控制台上有失败步骤的名字。 */
+	zassert_false(returned, "失败的启动不返回");
+	zassert_equal(halt_steps_seen, 6);
+	zassert_equal(halt_last_idx, 5);
+	zassert_equal(halt_last_result, ENTELEA_E_IO);
+	zassert_equal(entelea_safety_test_fail_reason(), ENTELEA_FAIL_BOOT(5));
+	zassert_equal(halt_done_seen, 0);
+	zassert_true(console_has("[boot] step 5 \"storage_init\" failed: -8 -> "
+				 "fail-safe"),
+		     "控制台点出失败的步骤：%s", console_text);
+	entelea_safety_test_reset();
+	entelea_wdt_test_reset();
+}
+
+/* ---- 审计环里的外来内容（owner 2026-11-24）：不是本环的记录 ----
+ * 既没有本环的魔数，也没有本环的标记，例如另一个固件留在分区里的数据。
+ * 板上读回的 128 个槽里有 4 个以 FF FF FF FF 开头、后面才是数据，这里
+ * 按同样的位置复现。 */
+static void
+foreign_slot(uint8_t *s, uint8_t seed)
+{
+	for (uint32_t k = 0; k < 64; k++) {
+		s[k] = (uint8_t) (seed * 31u + k * 13u + 7u);
+	}
+	/* 字节逐个递增 13，所以不会凑出魔数、擦除态、标记或完成标记。 */
+}
+
+/* 开头是擦除态、后面是数据的外来槽：有结构的数据里很常见。 */
+static const uint8_t foreign_erased_head[][2] = {
+	{ 0, 4 },
+	{ 0, 9 },
+	{ 0, 25 },
+	{ 1, 1 },
+};
+
+static void
+fill_ring_with_foreign_content(void)
+{
+	uint8_t s[64];
+
+	for (uint8_t p = 0; p < 2; p++) {
+		for (uint8_t i = 0; i < 64; i++) {
+			bool erased_head = false;
+
+			for (size_t k = 0; k < ARRAY_SIZE(foreign_erased_head);
+			     k++) {
+				erased_head = erased_head ||
+					      (foreign_erased_head[k][0] == p &&
+					       foreign_erased_head[k][1] == i);
+			}
+			foreign_slot(s, (uint8_t) (p * 64u + i));
+			if (erased_head) {
+				memset(s, 0xFF, 4);
+			}
+			zassert_equal(entelea_storage_test_backend_write(
+					      ENTELEA_PART_AUDIT,
+					      p * 4096u + i * 64u, s,
+					      sizeof(s)),
+				      ENTELEA_OK);
+		}
+	}
+}
+
+static void
+write_foreign(uint8_t page, uint8_t slot, uint8_t seed)
+{
+	uint8_t s[64];
+
+	foreign_slot(s, seed);
+	zassert_equal(entelea_storage_test_backend_write(
+			      ENTELEA_PART_AUDIT, page * 4096u + slot * 64u, s,
+			      sizeof(s)),
+		      ENTELEA_OK);
+}
+
+/* 本环一次写到一半掉电的槽：先写体，魔数与从不写的尾部都还是擦除态。 */
+static void
+write_cut_short(uint8_t page, uint8_t slot, uint8_t seed)
+{
+	uint8_t s[64];
+
+	memset(s, 0xFF, sizeof(s));
+	s[4] = seed;
+	s[5] = (uint8_t) (seed + 1u);
+	s[16] = 7;
+	zassert_equal(entelea_storage_test_backend_write(
+			      ENTELEA_PART_AUDIT, page * 4096u + slot * 64u, s,
+			      sizeof(s)),
+		      ENTELEA_OK);
+}
+
+/* 用例归位：把审计环留在“尚未 init”的初态（介质不动——扫描读失败即
+ * 未就绪）。本套件的 test_audit_ring_flip_and_recovery 以此为前提。 */
+static void
+audit_ring_forget(void)
+{
+	entelea_store_ops_t ops = entelea_store_backend;
+
+	failing_base = entelea_store_backend;
+	ops.read = failing_read;
+	zassert_equal(entelea_storage_mount(&ops), ENTELEA_OK);
+	failing_mounted = true;
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_E_IO);
+	zassert_equal(entelea_storage_audit_append(
+			      &(entelea_storage_audit_entry_t) { 0 }, 0),
+		      ENTELEA_E_STATE);
+	zassert_equal(entelea_storage_mount(&failing_base), ENTELEA_OK);
+	failing_mounted = false;
+}
+
+ZTEST(framework_store, test_audit_foreign_content_whole_ring_is_empty_ring)
+{
+	entelea_storage_audit_entry_t e = { .ch_idx = 3 };
+	entelea_storage_audit_entry_t out[4];
+	int32_t n;
+
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	fill_ring_with_foreign_content();
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK,
+		      "外来内容不是读错，也不是本环的坏记录");
+	zassert_equal(entelea_storage_audit_foreign_slots(), 128);
+	n = entelea_storage_audit_read(out, 4);
+	zassert_equal(n, 0, "当作空环");
+
+	/* 空环可以直接续写：seq 从 1 起，页首写前擦除清掉该页的外来内容。 */
+	zassert_equal(entelea_storage_audit_append(&e, 0), ENTELEA_OK);
+	n = entelea_storage_audit_read(out, 4);
+	zassert_equal(n, 1);
+	zassert_equal(out[0].seq, 1);
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+	zassert_equal(entelea_storage_audit_foreign_slots(), 64,
+		      "另一页的外来内容还在，照常如实报告");
+	audit_ring_forget();
+}
+
+ZTEST(framework_store, test_audit_foreign_content_keeps_records_of_this_ring)
+{
+	entelea_storage_audit_entry_t e = { .ch_idx = 3 };
+	entelea_storage_audit_entry_t out[8];
+	int32_t n;
+
+	zassert_equal(entelea_storage_test_reset(), ENTELEA_OK);
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+	for (uint32_t i = 0; i < 3; i++) {
+		zassert_equal(entelea_storage_audit_append(&e, 0), ENTELEA_OK);
+	}
+	write_foreign(0, 3, 9);
+	write_foreign(1, 0, 77);
+	/* 本环写到一半的槽：同样不可见、不复用，但不算外来内容。 */
+	write_cut_short(0, 4, 5);
+
+	zassert_equal(entelea_storage_audit_init(), ENTELEA_OK);
+	zassert_equal(entelea_storage_audit_foreign_slots(), 2,
+		      "写到一半的槽不报成外来内容");
+	n = entelea_storage_audit_read(out, 8);
+	zassert_equal(n, 3, "本环的有效记录原样保留");
+	zassert_equal(out[2].seq, 3);
+	/* 外来槽与写到一半的槽都不复用，续写接在它们之后。 */
+	zassert_equal(entelea_storage_audit_append(&e, 0), ENTELEA_OK);
+	n = entelea_storage_audit_read(out, 8);
+	zassert_equal(n, 4);
+	zassert_equal(out[3].seq, 4);
+	audit_ring_forget();
+}
+
+ZTEST(framework_store, test_boot_completes_when_audit_holds_foreign_content)
+{
+	prepare_boot_observation();
+	fill_ring_with_foreign_content();
+	zassert_true(run_boot_table(), "外来内容不阻止启动");
+
+	/* 这正是板上无限复位的那次启动：现在六步全过。 */
+	zassert_equal(halt_steps_seen, 6);
+	zassert_equal(halt_last_idx, 5);
+	zassert_equal(halt_last_result, ENTELEA_OK);
+	zassert_equal(halt_done_seen, 1);
+	zassert_equal(entelea_safety_test_fail_reason(), 0, "不走失效保护");
+	zassert_true(console_has("[storage] audit ring: 128 slots hold "
+				 "content that is not this ring's records"),
+		     "控制台如实说明：%s", console_text);
+	entelea_wdt_test_reset();
+	audit_ring_forget();
 }
 
 /* ---- META 跨逻辑副本边界（板级批 review P2-1）：分段翻译正确 ---- */
@@ -986,6 +1409,14 @@ store_after(void *fixture)
 	if (bit_error_mounted) {
 		(void) entelea_storage_mount(&bit_error_base);
 		bit_error_mounted = false;
+	}
+	if (probe_mounted) {
+		(void) entelea_storage_mount(&probe_base);
+		probe_mounted = false;
+	}
+	if (failing_mounted) {
+		(void) entelea_storage_mount(&failing_base);
+		failing_mounted = false;
 	}
 }
 

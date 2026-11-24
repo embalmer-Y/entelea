@@ -448,12 +448,17 @@ ZTEST(framework_core, test_isr_context_clock_bookkeeping)
 
 ZTEST(framework_core, test_boot_step_order_is_spec)
 {
-	/* 顺序是规格：既有次序不可调换——此测试是守卫。
-	 * R02 四步 = 旧 M1 四步（core_init 占位更名 supervision_ready）；
-	 * 后续业务批次只在尾部追加。 */
+	/* 顺序是规格：新增步骤只追加在尾部，既有次序只随所有者裁决改动——
+	 * 此测试是守卫。r16 守卫首步（owner 2026-11-24 追认提前）+ R02 四步
+	 * （core_init 占位更名 supervision_ready）+ R03 尾部追加。 */
 	static const char *const expected[] = {
-		"estop_gpio",	     "safety_poweron", "wdt_start",
-		"supervision_ready", "storage_init",   "guard_bootguard",
+		"guard_bootguard", "estop_gpio",	"safety_poweron",
+		"wdt_start",	   "supervision_ready", "storage_init",
+	};
+	static const uint8_t expected_flags[] = {
+		ENTELEA_BOOT_STEP_SAFE_STATE, ENTELEA_BOOT_STEP_SAFE_STATE,
+		ENTELEA_BOOT_STEP_SAFE_STATE, ENTELEA_BOOT_STEP_SAFE_STATE,
+		ENTELEA_BOOT_STEP_SAFE_STATE, 0,
 	};
 
 	zassert_equal(ENTELEA_PLATFORM_BOOT_STEP_COUNT, 6,
@@ -464,6 +469,10 @@ ZTEST(framework_core, test_boot_step_order_is_spec)
 			   "boot step order changed at %d", i);
 		zassert_not_null(entelea_platform_boot_steps[i].fn,
 				 "step fn wired");
+		/* 分类也是规格：守卫之后只有建立安全态的步骤在 SAFE-HALT
+		 * 启动时运行；新追加的业务步骤默认不运行。 */
+		zassert_equal(entelea_platform_boot_steps[i].flags,
+			      expected_flags[i], "step class changed at %d", i);
 	}
 }
 

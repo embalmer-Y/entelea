@@ -176,11 +176,11 @@ ZTEST(wdt_hardware, test_real_task_wdt_backend_errors_and_recovery)
 
 	k_thread_abort(tid);
 	zassert_equal(join_result, -EAGAIN, "Failed boot must remain halted");
-	zassert_equal(boot_steps_seen, 3,
+	zassert_equal(boot_steps_seen, 4,
 		      "No later initialization step may run");
-	zassert_equal(last_boot_step, 2);
+	zassert_equal(last_boot_step, 3);
 	zassert_equal(boot_done_seen, 0);
-	zassert_equal(entelea_safety_test_fail_reason(), ENTELEA_FAIL_BOOT(2));
+	zassert_equal(entelea_safety_test_fail_reason(), ENTELEA_FAIL_BOOT(3));
 	zassert_equal(entelea_safety_channel_state(probe.uid, &state),
 		      ENTELEA_OK);
 	zassert_equal(state, ENTELEA_ST_SAFE_FAULT);
