@@ -13,7 +13,7 @@
 | HP SRAM（sramhp@0x4ff00000） | 768 KB | 主运行 RAM（dram0 段+noinit 从中划） |
 | 其中 nocache 窗（sramhp_nocache） | 16 KB | DMA 一致性窗口（PMA 非 cache 映射） |
 | LP SRAM | 32 KB | LP 域；仅 guard 的复位风暴计数使用 retained RAM（`guardretained`），其余未用 |
-| PSRAM（psram0，叠封） | 32 MB | 2026-11-24 已启用并实测可用。所钉定的 Zephyr 4.5 带有 ESP32-P4 的 PSRAM 支持（`CONFIG_ESP_SPIRAM`），此前“无上游集成”的说法不成立。**注意供电**：叠封 PSRAM 与其锁相环由芯片内部 LDO 通道 2（1.8 V）供电，ESP-IDF 默认打开它，而 Zephyr 侧要求板级设备树声明该通道——本板原定义漏了这项，导致 PSRAM 无电。见 [lua-feasibility.md](lua-feasibility.md) |
+| PSRAM（psram0，叠封） | 32 MB | 2026-11-24 已启用并实测可用。所钉定的 Zephyr 4.5 带有 ESP32-P4 的 PSRAM 支持（`CONFIG_ESP_SPIRAM`），此前“无上游集成”的说法不成立。**供电**：叠封 PSRAM 与其锁相环由芯片内部 LDO 通道 2（1.8 V）供电，ESP-IDF 默认打开它，Zephyr 侧要求板级设备树声明该通道——本板原定义漏了这项，导致 PSRAM 无电；现已按上游做法补上（设备树 `ldo2@2` + `CONFIG_REGULATOR=y`）并真机验证。见 [lua-feasibility.md](lua-feasibility.md) |
 | NOR flash（boya） | 16 MB | 分区表 0x2000 布局（storage 1MB@0x120000） |
 | RTC VBAT | — | 88-pin pad 84（严禁悬空，接 3.3V） |
 
@@ -154,7 +154,8 @@ Zephyr 里是 `.noinit` 对象，需要另行处理（链接片段或段属性�
 ### 6.4 落实顺序
 
 1. 真板上 PSRAM 初始化成功（2026-11-24 已完成：根因是板级定义漏了叠封 PSRAM 的
-   供电——芯片内部 LDO 的 2 号通道；补上后 Zephyr 与 ESP-IDF 6.1 都能正常初始化，
+   供电——芯片内部 LDO 的 2 号通道；已按上游做法补进板级定义（设备树 `ldo2@2`
+   + `CONFIG_REGULATOR=y`），Zephyr 与 ESP-IDF 6.1 都能正常初始化，
    见 [lua-feasibility.md](lua-feasibility.md)）。
 2. 在真板上核实 6.1 的四条约束。
 3. 落实布局：`.noinit` 对象与线程栈进 PSRAM、libc `malloc` 改走 PSRAM 堆，
@@ -216,5 +217,5 @@ Lua 的增量是真机验证过的组合：线程栈 320 KB、解释器堆 192 K
 判定；镜像默认须满足紧凑档（`--tier` 可改），否则退出码 1。对上表各配置重新
 运行的结果与上表一致：五个产品镜像满足紧凑档，factory 与 cloud 不满足宽松档；
 Lua 的 SRAM 量测镜像（638,448 B）不满足紧凑档；Lua 的 PSRAM 镜像（SRAM
-90,380 B + PSRAM 3,146,368 B，总内存 34,340,864 B）三档都满足。
+90,524 B + PSRAM 3,146,368 B，总内存 34,340,864 B）三档都满足。
 

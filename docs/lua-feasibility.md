@@ -185,10 +185,32 @@ D (hex_psram): exp_data: 0x5a6b7c8d      ← 读回与写入一致
 I (hex_psram): vendor id : 0x0d (AP)   density : 0x07 (256 Mbit)   BitMode : X16 Mode
 ```
 
-走 Zephyr 稳压器驱动（`CONFIG_REGULATOR=y` + 设备树声明）这条路不可用：它会
-把 PMU 时钟驱动一起带进镜像，而该驱动在这块板子上启动不起来（停在比诊断点更早
-的位置）。因此实验用 `platform/zephyr/tests/lua_vm/src/psram_power.c` 自己按
-ESP-IDF 的方式打开 2 号通道，等 200 µs 后再让内核初始化 PSRAM。
+**修法：走上游的板级做法，本板已验证。** 板级定义里补上设备树的 LDO 声明
+（`ldo2@2`：1.8 V、`regulator-boot-on`、`regulator-always-on`；`ldo1@1` 3.3 V
+是 ROM 默认就开的闪存通道），默认配置里加 `CONFIG_REGULATOR=y`。这样 Zephyr 的
+稳压器驱动在 PRE_KERNEL_1、优先级 20 先打开 2 号通道，内核在优先级 40
+（`soc/espressif/common/esp_psram.c` 的 `esp32p4_psram_init`）初始化 PSRAM。
+hal_espressif 侧也是这个约定：`esp_clk_tree_common.c` 在 `CONFIG_REGULATOR_ESP32`
+存在时跳过自己的 LDO 获取，避免双重使能。
+
+此前“稳压器驱动那条路会带进 PMU 时钟驱动、板子起不来”的判断**不成立，已撤回**：
+PMU 时钟驱动（`drivers/clock_control/clock_control_esp32_pmu.c`）对所有 ESP32-P4
+镜像都编译进去，与 `CONFIG_REGULATOR` 无关——应用侧供电版与稳压器驱动版两个镜像
+的 map 里它都在。
+
+真机验证（2026-11-24，镜像 `build/board-lua-psram-regulator`，只有板级定义与稳
+压器驱动，没有任何应用侧供电代码）：
+
+```
+I (hex_psram): vendor id : 0x0d (AP)  density : 0x07 (256 Mbit)  BitMode : X16 Mode
+[lua-feas] layout: PSRAM initialized 1, reported size 33554432 bytes
+[lua-feas] layout: harness thread stack 0x48000000 (1048576 bytes), interpreter heap 0x48100280 (1048576 bytes), in PSRAM: 1
+[lua-feas] failed mask=0x0
+PROJECT EXECUTION SUCCESSFUL
+```
+
+213.5 秒，与此前应用侧供电的结果一致。应用侧的临时文件
+`platform/zephyr/tests/lua_vm/src/psram_power.c` 已删除。
 
 **与 ESP-IDF 6.1 的对照（同一块板）。** 按所有者要求在 `~/sdk/esp-idf-v6.1`
 安装了 ESP-IDF 6.1，并做了最小自检（`~/workspace/sandbox/esp-idf-psram-selftest`）：
@@ -279,8 +301,9 @@ PSRAM 之后、同一块板没有断过电，紧接着刷入 Zephyr 镜像，读
 烧录前把 16 MB 闪存完整备份到仓库之外（`/home/emb/project/entelea-board-backup/`，
 含校验和）；板上原先是一个 ESP-IDF v6.1 应用，已被测试镜像覆盖。SRAM 上共三次
 完整运行通过（上限 80、上限 200，以及改造为独立线程后的上限 200），每次约
-215–225 秒；PSRAM 侧先失败六次（原因见“PSRAM”一节），补上供电后两次通过：第一次
-是带临时诊断代码的镜像（228 秒），最后一次是正式版本（228 秒，失败掩码 0x0）。
+215–225 秒；PSRAM 侧先失败六次（原因见“PSRAM”一节），补上供电后三次通过：一次是
+带临时诊断代码的镜像（228 秒），一次是应用侧供电的正式版本（228 秒，失败掩码
+0x0），最后一次是改用板级定义供电的版本（213.5 秒，失败掩码 0x0）。
 板上现在驻留的是最后那个 PSRAM 镜像，每次复位运行约 4 分钟。
 
 ## 需要所有者裁决
@@ -291,16 +314,11 @@ PSRAM 之后、同一块板没有断过电，紧接着刷入 Zephyr 镜像，读
 
 仍待裁决或需要所有者动手：
 
-1. **供电的修法要不要进板级定义**：现在由实验代码
-   `platform/zephyr/tests/lua_vm/src/psram_power.c` 打开 2 号 LDO 通道。板级定义的
-   正规做法是在设备树里声明 `ldo2@2`（1.8 V、开机即开、常开）并开启稳压器驱动
-   ——但那条路在这块板子上带进 PMU 时钟驱动后启动不起来。请决定是继续在应用侧
-   供电（把限制记在案上），还是另找一条板级做法。
-2. **PSRAM 的用量红线**：先前的裁决是“启用即新批、要定新红线”。栈和堆放进
+1. **PSRAM 的用量红线**：先前的裁决是“启用即新批、要定新红线”。栈和堆放进
    PSRAM 后 SRAM 占用降到 90 KB，PSRAM 用量规则还没有定。
-3. **脚本线程的栈**：在 PSRAM 可用之前，按上限 200 需要约 300 KB 的栈，产品
+2. **脚本线程的栈**：在 PSRAM 可用之前，按上限 200 需要约 300 KB 的栈，产品
    镜像放不下；是否在 PSRAM 可用前临时降低上限。
-4. 文件加载函数（`dofile`/`loadfile`）保持关闭是否同意：它们没有文件可加载，
+3. 文件加载函数（`dofile`/`loadfile`）保持关闭是否同意：它们没有文件可加载，
    将来有文件系统时也应经过宿主的权限闸。
 5. 数字类型：保持 `double`（板上走 ROM 软浮点）还是改 32 位。
 6. 5.5.1 是否批准为产品镜像的构建依赖（本次裁决确定了版本）。

@@ -542,15 +542,21 @@ PSRAM，改完重新评估。前一条已记入包合同 D03 的“执行预算�
   `ldo2@2`（1.8 V、开机即开、常开）并默认开启稳压器驱动；**本工程的板级定义
   两者都没有**，PSRAM 无电，驱动的每次读回都是固定图案。寄存器证据：初始化前
   `ext_ldo xpd = 1 0 0 0`（2 号通道关）、`mspi_phy_xpd=0 mpll500m_en=0`。
-- **修法**：走 Zephyr 稳压器驱动这条路会带进 PMU 时钟驱动，而它在这块板子上
-  启动不起来。实验因此新增 `platform/zephyr/tests/lua_vm/src/psram_power.c`，
-  在内核初始化 PSRAM 之前一步按 ESP-IDF 的方式打开 2 号通道并等 200 µs。补上
-  后：驱动报 `exp_data: 0x5a6b7c8d`（读回与写入一致）、`vendor id 0x0d (AP)`、
-  `density 0x07 (256 Mbit)`、`X16 Mode`，`PSRAM initialized 1`，
-  `failed mask=0x0`（228 秒）。
+- **修法（已进板级定义并真机验证）**：板级设备树里声明 `ldo2@2`（1.8 V、
+  `regulator-boot-on`、`regulator-always-on`）与 `ldo1@1`（3.3 V，闪存通道），
+  板级默认配置加 `CONFIG_REGULATOR=y`：Zephyr 的稳压器驱动在 PRE_KERNEL_1、
+  优先级 20 打开 2 号通道，内核在优先级 40 初始化 PSRAM。hal_espressif 也是这个
+  约定（`CONFIG_REGULATOR_ESP32` 存在时跳过自己的 LDO 获取）。真机结果：驱动报
+  `vendor id 0x0d (AP)`、`density 0x07 (256 Mbit)`、`X16 Mode`，
+  `PSRAM initialized 1`、`reported size 33554432 bytes`、`failed mask=0x0`
+  （213.5 秒）。
+- **此前“稳压器驱动会带进 PMU 时钟驱动、板子起不来”的判断不成立，已撤回**：
+  PMU 时钟驱动对所有 ESP32-P4 镜像都编译进去，与 `CONFIG_REGULATOR` 无关
+  （两版镜像的 map 里都在）；应用侧供电的临时文件
+  `platform/zephyr/tests/lua_vm/src/psram_power.c` 已删除。
 - **新的实测值**：内存配额 512 KB（合同上限）在真机上验证通过（拒绝 2 次，已用
   524,198 B）；嵌套 C 调用到上限 200 的 C 栈深度精确为 294,515 B；静态 HP SRAM
-  90,380 B、静态 PSRAM 3,146,368 B、总内存需求 3,236,748 B，按三档红线全部满足。
+  90,524 B、静态 PSRAM 3,146,368 B、总内存需求 3,236,892 B，按三档红线全部满足。
   数据放在 PSRAM 的速度代价：解释器循环约慢 4%，回挡约慢 7%。
 - 钉定的 Zephyr 与厂商 HAL 未改动（`check_dependencies.py` 核对通过）；排查用的
   临时寄存器操作没有留在仓库里。
