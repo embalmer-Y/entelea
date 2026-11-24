@@ -44,7 +44,7 @@
 | 运行时内核堆余量 | **≥64 KB**（k_heap 128KB 的一半） | [B] 验收批加 heap 使用打印（k_malloc 水位快照）；无持续监测前以链接期红线为主闸 |
 | mbedtls 会话堆 | 64 KB（现有配置冻结） | r15 实测跑通；收窄实验留优化批（动它不保守） |
 | 栈（已定案冻结） | main 32K/tcp_work 8K/esp_hosted event 16K/sysworkq+RX 4K/ISR 2K | r15 攻坚定案值，board 表 §3 |
-| PSRAM | 有 PSRAM 则**必须开启**（owner 2026-11-24） | 推翻“首期不启用”。布局：内部 SRAM 只放驱动固定缓冲区、内核核心、main 线程栈等，其余全部放 PSRAM。尚未落实：真板上 PSRAM 初始化不成功，原因未定，见 [板级资源表 §6](board-osptek-p4c5-resource-budget.md) |
+| PSRAM | 有 PSRAM 则**必须开启**（owner 2026-11-24） | 推翻“首期不启用”。布局：内部 SRAM 只放驱动固定缓冲区、内核核心、main 线程栈等，其余全部放 PSRAM。2026-11-24 实测可用（根因是板级定义漏了叠封 PSRAM 的供电，见 [lua-feasibility.md](lua-feasibility.md)）。布局与用量红线待定；数据放 PSRAM 的速度代价已测（解释器循环约 4%） |
 
 ## 6. 指令与队列 [A+B]
 

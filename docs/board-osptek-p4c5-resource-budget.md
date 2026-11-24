@@ -13,7 +13,7 @@
 | HP SRAM（sramhp@0x4ff00000） | 768 KB | 主运行 RAM（dram0 段+noinit 从中划） |
 | 其中 nocache 窗（sramhp_nocache） | 16 KB | DMA 一致性窗口（PMA 非 cache 映射） |
 | LP SRAM | 32 KB | LP 域；仅 guard 的复位风暴计数使用 retained RAM（`guardretained`），其余未用 |
-| PSRAM（psram0，叠封） | 32 MB | **Zephyr 镜像未启用**。所钉定的 Zephyr 4.5 带有 ESP32-P4 的 PSRAM 支持（`CONFIG_ESP_SPIRAM`），此前“无上游集成”的说法不成立。2026-11-24 首次启用尝试（owner 裁决 Lua 的分配改用 PSRAM）：镜像可链接，静态 HP SRAM 从 638,448 B 降到 90,380 B，但真板上 PSRAM 不应答，见 [lua-feasibility.md](lua-feasibility.md) |
+| PSRAM（psram0，叠封） | 32 MB | 2026-11-24 已启用并实测可用。所钉定的 Zephyr 4.5 带有 ESP32-P4 的 PSRAM 支持（`CONFIG_ESP_SPIRAM`），此前“无上游集成”的说法不成立。**注意供电**：叠封 PSRAM 与其锁相环由芯片内部 LDO 通道 2（1.8 V）供电，ESP-IDF 默认打开它，而 Zephyr 侧要求板级设备树声明该通道——本板原定义漏了这项，导致 PSRAM 无电。见 [lua-feasibility.md](lua-feasibility.md) |
 | NOR flash（boya） | 16 MB | 分区表 0x2000 布局（storage 1MB@0x120000） |
 | RTC VBAT | — | 88-pin pad 84（严禁悬空，接 3.3V） |
 
@@ -116,7 +116,9 @@ r15-cloud 的约 403 KB 只列出了两个数据段，不是整个静态 HP SRAM
    可被 DMA 访问，但 esp_hosted 的 SDIO 缓冲等须逐项核实。
 4. **性能**。热路径数据放进 PSRAM 会变慢，幅度未测。
 
-以上四条都还没有在真板上验证过，因为 PSRAM 尚未初始化成功（见
+以上四条都还没有在真板上验证过：PSRAM 现在已经能初始化了（根因与修法见
+[lua-feasibility.md](lua-feasibility.md) 的“PSRAM”一节），但这些约束还没有逐条实测
+（见
 [lua-feasibility.md](lua-feasibility.md)：六种配置均报 PSRAM 未连接，板子
 尚未断过电）。
 
@@ -151,7 +153,9 @@ Zephyr 里是 `.noinit` 对象，需要另行处理（链接片段或段属性�
 
 ### 6.4 落实顺序
 
-1. 真板上 PSRAM 初始化成功（待所有者给板子断电，或确认硬件与原固件配置）。
+1. 真板上 PSRAM 初始化成功（2026-11-24 已完成：根因是板级定义漏了叠封 PSRAM 的
+   供电——芯片内部 LDO 的 2 号通道；补上后 Zephyr 与 ESP-IDF 6.1 都能正常初始化，
+   见 [lua-feasibility.md](lua-feasibility.md)）。
 2. 在真板上核实 6.1 的四条约束。
 3. 落实布局：`.noinit` 对象与线程栈进 PSRAM、libc `malloc` 改走 PSRAM 堆，
    逐镜像实测 SRAM 与 PSRAM 的占用。
@@ -195,7 +199,7 @@ Lua 的增量是真机验证过的组合：线程栈 320 KB、解释器堆 192 K
 | 仅 SRAM 1 MB | 全部宽松 | 不够（最低线 1.02 MB） |
 | 仅 SRAM 2 MB | 全部宽松 | 宽松 |
 | 仅 SRAM 4 MB | 全部宽松 | 宽松 |
-| 本板 SRAM + PSRAM（约 32.75 MB） | 全部宽松 | 全部宽松（PSRAM 尚未初始化成功） |
+| 本板 SRAM + PSRAM（约 32.75 MB） | 全部宽松 | 全部宽松（PSRAM 已实测可用） |
 
 由此得到的结论：
 

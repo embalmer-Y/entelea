@@ -72,7 +72,7 @@ build/<dir>/zephyr/zephyr.bin`，控制台 115200，经 EN 引脚硬复位。
 
 | 合同条目 | 结果（真机与仿真一致） | 真机测量值 |
 | --- | --- | --- |
-| 内存预算 | 2 MB 字符串在配额下以 `LUA_ERRMEM` 结束，被**配额闸**拦下，未越界 | 128 KB 配额：拒绝 2 次，已用 131,009 B |
+| 内存预算 | 2 MB 字符串在配额下以 `LUA_ERRMEM` 结束，被**配额闸**拦下，未越界 | 512 KB 配额（合同上限）：拒绝 2 次，已用 524,198 B |
 | 数据隔离 | 两个 64 KB 实例互不可见 | 第一个被拒 2 次时，第二个仍能分配 |
 | 执行预算与有界停止 | 死循环恰在第 100,000 步以 `LUA_ERRRUN` 停止 | 钩子拒绝 1 次；中止与配额错误之后状态仍可用 |
 | 协程内的预算 | 协程里的死循环同样在第 100,000 步停止 | 钩子在创建协程时被继承；恢复者所在脚本一并结束 |
@@ -117,12 +117,12 @@ build/<dir>/zephyr/zephyr.bin`，控制台 115200，经 EN 引脚硬复位。
 | 20 | — | — | 4,791 B | 25,879 B |
 | 40 | 8,643 B | 58,979 B | 7,991 B | 51,479 B |
 | 80 | 15,683 B | 117,875 B | 14,391 B | 102,679 B |
-| **200（出厂，已裁决）** | 36,803 B | ≥180,224 B | 33,591 B | 256,407 B |
+| **200（出厂，已裁决）** | 36,803 B | 294,515 B | 33,591 B | 256,407 B |
 
 真机上语法嵌套约 176 B/层，C 调用嵌套（经 `string.gsub` 回调）约 1,472 B/层。
-按斜率，上限 200 需要约 **294 KB** 的脚本线程栈。真机的测量窗口只有 176 KB，
-294 KB 是推算值；320 KB 的栈实测撑住了上限 200。其他路径：空脚本 1,507 B、
-典型脚本 1,939 B、钩子中止 2,419 B（真机）。
+上限 200 需要约 **294 KB** 的脚本线程栈；这在 PSRAM 上已经精确测到（294,515 B，
+栈放在 PSRAM、测量窗口 512 KB），与斜率推算一致。其他路径：空脚本 1,507 B、典型
+脚本 1,939 B、钩子中止 2,419 B（真机）。
 
 ## 板上发现
 
@@ -160,52 +160,81 @@ build/<dir>/zephyr/zephyr.bin`，控制台 115200，经 EN 引脚硬复位。
 提供 `.ext_ram_noinit.*` 与 `.ext_ram.bss*` 段和一块共享多堆区域）。板级资源
 文档里“esp32p4 无上游 SPIRAM 堆集成”的说法不成立，已更正。
 
-**链接层面成立。** 开启 `CONFIG_ESP_SPIRAM=y`，把实验线程的栈（1 MB）和解释器
-堆（1 MB）放进 PSRAM 段后：镜像可以链接，静态 HP SRAM 从 638,448 B 降到
-**90,380 B**，PSRAM 里占 3,146,368 B（含上游预留的 1 MB 共享堆）。
+**根因：板级定义漏了 PSRAM 的供电。** 叠封 PSRAM 与它的锁相环由芯片内部的
+LDO 通道 2（1.8 V）供电。ESP-IDF 在 `esp_clk_tree_mpll_acquire()` 里打开这个
+通道（默认 `ESP_LDO_RESERVE_PSRAM=y`、`ESP_LDO_CHAN_PSRAM_DOMAIN=2`、
+`ESP_LDO_VOLTAGE_PSRAM_DOMAIN=1800`）；Zephyr 移植层编译同一份代码时不带这些
+选项，改为由**板级设备树**声明该通道为稳压器。上游带叠封 PSRAM 的板子
+（waveshare P4 套件、esp32p4x_function_ev_board）都这么写：设备树里
+`ldo2@2` 为 1.8 V、`regulator-boot-on`、`regulator-always-on`，默认配置里
+`CONFIG_REGULATOR=y`。**本工程的板级定义两者都没有**，于是 PSRAM 与锁相环
+根本没上电，驱动的每次读回都是固定的 `0x3b3b3b3b`。
 
-**运行层面受阻。** 真机上启动停在 PSRAM 初始化：`E (hex_psram): PSRAM chip is
-not connected`，随后 `Failed to Initialize external RAM, aborting.`；Zephyr 仍把
-这块未初始化的区域当堆去登记，断言失败，内核停机。连接检测只是经 PSRAM 专用
-接口写一个字再读回。已试的配置全部同样失败：
+寄存器证据（在 PSRAM 初始化前一刻打印）：
 
-| PSRAM 时钟 | ECC | 闪存时钟 | 结果 |
-| --- | --- | --- | --- |
-| 200 MHz | 关 | 80 MHz | 未连接 |
-| 80 MHz | 关 | 80 MHz | 停住，无后续输出 |
-| 20 MHz | 关 | 80 MHz | 未连接 |
-| 200 MHz | 开 | 80 MHz | 未连接 |
-| 80 MHz | 开 | 80 MHz | 未连接 |
-| 200 MHz | 关 | 40 MHz | 未连接 |
+```
+diag before: ext_ldo xpd = 1 0 0 0, mspi_phy_xpd=0 mpll500m_en=0
+```
 
-20 MHz 下也不应答，所以不是高速下的时序问题。
+2 号通道是关的，PSRAM 的物理层和锁相环也都没上电。打开它之后，同一个驱动立刻
+正常：
 
-继续排查的结果（2026-11-24，按所有者要求核对板卡配置与厂商资料）：
+```
+diag after:  ext_ldo xpd = 1 0 0 1, mspi_phy_xpd=0 mpll500m_en=0
+D (hex_psram): exp_data: 0x5a6b7c8d      ← 读回与写入一致
+I (hex_psram): vendor id : 0x0d (AP)   density : 0x07 (256 Mbit)   BitMode : X16 Mode
+```
 
-- **板级定义没有查出错误。** 厂商资料（gitee.com/osptek/esp32-p4c5-core-board）
-  写明“PSRAM：32 MB（ESP32-P4 片内叠封）”“Flash：16 MB（板载 NOR Flash）”，
-  芯片 v3.x，与本工程的板级定义一致。板级定义与上游带叠封 PSRAM 的板子
-  （waveshare P4 套件、esp32p4x_function_ev_board）在相关项上逐项一致：同一个
-  SoC dtsi、同一芯片修订档位、400 MHz、16 MB 闪存、HEX 模式。原理图 PDF 不在
-  本机；厂商仓库只有封装库和两份使用指南，指南里关于 PSRAM 只有规格表的一行，
-  没有软件配置说明。
-- **打开厂商 HAL 的早期调试日志**（`CONFIG_ESP_HAL_EARLY_LOG_LEVEL=4`）后，
-  连接检测的那次读写是：`real_mpll_freq: 400000000`、
-  `exp_data: 0x3b3b3b3b`、`ref_data: 0x5a6b7c8d`。时钟正确；读回的是一个固定的
-  重复图案，既不是全 0 也不是全 1。
-- **ECC 残留被排除。** 上游 espressif/esp-idf 在 2026-09-28 有一条修复
-  （938833c3b8）：开启过 ECC 的镜像会在 MSPI 的 PSRAM 区域 0 留下 ECC 属性，
-  数字核复位后仍在；钉定的 HAL 没有这条修复。在 PSRAM 初始化之前读取并按
-  修复的做法清除这几个寄存器，结果是 `ecc16to18=0 addr_conv=0 pms_attr=27 27
-  27 27`，清除前后相同，PSRAM 仍然不应答。所以这条修复不适用于本板。
-- **片选信号能改变现象。** 按驱动自带的半睡眠唤醒方式拉一次片选后，驱动停在
-  第一次寄存器访问上，不再有读回值。这说明 PSRAM 的状态与上电默认不同，但
-  没有得出结论。这个实验用的寄存器操作没有留在仓库里。
+走 Zephyr 稳压器驱动（`CONFIG_REGULATOR=y` + 设备树声明）这条路不可用：它会
+把 PMU 时钟驱动一起带进镜像，而该驱动在这块板子上启动不起来（停在比诊断点更早
+的位置）。因此实验用 `platform/zephyr/tests/lua_vm/src/psram_power.c` 自己按
+ESP-IDF 的方式打开 2 号通道，等 200 µs 后再让内核初始化 PSRAM。
 
-到这里，能远程做的排查已经做完，原因未定。“断电重启”是区分“PSRAM 内部留有
-先前固件的状态”与“硬件或驱动不匹配”的最便宜的办法，但它是否必要并没有
-得到证明；到这一步为止对板子只做过复位。实验里走 PSRAM 的那段代码在真机上
-**没有验证过**。
+**与 ESP-IDF 6.1 的对照（同一块板）。** 按所有者要求在 `~/sdk/esp-idf-v6.1`
+安装了 ESP-IDF 6.1，并做了最小自检（`~/workspace/sandbox/esp-idf-psram-selftest`）：
+
+```
+I (hex_psram): vendor id : 0x0d (AP)   density : 0x07 (256 Mbit)   BitMode : X16 Mode
+I (269) esp_psram: Found 32MB PSRAM device
+I (269) esp_psram: Speed: 200MHz
+I (1151) esp_psram: SPI SRAM memory test OK
+
+psram initialized by the driver: 1
+psram size reported: 33554432 bytes
+allocated 31 blocks of 1 MB
+pattern check over 31 MB: 0 wrong words
+sequential write: 83.7 MB/s over 31 MB
+sequential read: 106.5 MB/s over 31 MB
+RESULT: PASS
+```
+
+ESP-IDF 下的 PSRAM 完全正常（32 MB 逐字写入读回零错误），说明硬件没有问题；
+Zephyr 侧缺的就是那一步供电。IDF 的驱动文件与本工程钉定的那份**逐行相同**
+（`esp_psram_impl_ap_hex.c`，605 行，只差一行日志级别），差别只在系统层与
+板级配置。
+
+**此前那些排除性结论，现在可以说明原因了**（都发生在 PSRAM 无电的状态下）：
+20/80/200 MHz、ECC 开关、闪存 80/40 MHz 六种配置同样失败，因为没有电；
+上游 2026-09-28 的 ECC 残留修复不适用（相关寄存器本来就是 0）；片选脉冲会改变
+现象但不能救活无电的芯片。**“需要断电重启”这一说法是错的**：ESP-IDF 成功初始化
+PSRAM 之后、同一块板没有断过电，紧接着刷入 Zephyr 镜像，读回的仍是
+`0x3b3b3b3b`；而只补上供电这一步、其余不变，Zephyr 立刻通过。
+
+**PSRAM 上的最终结果（Zephyr，真机）：**
+
+| 项 | 值 |
+| --- | --- |
+| PSRAM 识别 | vendor 0x0d（AP），density 0x07（256 Mbit = 32 MB），X16 模式，200 MHz |
+| 合同检查 | 失败掩码 0x0，全部通过 |
+| 内存配额 | 512 KB（合同上限）下 2 MB 申请被配额拦下，拒绝 2 次，已用 524,198 B |
+| 嵌套 C 调用到上限 200 的 C 栈深度 | **294,515 B**（精确值，窗口 512 KB 足够） |
+| 语法嵌套到上限 | 36,803 B |
+| 静态 HP SRAM | 90,380 / 786,432 B |
+| 静态 PSRAM | 3,146,368 / 33,554,432 B（含上游预留的 1 MB 共享堆） |
+| 总内存需求 | 3,236,748 / 34,340,864 B → 三档全部满足 |
+
+数据放在 PSRAM 的速度代价很小：解释器循环 5.95 秒（同样的测试在 SRAM 上是 5.70
+秒，约慢 4%），回挡测试 23.6 秒对 22.0 秒（约慢 7%）。
 
 ## 体积（ESP32-P4 交叉编译，-Os，5.5.1 全库）
 
@@ -224,13 +253,13 @@ not connected`，随后 `Failed to Initialize external RAM, aborting.`；Zephyr 
 
 ## 没有测的
 
-- PSRAM 上运行的速度：Lua 的数据、线程栈都在 PSRAM 时慢多少。真板上 PSRAM
-  尚未初始化成功。
+- PSRAM 上运行的速度：已测（解释器循环慢约 4%、回挡慢约 7%），但只有 Lua 这一个
+  负载；网络、TLS、flash 写入等负载没有在 PSRAM 上测过。
 - 32 位数字配置的体积与速度（现在可用 `-DLUA_32BITS` 选择）。
 - 配额下限：合同域是 1..512 KB，而状态加全部库基线已是 14 KB（推断几 KB 的
   配额打不开状态，未实测）。512 KB 的配额在 SRAM 上放不下，在 PSRAM 上还没
   能验证。
-- 上限 200 时 C 调用嵌套在真机上的精确深度：294 KB 是由线性斜率推算的。
+- 上限 200 时 C 调用嵌套在真机上的精确深度：已测（294,515 B）。
 - 最坏情况的 C 栈：只测了所列路径，不排除其他库函数每层更重。
 - 脚本线程与其他线程的调度关系、长时间运行、其他板子。
 
@@ -248,10 +277,11 @@ not connected`，随后 `Failed to Initialize external RAM, aborting.`；Zephyr 
 ## 真机过程
 
 烧录前把 16 MB 闪存完整备份到仓库之外（`/home/emb/project/entelea-board-backup/`，
-含校验和）；板上原先是一个 ESP-IDF v6.1 应用，已被测试镜像覆盖。SRAM 上共
-三次完整运行通过（上限 80、上限 200，以及改造为独立线程后的上限 200），
-每次约 215–225 秒；PSRAM 的六次尝试都在启动阶段失败。板上现在驻留的是最后
-那个 SRAM 镜像。
+含校验和）；板上原先是一个 ESP-IDF v6.1 应用，已被测试镜像覆盖。SRAM 上共三次
+完整运行通过（上限 80、上限 200，以及改造为独立线程后的上限 200），每次约
+215–225 秒；PSRAM 侧先失败六次（原因见“PSRAM”一节），补上供电后两次通过：第一次
+是带临时诊断代码的镜像（228 秒），最后一次是正式版本（228 秒，失败掩码 0x0）。
+板上现在驻留的是最后那个 PSRAM 镜像，每次复位运行约 4 分钟。
 
 ## 需要所有者裁决
 
@@ -261,10 +291,11 @@ not connected`，随后 `Failed to Initialize external RAM, aborting.`；Zephyr 
 
 仍待裁决或需要所有者动手：
 
-1. **PSRAM 初始化不成功，原因未定**：板级定义与厂商资料核对无误，排查过程见
-   “PSRAM”一节。请给板子断一次电后让我重跑（区分状态残留与硬件/驱动不匹配
-   最便宜的办法）；或确认原先那个 ESP-IDF 固件是否正常使用过 PSRAM、用的是
-   哪种配置；或向厂商询问。
+1. **供电的修法要不要进板级定义**：现在由实验代码
+   `platform/zephyr/tests/lua_vm/src/psram_power.c` 打开 2 号 LDO 通道。板级定义的
+   正规做法是在设备树里声明 `ldo2@2`（1.8 V、开机即开、常开）并开启稳压器驱动
+   ——但那条路在这块板子上带进 PMU 时钟驱动后启动不起来。请决定是继续在应用侧
+   供电（把限制记在案上），还是另找一条板级做法。
 2. **PSRAM 的用量红线**：先前的裁决是“启用即新批、要定新红线”。栈和堆放进
    PSRAM 后 SRAM 占用降到 90 KB，PSRAM 用量规则还没有定。
 3. **脚本线程的栈**：在 PSRAM 可用之前，按上限 200 需要约 300 KB 的栈，产品

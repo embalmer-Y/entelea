@@ -76,6 +76,10 @@ target_sources(app PRIVATE
 if(NOT CONFIG_BOARD_NATIVE_SIM)
   target_sources(app PRIVATE src/no_fs_stubs.c)
 endif()
+# The board definition does not power the PSRAM; see src/psram_power.c.
+if(CONFIG_ESP_SPIRAM)
+  target_sources(app PRIVATE src/psram_power.c)
+endif()
 target_link_libraries(app PRIVATE entelea_lua)
 target_compile_definitions(app PRIVATE ENTELEA_TEST=1
   LUA_VM_MAXCCALLS=${LUA_VM_MAXCCALLS} LUA_VM_HEAP_KB=${LUA_VM_HEAP_KB}

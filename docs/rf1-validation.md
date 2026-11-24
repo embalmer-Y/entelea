@@ -518,6 +518,44 @@ PSRAM，改完重新评估。前一条已记入包合同 D03 的“执行预算�
   片选脉冲会改变现象。原因未定。排查用的寄存器操作没有留在仓库里，钉定的
   HAL 与 Zephyr 没有改动（检查器核对通过），板子已恢复为已验证的 SRAM 镜像。
 
+### PSRAM 根因定位与 ESP-IDF 6.1 对照（2026-11-24，按所有者要求）
+
+所有者要求在 `~/sdk` 安装 ESP-IDF 6.1 并烧录最小测试验证 PSRAM，同时核对板卡
+配置是否写错。
+
+- **ESP-IDF v6.1 安装**：`~/sdk/esp-idf-v6.1`（上游标签 v6.1，提交
+  `fff9895c82d744c7237be8847347bdd1b07c6643`，与 GitHub 上带签名的标签对象
+  核对一致；主仓库取自 Espressif 的 Gitee 官方镜像，28 个子模块全部检出到
+  上层仓库钉定的提交）；工具链与 Python 环境在 `~/toolchain/esp-idf-v6.1`
+  （riscv32-esp-elf-gcc 15.2.0，Python 3.12.16），`activate.sh` 一键加载。
+  子模块中只有 WiFi 库需要走代理（直连 18 KB/s，代理约 1.9 MB/s）。
+- **最小自检**（`~/workspace/sandbox/esp-idf-psram-selftest`）：构建退出码 0，
+  烧录退出码 0，串口输出 `Found 32MB PSRAM device`、`Speed: 200MHz`、
+  `SPI SRAM memory test OK`，自检结果 `RESULT: PASS`——32 MB 逐字写入读回零错误，
+  顺序写 83.7 MB/s、读 106.5 MB/s。**硬件没有问题。**
+- **对照实验**：ESP-IDF 成功初始化 PSRAM 之后，板子没有断过电，紧接着刷入
+  Zephyr 的 PSRAM 镜像，读回的仍是 `0x3b3b3b3b`。“需要断电重启”这一说法被否定。
+- **根因**：叠封 PSRAM 与其锁相环由芯片内部 LDO 通道 2（1.8 V）供电。ESP-IDF
+  默认在 `esp_clk_tree_mpll_acquire()` 里打开该通道；Zephyr 移植层编译同一份
+  代码时不带这些选项，改为由板级设备树声明该通道为稳压器。上游带叠封 PSRAM
+  的板子（waveshare P4 套件、esp32p4x_function_ev_board）都在设备树里声明
+  `ldo2@2`（1.8 V、开机即开、常开）并默认开启稳压器驱动；**本工程的板级定义
+  两者都没有**，PSRAM 无电，驱动的每次读回都是固定图案。寄存器证据：初始化前
+  `ext_ldo xpd = 1 0 0 0`（2 号通道关）、`mspi_phy_xpd=0 mpll500m_en=0`。
+- **修法**：走 Zephyr 稳压器驱动这条路会带进 PMU 时钟驱动，而它在这块板子上
+  启动不起来。实验因此新增 `platform/zephyr/tests/lua_vm/src/psram_power.c`，
+  在内核初始化 PSRAM 之前一步按 ESP-IDF 的方式打开 2 号通道并等 200 µs。补上
+  后：驱动报 `exp_data: 0x5a6b7c8d`（读回与写入一致）、`vendor id 0x0d (AP)`、
+  `density 0x07 (256 Mbit)`、`X16 Mode`，`PSRAM initialized 1`，
+  `failed mask=0x0`（228 秒）。
+- **新的实测值**：内存配额 512 KB（合同上限）在真机上验证通过（拒绝 2 次，已用
+  524,198 B）；嵌套 C 调用到上限 200 的 C 栈深度精确为 294,515 B；静态 HP SRAM
+  90,380 B、静态 PSRAM 3,146,368 B、总内存需求 3,236,748 B，按三档红线全部满足。
+  数据放在 PSRAM 的速度代价：解释器循环约慢 4%，回挡约慢 7%。
+- 钉定的 Zephyr 与厂商 HAL 未改动（`check_dependencies.py` 核对通过）；排查用的
+  临时寄存器操作没有留在仓库里。
+
+
 ## 对照原规划和批准修订
 
 | 批次 | 当前范围与未完成项 |
@@ -601,9 +639,9 @@ cd /home/emb/project/entelea
    Forge 产品隔离/版本锚点及 SDK 产物方向的后续范围；若需要不可信
    原生扩展，同步决定进程隔离及身份传递边界。Lua 一侧已裁决依赖版本
    （5.5.1）、嵌套上限（保持 200）、沙箱库（尽可能开放）、首期不施加步数
-   预算与 C 代码约束，并已上板；分配改用 PSRAM 的新批受阻于真板上 PSRAM
-   不应答。仍待裁决的（PSRAM 用量红线、PSRAM 可用前脚本线程栈的安排、
-   文件加载、数字类型等）见 [docs/lua-feasibility.md](lua-feasibility.md)。
+   预算与 C 代码约束，并已上板；分配改用 PSRAM 的新批已实测可用（根因与修法见
+   下节）。仍待裁决的（PSRAM 的用量红线、供电修法是否进板级定义、文件加载、
+   数字类型等）见 [docs/lua-feasibility.md](lua-feasibility.md)。
 5. 硬件授权后单独规定负载、测量仪器、触发条件与停止阈值，再验证
    当前源码的物理停止、真复位、掉电与长期运行。历史日志不足以
    代替此验收。

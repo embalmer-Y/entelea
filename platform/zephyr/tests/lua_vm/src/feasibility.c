@@ -76,12 +76,16 @@ BUILD_ASSERT(LUA_VM_QUOTA_KB <= LUA_VM_HEAP_KB, "quota larger than the heap");
 #define FEAS_HEAP_SECTION __attribute__((section(".ext_ram_noinit.feas_heap")))
 #define FEAS_STACK_SECTION \
 	__attribute__((section(".ext_ram_noinit.feas_stack")))
+/* The heap object is initialized at run time here, so its buffer address is
+ * known from the buffer itself. */
+#define FEAS_HEAP_BUFFER ((void *) feas_heap_buf)
 static uint8_t FEAS_HEAP_SECTION feas_heap_buf[FEAS_HEAP_BYTES];
 static struct k_heap feas_heap;
 static Z_KERNEL_STACK_DEFINE_IN(feas_stack, FEAS_STACK_BYTES,
 				FEAS_STACK_SECTION);
 #else
 #define FEAS_IN_PSRAM 0
+#define FEAS_HEAP_BUFFER (feas_heap.heap.init_mem)
 static K_HEAP_DEFINE(feas_heap, FEAS_HEAP_BYTES);
 static K_THREAD_STACK_DEFINE(feas_stack, FEAS_STACK_BYTES);
 #endif
@@ -438,9 +442,8 @@ feas_body(void)
 	printk("[lua-feas] layout: harness thread stack %p (%u bytes), "
 	       "interpreter heap %p (%u bytes), in PSRAM: %d\n",
 	       (void *) feas_stack,
-	       (uint32_t) K_THREAD_STACK_SIZEOF(feas_stack),
-	       feas_heap.heap.init_mem, (uint32_t) FEAS_HEAP_BYTES,
-	       FEAS_IN_PSRAM);
+	       (uint32_t) K_THREAD_STACK_SIZEOF(feas_stack), FEAS_HEAP_BUFFER,
+	       (uint32_t) FEAS_HEAP_BYTES, FEAS_IN_PSRAM);
 #if FEAS_IN_PSRAM
 	printk("[lua-feas] layout: PSRAM initialized %d, reported size %u "
 	       "bytes\n",

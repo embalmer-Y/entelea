@@ -68,6 +68,7 @@
     "platform/zephyr/tests/lua_vm/src/main.c",
     "platform/zephyr/tests/lua_vm/src/feasibility.c",
     "platform/zephyr/tests/lua_vm/src/no_fs_stubs.c",
+    "platform/zephyr/tests/lua_vm/src/psram_power.c",
     "platform/linux/clock.c",
     "platform/linux/host_main.c",
     "platform/linux/zephyr_shim.c",
