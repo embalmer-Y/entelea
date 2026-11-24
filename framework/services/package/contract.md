@@ -71,14 +71,19 @@
   宿主注入的 principal 裁决**（R04 `entelea_perm_check` 面）；
   脚本传入值不可构造/转呈身份，未授权=E_PERM（不崩溃）；授权
   判定与内存/执行预算闸同序先行。机制面由 Wasm 代表 native
-  （`entelea_wasm_test_probe_decide`）佐证；Lua 侧同一形状随正式
-  运行支持批（D03 后续）落地实测。
+  （`entelea_wasm_test_probe_decide`）佐证；Lua 侧同一形状已在真实
+  解释器的可行性实验中实测（见 docs/lua-feasibility.md）。
 - **工厂产物描述**：确定性编码，与 Forge build_manifest 逐字节一致：
   map(4){0:version,1:mem_kb,2:steps,3:fmt(lua=1)}，int 键升序、整数
   最短编码；域外或未知版本/格式 = PARAM（RF1 前该编码为畸形 CBOR）。
-- **如实边界**：无解释器依赖（未批准新依赖）；当前测试为 C 预算桩，
-  不证明实际 Lua VM 的资源、计量或中断可行性。D03 要求的关键可行性
-  仍需真实运行时验证，正式 Lua 支持尚未交付。
+- **如实边界**：产品镜像没有解释器依赖（未批准新依赖）。可选实验
+  `platform/zephyr/tests/lua_vm` 在 Zephyr 内把上述内存闸、步数闸和
+  宿主调用接到钉定的真实 Lua 5.4.9 上（native_sim 运行，板级只交叉
+  编译），结果与边界见
+  [docs/lua-feasibility.md](../../../docs/lua-feasibility.md)：配额与
+  步数闸按合同生效，但步数闸不约束 C 代码、计数钩子有 2.6× 以上的
+  吞吐代价、C 栈开销由 `LUAI_MAXCCALLS` 决定（出厂 200 时约 260 KB）。
+  正式 Lua 运行支持尚未交付；板上的栈、堆与耗时均未实测。
 
 ## 未测与边界
 
