@@ -239,6 +239,77 @@ Lua 的 SRAM 量测镜像（638,448 B）不满足紧凑档；Lua 的 PSRAM 镜�
 `CONFIG_ESP_SPIRAM`：所有者“有 PSRAM 则必须开启”这条裁决目前只在 Lua 量测
 镜像上落实，产品镜像的启用与内存布局属于 6.4 的后续工作。
 
+### 6.6 malloc 与动态内存：调研与链接级验证（2026-11-24，未上板）
+
+所有者要求先调研 `malloc` 的解决方案。以下均为读钉定源码、反汇编已构建的镜像、
+以及在全新构建目录里**只编译不烧录**得到的结论；运行期行为都还没有在真板上验证。
+实验源码与日志在仓库外的 `~/workspace/sandbox/malloc-research/`。
+
+**现状：这块板上有四套互不相通的动态内存。**
+
+| 池 | 接口 | 现在在哪 | 大小 | 谁在用（按最终镜像的反汇编） |
+| --- | --- | --- | ---: | --- |
+| libc 堆 | `malloc`/`realloc`/`free`/`calloc` | `_end` 到 `_heap_sentry` 的剩余 SRAM | 161,216 B（cloud）到 551,744 B（minimal） | 几乎没人：三个产品镜像里实际使用的只有 nanopb 的 `realloc`/`free`；`hw_wifi_netmon` 连 `malloc` 都没链接进来 |
+| 内核堆 | `k_malloc`/`k_calloc` | `.noinit` 段里的静态数组 | 131 KB（cloud、wifi） | HAL 的中断分配、flash 地址映射、定时器；`getaddrinfo`；网络缓冲 |
+| 共享多堆窗口 | `shared_multi_heap_alloc(SMH_REG_ATTR_EXTERNAL)` | PSRAM | 默认 1 MB（`CONFIG_ESP_SPIRAM_HEAP_SIZE`） | 现有产品镜像无人使用 |
+| 各模块自带的静态池 | 模块内部 | SRAM | TLS 64 KB、WAMR 256 KB、`net_pkt` 等 | mbedtls、WAMR、网络协议栈 |
+
+产品镜像链接的本工程代码（`framework/`、`platform/`）不调用任何动态分配接口（Lua
+量测用的是自建的专用堆，不在产品镜像里）。
+
+两点容易想错的地方：
+
+- **HAL 的 `heap_caps_*` 在 Zephyr 移植里不看 `caps` 参数**（`heap_caps_zephyr.c`），
+  要 PSRAM 还是 DMA 内存都一律 `k_malloc`，落在 SRAM 的内核堆。ESP-IDF 那套按能力
+  分配的堆在这份移植里并不存在。
+- **libc `malloc` 不是 SRAM 紧张的原因**。它现在几乎没人用，搬进 PSRAM 解决的是
+  “大块动态内存用不上 PSRAM”，腾不出多少 SRAM；SRAM 里的大头是上表第 2、4 行。
+
+**把 libc 堆放进 PSRAM：两条路，都在链接级验证过。**
+
+1. **静态堆区加链接片段**（实验 E1，成立）。`CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE`
+   取正数时，堆区是 `lib/libc/common/source/stdlib/malloc.c` 里唯一的 `.noinit` 对象；
+   用 `zephyr_linker_sources(RAM_SECTIONS …)` 加一个四行片段把它收进
+   `ext_dram_seg` 即可（`RAM_SECTIONS` 片段排在 SRAM 的 `.dram0.noinit` 之前，先匹配
+   到）。实测 16 MB 的堆区落在 0x48000000，钉定的 Zephyr 一行未改。库内部对
+   `malloc` 的调用不用管，调用的仍是原生实现。代价：堆区大小在链接时定死并计入
+   静态需求；没有 SRAM 回退。
+2. **两个堆加策略函数**（实验 E2）。在应用里直接定义 `malloc` **行不通**：Zephyr
+   第一遍链接（`zephyr_pre0.elf`）把所有 Zephyr 库放进 `--whole-archive`，同名
+   定义必然冲突。可行的做法是 `-Wl,--wrap=malloc/free/realloc/aligned_alloc` 加
+   `sys_multi_heap`（`CONFIG_MULTI_HEAP`），按策略选 SRAM 池或 PSRAM 池。反汇编
+   确认 picolibc 内部（`strdup`、`asprintf`）和 Zephyr 的 `calloc`、`reallocarray`
+   都转到了新入口；picolibc 的全部分配入口最终只落到 `malloc`、`free`、`realloc`。
+   代价：多约 140 行分配器代码，依赖链接器的 `--wrap`；漏掉某个入口不会报错，而是
+   两个分配器并存。
+
+**TLS 堆不需要自己想办法。** 上游已有 `CONFIG_MBEDTLS_HEAP_CUSTOM_SECTION`，配合
+`CONFIG_ESP_SPIRAM=y` 即进 PSRAM。在 `hw_cloud_chat` 上的链接结果（只编译）：TLS 堆落在
+0x48000000，静态 SRAM 从 481,660 降到 425,612 B，三档全过。
+
+**落实时必须知道的约束。**
+
+- **启动时序**。从镜像的初始化表读出的顺序是：`statics_init`（所有
+  `K_HEAP_DEFINE` 的统一初始化，PRE_KERNEL_1 优先级 30）→ `esp32p4_psram_init`
+  （优先级 40）→ `malloc_prepare`（POST_KERNEL 35）→ TLS 堆初始化（POST_KERNEL
+  40）。所以 libc 堆和 TLS 堆进 PSRAM 是安全的；而任何 `K_HEAP_DEFINE` 的缓冲区
+  若放进 PSRAM，会在 PSRAM 映射之前被初始化。Lua 实验没出事是因为它自己在线程里
+  显式调了 `k_heap_init`。
+- **SDIO 缓冲必须在 SRAM**。Zephyr 的 SDHC 驱动对不在 `0x4ff00000`–`0x4ffc0000`
+  的数据缓冲直接返回参数错误（`ESP_ERR_INVALID_ARG`），没有中转；esp_hosted 驱动用的是自己的静态缓冲，
+  不受分配器影响。芯片能力表声明 PSRAM 可被 DMA 访问（SPI、GDMA、LCD 等），但
+  那是另一条路径。
+- **flash 读写用 PSRAM 缓冲不会出错但会变慢**：cache 关闭期间只有 DRAM 可读，
+  `esp_flash_read` 经临时 DRAM 缓冲中转，`esp_flash_write` 每次只从栈上搬 32 字节。
+- **映射范围**：HAL 在初始化时一次性映射整块可用 PSRAM（代码如此），但真机证据
+  只覆盖到前 3 MB 左右，更大范围要用到时应先实测。
+- 全新构建目录构建带 nanopb 的镜像时，`.venv/bin` 必须在 PATH 最前（生成步骤需要
+  其中的 grpcio-tools），见 `build-support/README.md`。
+
+上游方面：钉定的 Zephyr 里没有“libc 堆进外部内存”的现成选项（读源码确认）；
+网络检索到上游有一个相关议题（#120445）和一次讨论（#68568），页面未能打开核对，
+合并状态未知。
+
 ## 7. 厂商资料与硬件连接核对（2026-11-24）
 
 所有者要求从 Gitee 取该板资料（含原理图）核对硬件连接并完善 Zephyr 配置。
