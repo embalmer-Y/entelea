@@ -466,7 +466,8 @@ ZTEST(framework_pkg, test_lua_payload_ident)
 {
 	static const uint8_t lua53[] = { 0x1b, 'L', 'u', 'a', 0x53 };
 	static const uint8_t lua54[] = { 0x1b, 'L', 'u', 'a', 0x54 };
-	static const uint8_t wasm[] = { 0x00, 0x61, 0x73, 0x6d, 0x01, 0x00 };
+	static const uint8_t lua55[] = { 0x1b, 'L', 'u', 'a', 0x55 };
+	static const uint8_t wasm[] = { 0x00, 0x61, 0x73, 0x6d, 01, 0x00 };
 	entelea_lua_payload_info_t info;
 
 	zassert_equal(entelea_lua_payload_ident(lua53, sizeof(lua53), &info),
@@ -476,6 +477,10 @@ ZTEST(framework_pkg, test_lua_payload_ident)
 	zassert_equal(entelea_lua_payload_ident(lua54, sizeof(lua54), &info),
 		      ENTELEA_OK);
 	zassert_equal(info.version, 0x54);
+	/* 钉定的解释器是 5.5（owner 2026-11-24 裁决：以最新版本为准）。 */
+	zassert_equal(entelea_lua_payload_ident(lua55, sizeof(lua55), &info),
+		      ENTELEA_OK);
+	zassert_equal(info.version, 0x55);
 	/* 非 Lua 载荷（含 Wasm magic）fail-closed——不得按后缀/默认解释。 */
 	zassert_equal(entelea_lua_payload_ident(wasm, sizeof(wasm), &info),
 		      ENTELEA_E_INVALID_SIG);

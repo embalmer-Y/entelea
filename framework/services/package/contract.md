@@ -57,7 +57,7 @@
 
 ## D03 Lua 接入合同（关键可行性验证——不冒充正式支持）
 
-- **载荷识别**："\x1bLua"+版本字节（5.3=0x53/5.4=0x54）字节级识别；
+- **载荷识别**："\x1bLua"+版本字节（5.3=0x53/5.4=0x54/5.5=0x55）字节级识别；
   非 Lua 载荷 fail-closed（不默认解释为 Wasm、不按后缀推断权限）。
 - **内存预算**：每实例配额 + 分配闸（lua_Allocator 挂点语义——
   alloc/realloc/free 钩子；超配额拒+计数；实例隔离=独立配额）。
@@ -76,14 +76,20 @@
 - **工厂产物描述**：确定性编码，与 Forge build_manifest 逐字节一致：
   map(4){0:version,1:mem_kb,2:steps,3:fmt(lua=1)}，int 键升序、整数
   最短编码；域外或未知版本/格式 = PARAM（RF1 前该编码为畸形 CBOR）。
-- **如实边界**：产品镜像没有解释器依赖（未批准新依赖）。可选实验
-  `platform/zephyr/tests/lua_vm` 在 Zephyr 内把上述内存闸、步数闸和
-  宿主调用接到钉定的真实 Lua 5.4.9 上（native_sim 运行，板级只交叉
-  编译），结果与边界见
+- **沙箱面**（owner 2026-11-24 裁决：标准库尽可能开放）：base、
+  coroutine、table、string、math、utf8、io、os、package 向脚本开放；
+  不开放 `debug`（实测它能拆掉步数预算）；`os.exit` 与 `os.execute`
+  移除（它们作用于整个固件，而不是脚本）；文件加载（`dofile`/
+  `loadfile`）在实验中保持关闭，是否作为定论待确认。
+- **如实边界**：产品镜像目前不链接解释器；钉定的依赖是 Lua 5.5.1
+  （owner 裁决：以最新版本为准）。可选实验 `platform/zephyr/tests/lua_vm`
+  在 Zephyr 内把上述内存闸、步数闸和宿主调用接到它上面，已在
+  native_sim 与 ESP32-P4 真板上通过；结果与边界见
   [docs/lua-feasibility.md](../../../docs/lua-feasibility.md)：配额与
-  步数闸按合同生效，但步数闸不约束 C 代码、计数钩子有 2.6× 以上的
-  吞吐代价、C 栈开销由 `LUAI_MAXCCALLS` 决定（出厂 200 时约 260 KB）。
-  正式 Lua 运行支持尚未交付；板上的栈、堆与耗时均未实测。
+  步数闸按合同生效，但解释器须用专用内核堆（板级镜像的 libc malloc
+  只受剩余 SRAM 约束）、步数闸不约束 C 代码、计数钩子有约 2.6× 的
+  吞吐代价、C 栈开销由 `LUAI_MAXCCALLS` 决定（出厂 200，已裁决保持；
+  真机上约 294 KB）。正式 Lua 运行支持尚未交付。
 
 ## 未测与边界
 

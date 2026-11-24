@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * D03 Lua feasibility: the integration contract exercised on the real Lua
- * 5.4.9 interpreter inside Zephyr (pinned source, feasibility only; no
- * production dependency is approved). The mechanism stubs of
+ * D03 Lua feasibility: the integration contract exercised on the real, pinned
+ * Lua interpreter inside Zephyr (unmodified source, feasibility only; no
+ * production dependency is approved). The version is the one pinned in
+ * build-support/dependencies.json. The mechanism stubs of
  * lua_feasibility.c are attached to the points they stand in for:
  *   - the memory gate becomes the accounting of a real lua_Allocator,
  *   - the step gate becomes a lua_sethook count hook,
@@ -43,12 +44,23 @@
 #define FEAS_FAIL_C_STACK (1u << 14)
 #define FEAS_FAIL_FATAL (1u << 31)
 
-#define FEAS_QUOTA (256u * 1024u)
+#define FEAS_QUOTA (LUA_VM_QUOTA_KB * 1024u)
 #define FEAS_STEPS 100000000u
 #define FEAS_NESTED_MAX (LUA_VM_MAXCCALLS + 50)
 /* Syntax nesting below and above the interpreter's C-call limit. */
 #define FEAS_SYNTAX_OK (LUA_VM_MAXCCALLS - 10)
 #define FEAS_SYNTAX_OVER (LUA_VM_MAXCCALLS + 50)
+
+/* The interpreter runs on a dedicated kernel heap. On a board the libc heap
+ * is whatever SRAM the image leaves unused: no Kconfig option bounds it, so
+ * a quota on top of it would be limited by the image layout rather than by
+ * the contract. The quota never exceeds this heap.
+ */
+#define FEAS_HEAP_BYTES (LUA_VM_HEAP_KB * 1024u)
+
+BUILD_ASSERT(LUA_VM_QUOTA_KB <= LUA_VM_HEAP_KB, "quota larger than the heap");
+
+K_HEAP_DEFINE(feas_heap, FEAS_HEAP_BYTES);
 
 /* ---- C stack depth ----
  *
@@ -80,21 +92,21 @@ static void *
 feas_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
 {
 	struct feas_inst *in = ud;
-	size_t old_n = (ptr == NULL && osize < LUA_NUMTAGS) ? 0 : osize;
+	size_t old_n = (ptr == NULL && osize < LUA_NUMTYPES) ? 0 : osize;
 	void *got;
 
 	if (nsize == 0) {
 		(void) entelea_lua_mem_alloc(&in->mem, (uint32_t) old_n, 0);
-		free(ptr);
+		k_heap_free(&feas_heap, ptr);
 		return NULL;
 	}
 	if (!entelea_lua_mem_alloc(&in->mem, (uint32_t) old_n,
 				   (uint32_t) nsize)) {
 		return NULL; /* over quota: the VM takes its OOM path */
 	}
-	got = realloc(ptr, nsize);
+	got = k_heap_realloc(&feas_heap, ptr, nsize, K_NO_WAIT);
 	if (got == NULL) {
-		/* The system heap is exhausted although the quota allowed the
+		/* The heap is exhausted although the quota allowed the
 		 * request: give the bytes back to keep the accounting truthful. */
 		(void) entelea_lua_mem_alloc(&in->mem, (uint32_t) nsize,
 					     (uint32_t) old_n);
@@ -116,8 +128,9 @@ feas_hook(lua_State *L, lua_Debug *ar)
 	}
 }
 
-/* Opens only the libraries a sandbox may expose: no io, os or package
- * (file and module loading), no debug (it can replace the hook). */
+/* Every standard library is opened except debug, which can replace the hook
+ * (owner decision: open as much as possible). The two os functions that act
+ * on the whole process are removed by feas_open afterwards. */
 static void
 feas_open_safe_libs(lua_State *L)
 {
@@ -128,6 +141,9 @@ feas_open_safe_libs(lua_State *L)
 		{ LUA_STRLIBNAME, luaopen_string },
 		{ LUA_MATHLIBNAME, luaopen_math },
 		{ LUA_UTF8LIBNAME, luaopen_utf8 },
+		{ LUA_IOLIBNAME, luaopen_io },
+		{ LUA_OSLIBNAME, luaopen_os },
+		{ LUA_LOADLIBNAME, luaopen_package },
 		{ NULL, NULL },
 	};
 	const luaL_Reg *lib;
@@ -145,19 +161,30 @@ feas_remove_global(lua_State *L, const char *name)
 	lua_setglobal(L, name);
 }
 
+static void
+feas_remove_field(lua_State *L, const char *table, const char *field)
+{
+	lua_getglobal(L, table);
+	lua_pushnil(L);
+	lua_setfield(L, -2, field);
+	lua_pop(L, 1);
+}
+
 static struct feas_inst *
 feas_open(uint32_t quota_bytes, uint32_t steps, bool with_debug_lib)
 {
-	struct feas_inst *in = calloc(1, sizeof(*in));
+	struct feas_inst *in = k_heap_alloc(&feas_heap, sizeof(*in), K_NO_WAIT);
 
 	if (in == NULL) {
 		return NULL;
 	}
+	memset(in, 0, sizeof(*in));
 	(void) entelea_lua_mem_init(&in->mem, quota_bytes);
 	(void) entelea_lua_exec_init(&in->exec, steps);
-	in->L = lua_newstate(feas_alloc, in);
+	/* The seed only randomizes hash values. */
+	in->L = lua_newstate(feas_alloc, in, 0);
 	if (in->L == NULL) {
-		free(in);
+		k_heap_free(&feas_heap, in);
 		return NULL;
 	}
 	*(struct feas_inst **) lua_getextraspace(in->L) = in;
@@ -167,9 +194,15 @@ feas_open(uint32_t quota_bytes, uint32_t steps, bool with_debug_lib)
 		lua_pop(in->L, 1);
 	}
 	/* The base library is compiled in with its file loaders; a sandbox
-	 * removes them instead of patching the Lua sources. */
+	 * removes them instead of patching the Lua sources. They have nothing
+	 * to load without a filesystem, and a file, when one exists, must go
+	 * through the host's permission gate rather than around it. */
 	feas_remove_global(in->L, "dofile");
 	feas_remove_global(in->L, "loadfile");
+	/* os.exit calls the C exit() and os.execute the C system(): both act
+	 * on the whole firmware, not on the script. */
+	feas_remove_field(in->L, LUA_OSLIBNAME, "exit");
+	feas_remove_field(in->L, LUA_OSLIBNAME, "execute");
 	lua_sethook(in->L, feas_hook, LUA_MASKCOUNT, 1);
 	return in;
 }
@@ -178,7 +211,7 @@ static void
 feas_close(struct feas_inst *in)
 {
 	lua_close(in->L);
-	free(in);
+	k_heap_free(&feas_heap, in);
 }
 
 /* Runs a text chunk under a fresh step budget; returns the lua_pcall
@@ -367,6 +400,10 @@ entelea_lua_feasibility_run(void)
 
 	printk("[lua-feas] Lua %s, LUAI_MAXCCALLS=%d\n", LUA_VERSION,
 	       LUA_VM_MAXCCALLS);
+	printk("[lua-feas] heap: dedicated kernel heap of %u bytes, quota "
+	       "under "
+	       "test %d KB\n",
+	       (uint32_t) FEAS_HEAP_BYTES, LUA_VM_QUOTA_KB);
 
 	/* ---- 1. memory budget: accounting, baseline, quota ---- */
 	in = feas_open(FEAS_QUOTA, FEAS_STEPS, false);
@@ -541,16 +578,33 @@ entelea_lua_feasibility_run(void)
 
 	/* ---- 4. sandbox surface ---- */
 	in->exec.step_budget = 1000000u;
-	status = feas_run(in, "return dofile == nil and loadfile == nil and "
-			      "debug == nil and io == nil and os == nil and "
-			      "package == nil and require == nil");
-	printk("[lua-feas] sandbox: file, debug, io, os and package loaders "
-	       "absent status=%d result=%d\n",
+	status = feas_run(in,
+			  "return debug == nil and dofile == nil and "
+			  "loadfile == nil and os.exit == nil and "
+			  "os.execute == nil and io ~= nil and os ~= nil and "
+			  "package ~= nil");
+	printk("[lua-feas] sandbox: debug and the file loaders closed, os.exit "
+	       "and os.execute removed, io/os/package open status=%d "
+	       "result=%d\n",
 	       status, (int) lua_toboolean(in->L, -1));
 	if (status != LUA_OK || !feas_top_is(in->L, true)) {
 		failed |= FEAS_FAIL_SANDBOX_SURFACE;
 	}
 	lua_pop(in->L, 1);
+#if !defined(CONFIG_BOARD_NATIVE_SIM)
+	/* With the fail-closed stubs a board refuses to open any file. The
+	 * simulator has a real host filesystem behind io and os, so this is
+	 * asserted on boards only. */
+	in->exec.step_budget = 1000000u;
+	status = feas_run(in, "local f, err = io.open('entelea-probe', 'r') "
+			      "return f == nil and type(err) == 'string'");
+	printk("[lua-feas] sandbox: io.open refused status=%d result=%d\n",
+	       status, (int) lua_toboolean(in->L, -1));
+	if (status != LUA_OK || !feas_top_is(in->L, true)) {
+		failed |= FEAS_FAIL_SANDBOX_SURFACE;
+	}
+	lua_pop(in->L, 1);
+#endif
 
 	/* ---- 5. limits that end with an error, and the state survives ---- */
 	feas_build_nested(nested, sizeof(nested), FEAS_SYNTAX_OK);

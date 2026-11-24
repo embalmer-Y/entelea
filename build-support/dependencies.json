@@ -58,9 +58,9 @@
     },
     {
       "id": "lua",
-      "commit": "312b9efaa1061c2c4cad08554dbc1351c3270eef",
+      "commit": "7579fc9d7ed90240487251dfb69168f8e64e9294",
       "patches": [],
-      "note": "Lua 5.4.9 upstream source (owner decision D-L; host and native_sim feasibility only; MIT license in lua.h; checkout=entelea/.deps/lua; archive sha256 of git archive HEAD a7976b61a6e8ca9e4c8c37cd19c967ed4712db84f4f3f35fac6b4c6af9c70caa)"
+      "note": "Lua 5.5.1 upstream source (owner decision 2026-11-24: newest release, Zephyr only; supersedes the 5.4.9 pin 312b9ef of decision D-L; MIT license in lua.h; checkout=entelea/.deps/lua; archive sha256 of git archive HEAD 4ef7a99521d0d770c5424d2fd2268bd9ba4936690b10068b3b8619b7b97d495f)"
     },
     {
       "id": "esp_hosted_mcu",

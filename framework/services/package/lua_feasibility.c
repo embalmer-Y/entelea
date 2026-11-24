@@ -55,7 +55,7 @@ entelea_lua_payload_ident(const uint8_t *data, uint32_t len,
 		return ENTELEA_E_INVALID_SIG;
 	}
 	out->format = ENTELEA_LUA_FMT_BINARY;
-	out->version = data[4]; /* 0x53=5.3 / 0x54=5.4 (bytecode) */
+	out->version = data[4]; /* 0x53=5.3 / 0x54=5.4 / 0x55=5.5 (bytecode) */
 	return ENTELEA_OK;
 }
 

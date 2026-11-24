@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# D03 Lua feasibility on the real Lua 5.4.9 interpreter (pinned .deps/lua).
+# D03 Lua feasibility on the real, pinned Lua interpreter (.deps/lua).
 # Opt-in experiment, off by default:
 #   --cmake-arg=-DLUA_VM_FEASIBILITY=ON
 # It is not a Lua runtime and is never linked into a product image.
@@ -27,14 +27,15 @@ if(NOT lua_pinned EQUAL 0)
   message(FATAL_ERROR "pinned Lua checkout missing or modified: ${lua_out}")
 endif()
 
-# Core, auxiliary library and the libraries a script may use. Excluded on
-# purpose: liolib, loslib, loadlib and linit (io, os, package loading and the
-# open-everything entry) plus the standalone interpreters lua.c and onelua.c.
-# ldblib is compiled for the hazard demonstration only.
+# Core, auxiliary library and every standard library. Excluded on purpose:
+# linit (the open-everything entry; the harness opens the libraries itself)
+# plus the standalone interpreters lua.c and onelua.c. ldblib is compiled for
+# the hazard demonstration only; the harness never opens it for a sandbox.
 set(LUA_PARTS
   lapi lcode lctype ldebug ldo ldump lfunc lgc llex lmem lobject lopcodes
   lparser lstate lstring ltable ltm lundump lvm lzio lauxlib
-  lbaselib lcorolib lmathlib lstrlib ltablib lutf8lib ldblib)
+  lbaselib lcorolib lmathlib lstrlib ltablib lutf8lib ldblib
+  liolib loslib loadlib)
 set(LUA_SOURCES "")
 foreach(part IN LISTS LUA_PARTS)
   list(APPEND LUA_SOURCES ${LUA_DIR}/${part}.c)
@@ -44,6 +45,11 @@ endforeach()
 # is a compile-time choice of the interpreter, so a lower limit is measured
 # with it, not by editing the pinned sources.
 set(LUA_VM_MAXCCALLS 200 CACHE STRING "LUAI_MAXCCALLS of the pinned Lua (stock: 200)")
+# The interpreter runs on a dedicated kernel heap of LUA_VM_HEAP_KB, and the
+# harness checks a memory quota of LUA_VM_QUOTA_KB against it (never larger).
+# Both are static SRAM of the test image.
+set(LUA_VM_HEAP_KB 320 CACHE STRING "kernel heap under the interpreter, in KB")
+set(LUA_VM_QUOTA_KB 256 CACHE STRING "memory quota under test, in KB")
 
 zephyr_include_directories(${ENTELEA_ROOT}/framework/include ${LUA_DIR})
 zephyr_library_named(entelea_lua)
@@ -68,4 +74,5 @@ if(NOT CONFIG_BOARD_NATIVE_SIM)
 endif()
 target_link_libraries(app PRIVATE entelea_lua)
 target_compile_definitions(app PRIVATE ENTELEA_TEST=1
-  LUA_VM_MAXCCALLS=${LUA_VM_MAXCCALLS})
+  LUA_VM_MAXCCALLS=${LUA_VM_MAXCCALLS} LUA_VM_HEAP_KB=${LUA_VM_HEAP_KB}
+  LUA_VM_QUOTA_KB=${LUA_VM_QUOTA_KB})
