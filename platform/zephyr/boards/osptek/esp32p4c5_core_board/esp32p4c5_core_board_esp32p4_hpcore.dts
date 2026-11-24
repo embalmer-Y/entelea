@@ -3,21 +3,34 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * Osptek ESP32-P4C5 Core Board (HP core) — ESP32-P4 + ESP32-C5 companion.
+ * Osptek ESP32-P4C5 module on the Osptek ESP32P4 base carrier (HP core) —
+ * ESP32-P4 + ESP32-C5 companion.
  * Adapted from in-tree waveshare/esp32p4_wifi6_dev_kit (same P4 SoC family).
- * Board facts (osptek docs + esptool probe 2026-10-30): 16MB NOR flash,
- * 32MB embedded PSRAM, CH343 USB-UART bridge on UART0 (GPIO37/38),
- * ESP32-P4 rev v3.2 (the Zephyr SoC revision selected by
- * Kconfig.esp32p4c5_core_board is REV_3_1). No on-board LED/buttons
- * (88-pin stamp core board).
- * C5 companion wiring (c5-p4-connection.png, row-aligned + esp-hosted
- * slot convention cross-check with waveshare C6 board): SDIO pads
- * P4 GPIO14/15/16/17/18/19 = D0/D1/D2/D3/CLK/CMD, reset P4 GPIO54 ->
- * C5 CHIP_PU (= &gpio1 22 in the gpio1 controller 32-base numbering,
- * same companion-reset convention as the waveshare C6 reference),
+ *
+ * Vendor material this definition was checked against (2026-11-24):
+ *   - gitee.com/osptek/esp32-p4c5-core-board: 88-pin table
+ *     (pages/引脚定义.md), module Altium symbol library, PCB library, 3D model.
+ *   - gitee.com/osptek/devboard-esp32p4c5_module: carrier schematic
+ *     docs/ESP32-P4C5-Module_Schematic_V1.5.pdf (Ver 1.5, 2026-08-29,
+ *     sheet "ESP32P4模组基础底板"), PoE-Ethernet adapter schematic V1.2,
+ *     and the prebuilt C5 firmware ESP32-C5_ESP-Hosted_v2.12.9 (flash 0x0).
+ *   The module's own schematic is not published (the core-board user guide
+ *   says "5. 原理图 暂无"), so the module pin table is the pin source.
+ *
+ * Board facts: 16MB NOR flash, 32MB embedded PSRAM, CH343 USB-UART bridge on
+ * UART0 (GPIO37 TXD / GPIO38 RXD), ESP32-P4 rev v3.2 (the Zephyr SoC
+ * revision selected by Kconfig.esp32p4c5_core_board is REV_3_1). No on-board
+ * LED/buttons: the carrier's LEDs belong to the display FPC and BOOT/RST are
+ * the CH343's auto-download circuits, not mechanical switches.
+ *
+ * C5 companion wiring (vendor c5-p4-connection.png + carrier schematic):
+ * SDIO pads P4 GPIO14/15/16/17/18/19 = D0/D1/D2/D3/CLK/CMD, reset P4 GPIO54 ->
+ * C5 CHIP_PU (= &gpio1 22 in the gpio1 controller 32-base numbering),
  * handshake P4 GPIO6 <-> C5 GPIO2 (not modeled by the current
  * esp_hosted_mcu binding). Enabled: C5 runs an esp-hosted 3.x slave
- * firmware (owner-confirmed 2026-10-30) matching the driver contract.
+ * firmware (owner-confirmed 2026-10-30) matching the driver contract — note
+ * the vendor's prebuilt C5 binary is classic ESP-Hosted v2.12.9, which is a
+ * different firmware line and must not be flashed over the MCU build.
  * Required pinned-driver patches are listed in build-support/README.md and
  * build-support/dependencies.json; network validation boundaries are in
  * docs/rf1-validation.md. Enumeration alone does not establish scan,
@@ -122,6 +135,12 @@
  * esp32p4_wifi6_dev_kit, espressif esp32p4x_function_ev_board). Without the
  * declaration the rail stays off and every PSRAM read returns 0x3b3b3b3b.
  * Channel 1 (3.3 V) is the SPI NOR flash rail the ROM already enables.
+ *
+ * Channels 3 and 4 stay off. The regulator driver enables every child node
+ * that is left "okay", so they are disabled explicitly: the carrier routes
+ * neither (the module exposes only VO4 on pin 66, unrouted on the carrier
+ * schematic V1.5, and VO3 is not exposed at all), and the ROM leaves both
+ * off after reset.
  */
 &ldo {
 	status = "okay";
@@ -141,6 +160,14 @@
 		regulator-boot-on;
 		regulator-always-on;
 	};
+
+	ldo3@3 {
+		status = "disabled";
+	};
+
+	ldo4@4 {
+		status = "disabled";
+	};
 };
 
 &sdhc {
@@ -150,14 +177,18 @@
 		 * GPIO matrix（LL：仅 slot1 支持）——sdhc_esp32 走
 		 * configure_pin_iomux 对本组焊盘套 SDMMC func0；焊盘**角色**
 		 * 由 func0 硬连线决定（CLK=GPIO43=SD1_CCLK、CMD=GPIO44=
-		 * SD1_CCMD、D3..D0=GPIO42..39，与原理图 600DPI 直读、核心板
-		 * 88-pin 焊盘复用表一致）。r14 真机对拍：clk/cmd 值互换两轮
+		 * SD1_CCMD、D3..D0=GPIO42..39，与核心板 88-pin 焊盘复用表
+		 * 一致，2026-11-24 又与底板原理图 V1.5 的 TF_CARD 块逐脚核对：
+		 * DATA0=GPIO39/DATA1=GPIO40/DATA2=GPIO41/DATA3=GPIO42、
+		 * CMD=GPIO44/CLK=GPIO43，数据与命令线各有 10K 上拉）。
+		 * r14 真机对拍：clk/cmd 值互换两轮
 		 * sd_init 均 PASS（角色不随属性标签走）、属性全删即
 		 * INIT_FAIL(-ENOTSUP=焊盘未使能)——即属性决定"使能哪组焊盘"
 		 * （必须正确），clk/cmd 语义标签不路由信号；标签保持与物理
-		 * 一致防误读。SD_DET=GPIO45（外部 10K 上拉+插卡开关断开）
-		 * 无 binding cd 面——应用层读（ACTIVE_HIGH：卡在位=1，r14
-		 * 真机实证）。 */
+		 * 一致防误读。SD_DET=GPIO45（卡座 SWITCH 脚 9，外部 10K 上拉，
+		 * 底板原理图 V1.5 一致）无 binding cd 面——应用层读
+		 * （ACTIVE_HIGH：卡在位=1，r14 真机实证：插卡后卡座开关断开、
+		 * 物理高电平）。 */
 		bus-width = <4>;
 		max-bus-freq = <DT_FREQ_M(40)>;
 		clk-pin = <43>;

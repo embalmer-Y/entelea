@@ -219,3 +219,50 @@ Lua 的增量是真机验证过的组合：线程栈 320 KB、解释器堆 192 K
 Lua 的 SRAM 量测镜像（638,448 B）不满足紧凑档；Lua 的 PSRAM 镜像（SRAM
 90,524 B + PSRAM 3,146,368 B，总内存 34,340,864 B）三档都满足。
 
+## 7. 厂商资料与硬件连接核对（2026-11-24）
+
+所有者要求从 Gitee 取该板资料（含原理图）核对硬件连接并完善 Zephyr 配置。
+资料（仓库在仓库外，资料本身按其 CC BY 4.0 声明引用）：
+
+| 来源 | 内容 |
+| --- | --- |
+| `gitee.com/osptek/esp32-p4c5-core-board` | 核心板 88-pin 引脚定义表（`pages/引脚定义.md`，与核心板使用指南第 3.2 节同源）、模组 Altium 符号库 `.SchLib`、封装库 `.PcbLib`、3D 模型 |
+| `gitee.com/osptek/devboard-esp32p4c5_module` | **底板原理图** `docs/ESP32-P4C5-Module_Schematic_V1.5.pdf`（Ver 1.5，2026-08-29，图页名“ESP32P4模组基础底板”）、V1.3 旧版、PoE-以太网适配板原理图 V1.2、C5 预编译固件 `ESP32-C5_ESP-Hosted_v2.12.9_merged_0x0.bin` |
+
+**核心板自身的原理图厂商未公开**（核心板使用指南第 5 节写“原理图 暂无”），
+所以核心板引脚以官方引脚定义表为准，底板连线以 V1.5 原理图为准。
+
+逐项核对结果（本板 Zephyr 定义 ↔ 原理图/引脚表）：
+
+| 功能 | 厂商资料 | 本板 Zephyr 定义 | 结论 |
+| --- | --- | --- | --- |
+| PSRAM 与其 PLL 供电 | 内部 LDO 通道 2（1.8 V）；ESP-IDF 默认打开 | 设备树 `ldo2@2` + `CONFIG_REGULATOR=y`（上游做法） | 一致，已真机验证 |
+| 闪存供电 | 内部 LDO 通道 1（3.3 V，ROM 上电即开） | `ldo1@1` 3.3 V | 一致 |
+| LDO 通道 3/4 | 模组只把 VO4 引到 66 脚，底板未接；VO3 未引出 | 显式 `status = "disabled"`（稳压器驱动会给所有默认 okay 的子节点上电） | 一致 |
+| 调试串口 | CH343（U9）：TXD→GPIO38（P4 的 RXD）、收 GPIO37（P4 的 TXD）；BOOT=GPIO35，CHIP_PU 由 CH343 的 DTR/RTS 驱动，GPIO36 10K 上拉 | `uart0_default` TX=GPIO37 / RX=GPIO38 | 一致 |
+| TF 卡 | 卡座 TF-123-ARP9H17：DATA0..3=GPIO39..42、CMD=GPIO44、CLK=GPIO43、SWITCH(9)=GPIO45（外部 10K 上拉）；数据/命令线各 10K 上拉 | `sdhc0` clk=43/cmd=44/d0..3=39..42；DET 由应用层读 GPIO45（ACTIVE_HIGH，r14 真机实证：插卡后开关断开、物理高） | 一致 |
+| C5 配套 | 厂商 `c5-p4-connection.png`：SDIO D0..3=GPIO14..17、CLK=18、CMD=19；P4 GPIO54→C5 CHIP_PU；P4 GPIO6↔C5 GPIO2 | `sdhc1` clk=18/cmd=19/d0..3=14..17；reset GPIO54（gpio1 22） | 一致 |
+| 音频编解码 | ES8311（U11）：MCLK=GPIO13、SCLK=GPIO12、LRCK=GPIO10、DSDIN=GPIO9、ASDOUT=GPIO11、I2C SDA=GPIO7/SCL=GPIO8、CE 接地；功放 NS4150B 的 STD=GPIO53（网络名 PACTRL） | `i2s0_default`、`i2c0_default` 与之一致 | 一致（`&i2s0` 仍关闭，阻塞在 Zephyr 侧 GDMA 缺陷，不是本板配置问题） |
+| RTC 备份电 | 84 脚 RTC_VBAT，底板接 +3V3 | 未使用（LP 域另计） | 一致 |
+
+底板上**存在但本板定义未建模**的连接（需要时再开，不属当前产品范围）：
+
+| 连接 | 引脚 | 备注 |
+| --- | --- | --- |
+| I3C 总线 | SDA=GPIO33、SCL=GPIO32 | 1.8 V 电平转换（TXS0102），供 CSI 摄像头 |
+| MIPI CSI | CSI_D0/D1、CSI_CLK，RST=GPIO26 | SC2336 / OV2710 摄像头排线 |
+| MIPI DSI | DSI_D0/D1、DSI_CLK | 显示排线；`LCD_BL`=GPIO20、`TP_INT`=GPIO21 |
+| 原生 USB | Type-C 经 TS3USB221 切换，USB HOST 口带 H5VND5B 防护 | 模组 48/49 脚标为 USB_D_N/USB_D_P；本板控制台用 CH343，未建模 |
+| 以太网 | 无板载 PHY | 只有 PoE-以太网适配板（单独原理图 V1.2） |
+| 指示灯 | 板载无 | VLED±/LEDA/LEDK 属于显示排线上的屏 |
+| 按键 | 板载无机械按键 | BOOT/ESP_RST 由 CH343 的 DTR/RTS 自动控制 |
+
+两点需要留意：
+
+1. 厂商随底板仓库发布的 C5 预编译固件是**经典 ESP-Hosted v2.12.9**（烧 0x0），
+   与本工程自编译的 **esp-hosted-mcu 3.x** 不是同一条线，版本契约也不同；不要用
+   厂商二进制覆盖当前可用的 C5 固件。
+2. 底板原理图 V1.5 相对本板定义成文的 V1.3 只在标注与版本号上变化，本文所引
+   连线在两版中一致（2026-11-24 逐脚核对 V1.5 的 TF_CARD、USB TO UART、Audio
+   CODEC、P4/C6 下载切换、MIPI 五个功能块）。
+

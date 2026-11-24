@@ -10,6 +10,11 @@
 
 &pinctrl {
 	uart0_default: uart0_default {
+		/* Carrier schematic V1.5, USB TO UART block: the CH343 bridge
+		 * (U9) drives DBG_TXD -> GPIO38 (the P4's UART0 RXD) and reads
+		 * GPIO37 (the P4's UART0 TXD) on DBG_RXD; the same block drives
+		 * the P4 reset (CHIP_PU) and BOOT (GPIO35) for auto-download,
+		 * GPIO36 is pulled up 10K. */
 		group1 {
 			pinmux = <UART0_TX_GPIO37>;
 			output-high;
@@ -23,11 +28,13 @@
 
 	i2s0_default: i2s0_default {
 		group1 {
-			/* 原理图 PDF 高分辨率渲染逐引脚核读（底板 V1.3 Audio
-			 * CODEC U11 ES8311）：MCLK=GPIO13/SCLK=GPIO12/LRCK=
-			 * GPIO10/DSDIN (P4 出)=GPIO9/ASDOUT (P4 收)=GPIO11，
-			 * PA(STD)=GPIO53——2026-10-30 定案（两轮低清误读 21/20/
-			 * 12/11/13 与 23/22/20/21/26 均废） */
+			/* Carrier schematic V1.5, Audio CODEC block (U11 ES8311):
+			 * MCLK=GPIO13, SCLK=GPIO12, LRCK=GPIO10, DSDIN (P4 out,
+			 * codec input)=GPIO9, ASDOUT (codec out, P4 in)=GPIO11;
+			 * the codec's I2C is SDA=GPIO7 / SCL=GPIO8 and the PA
+			 * (NS4150B) enable is GPIO53 (net PACTRL). Confirmed
+			 * against the vendor PDF 2026-11-24 — the earlier
+			 * 2026-10-30 reading of carrier V1.3 said the same. */
 			pinmux = <I2S0_MCLK_GPIO13>, <I2S0_O_BCK_GPIO12>,
 				 <I2S0_O_WS_GPIO10>, <I2S0_O_SD_GPIO9>;
 		};
@@ -39,6 +46,9 @@
 
 	i2c0_default: i2c0_default {
 		group1 {
+			/* Carrier schematic V1.5: ES8311 CCLK=GPIO8 (I2C_SCL_GPIO8),
+			 * CDATA=GPIO7 (I2C_SDA_GPIO7); the codec's CE is tied to
+			 * ground, so the part is always enabled. */
 			pinmux = <I2C0_SDA_GPIO7>,
 				 <I2C0_SCL_GPIO8>;
 			bias-pull-up;
