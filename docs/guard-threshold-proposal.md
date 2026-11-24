@@ -40,11 +40,11 @@
 
 | 项 | 建议值 | 依据/验收方法 |
 |---|---|---|
-| 链接期静态 SRAM（.dram0.bss+noinit+各栈） | **≤540 KB（70%）**（owner 2026-11-24 裁决改为三档红线、按总内存需求定义；原三档定义不在仓库内，定案前本值继续生效） | 实测最大镜像（真云）403KB=52.5%；70% 红线留 30% 余量。[B] 断言=构建脚本读 map 求和，超线 FAIL（一次性脚本，随批入 tools/） |
+| 内存红线（三档，按总内存） | **最低** M − D ≥ 64 KB；**紧凑** D ≤ 0.70 M；**宽松** D ≤ 0.50 M（owner 2026-11-24 定案） | M = 内部 SRAM + 已启用的 PSRAM；D = 链接期落在两者里的输出段之和（数据、bss/noinit、各栈、各堆池）。镜像默认须满足紧凑档，等于本标准之前在本板上的严格程度；[B] 已落地：`tools/check_board_ram.py` 读 map 求和并逐档判定，不满足 `--tier` 指定的档即 FAIL。取代原“静态 SRAM ≤540 KB（70%）”。按本板实测的评估见 [板级资源表 §6.5](board-osptek-p4c5-resource-budget.md) |
 | 运行时内核堆余量 | **≥64 KB**（k_heap 128KB 的一半） | [B] 验收批加 heap 使用打印（k_malloc 水位快照）；无持续监测前以链接期红线为主闸 |
 | mbedtls 会话堆 | 64 KB（现有配置冻结） | r15 实测跑通；收窄实验留优化批（动它不保守） |
 | 栈（已定案冻结） | main 32K/tcp_work 8K/esp_hosted event 16K/sysworkq+RX 4K/ISR 2K | r15 攻坚定案值，board 表 §3 |
-| PSRAM | 有 PSRAM 则**必须开启**（owner 2026-11-24） | 推翻“首期不启用”。布局：内部 SRAM 只放驱动固定缓冲区、内核核心、main 线程栈等，其余全部放 PSRAM。三档红线与用量数值待定；真板上 PSRAM 尚未初始化成功，见 [板级资源表 §6](board-osptek-p4c5-resource-budget.md) |
+| PSRAM | 有 PSRAM 则**必须开启**（owner 2026-11-24） | 推翻“首期不启用”。布局：内部 SRAM 只放驱动固定缓冲区、内核核心、main 线程栈等，其余全部放 PSRAM。尚未落实：真板上 PSRAM 初始化不成功，原因未定，见 [板级资源表 §6](board-osptek-p4c5-resource-budget.md) |
 
 ## 6. 指令与队列 [A+B]
 
