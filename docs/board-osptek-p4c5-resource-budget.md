@@ -93,3 +93,62 @@ r15-cloud 的约 403 KB 只列出了两个数据段，不是整个静态 HP SRAM
 6. **mbedtls 4.x on Zephyr**：符号名与 3.x 习惯不同（无 MBEDTLS_SSL/
    KEY_EXCHANGE_ALL 聚合符号；PROTO_TLS1_3/X509_CRT_PARSE/PEM_PARSE_C
    逐项开）；PSA 依赖链 PSA_CRYPTO→PROVIDER_MBEDTLS→BUILTIN。
+
+## 6. PSRAM 与内存布局（owner 2026-11-24 裁决，尚未落实）
+
+裁决（见规划 10.6）：有 PSRAM 则必须开启；有 PSRAM 时内部 SRAM 只放驱动
+固定缓冲区、内核核心、main 线程栈等，其余全部放 PSRAM；内存红线改为三档
+（最低、紧凑、宽松），按总内存需求定义。原三档定义不在仓库及其历史中，
+三档的口径与数值待所有者定案，现有单一红线在定案前继续生效。
+
+### 6.1 落实布局前必须先核实的技术约束
+
+“SRAM 只留内核、驱动缓冲和 main 栈”不能只按对象的归属来分，下面几类
+数据即使属于“其他”也必须或可能必须留在 SRAM：
+
+1. **flash 写擦期间的代码与数据**。XIP 镜像做 flash 写擦时 flash cache 会
+   关闭，这段时间要运行的代码（flash 驱动及其调用链）和它碰的数据必须在
+   IRAM/SRAM。执行 flash 写入的线程，其栈也在这段时间被使用：除非真板上
+   证实 PSRAM cache 不随 flash 操作关闭，这类线程的栈不能放 PSRAM。
+2. **中断处理触碰的数据**。中断处理运行在 SRAM 的中断栈上，它访问的对象
+   须在 SRAM，或同样满足上一条。
+3. **DMA 缓冲**。取决于 DMA 主设备能否访问 PSRAM。SoC 能力表声明 PSRAM
+   可被 DMA 访问，但 esp_hosted 的 SDIO 缓冲等须逐项核实。
+4. **性能**。热路径数据放进 PSRAM 会变慢，幅度未测。
+
+以上四条都还没有在真板上验证过，因为 PSRAM 尚未初始化成功（见
+[lua-feasibility.md](lua-feasibility.md)：六种配置均报 PSRAM 未连接，板子
+尚未断过电）。
+
+### 6.2 现状：静态 HP SRAM 的构成（按库，输入段求和）
+
+| 镜像 | 输出段合计 | 构成 |
+|---|---:|---|
+| hw_cloud_chat | 481,648 | 内核库 187,298（内核堆池 131,426；main 栈所在的 `init.c.obj` 38,608；系统工作队列栈 5,118）；网络协议栈 80,194（`net_pkt` 54,432）；mbedtls 堆 65,544；HAL/SoC/驱动 48,154；应用 19,301（通道表 17,952）；esp_hosted 核心 18,372 |
+| hw_factory_intake | 449,268 | 应用 291,477（Wasm 宿主 262,161、通道表 17,952、存储 8,372）；HAL/SoC/驱动 41,741；内核 25,382 |
+| hw_wifi_netmon | 280,120 | 内核 158,981（内核堆池 131,422）；HAL/SoC/驱动 48,132；网络协议栈 25,704；应用 18,998；esp_hosted 核心 5,372 |
+
+按裁决的原则，这三个镜像里可挪进 PSRAM 的（各类堆、网络缓冲、应用数据、
+非 main 线程栈）占了大部分；真正要留下的内核代码、驱动数据、esp_hosted
+缓冲和 main 栈合计估计在 160–180 KB 量级。这是估计，未实测。
+
+### 6.3 链接层实验（hw_cloud_chat，仅构建参数，未改源码，未运行）
+
+启用 `CONFIG_ESP_SPIRAM=y`，并用上游的 `CONFIG_ESP_SPIRAM_BSS_RELOC_LIBS_AND_OBJS`
+把应用、网络、TLS 各库以及 `mempool.c.obj`、`system_work_q.c.obj` 的 `.bss`
+指定进 PSRAM：交叉编译退出码 0，`check_board_ram.py` 通过，静态 HP SRAM
+从 481,648 降到 **366,592** B，`.dram0.noinit` 仍有 270,948 B，PSRAM 的
+`.ext_ram.data` 为 1,173,072 B（含上游预留的 1 MB 共享堆）。
+
+结论：上游现成机制**只能搬 `.bss`**。线程栈、内核堆池、网络缓冲这些大头在
+Zephyr 里是 `.noinit` 对象，需要另行处理（链接片段或段属性）；libc 的
+`malloc` 也没有被接到 PSRAM 上，要改走 PSRAM 的堆。
+
+### 6.4 落实顺序
+
+1. 真板上 PSRAM 初始化成功（待所有者给板子断电，或确认硬件与原固件配置）。
+2. 在真板上核实 6.1 的四条约束。
+3. 落实布局：`.noinit` 对象与线程栈进 PSRAM、libc `malloc` 改走 PSRAM 堆，
+   逐镜像实测 SRAM 与 PSRAM 的占用。
+4. 按布局后的实测值定三档红线的口径与数值，改 `tools/check_board_ram.py`。
+
