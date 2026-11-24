@@ -78,6 +78,29 @@ nanopb 生成步骤由 `#!/usr/bin/env python3` 启动的包装脚本执行，�
 当前 Zephyr 仅来自上文 `.deps/zephyrproject` 的固定提交与 west 模块。
 外部 ESP-IDF 与 C5 产物仍在 `/home/emb/project/deps/`（仓库外，路径已写入脚本与清单）。
 
+## 烧录与存储分区
+
+所有者裁决（2026-11-24）：**烧录产品镜像之前先擦除存储分区**；框架对 META
+与 KV 的失效保护语义不变。
+
+- 参考板的存储分区是 `0x120000` 起 1 MB（设备树 `storage_partition`）。里面
+  若留着别的固件的数据（出厂新板、跑过厂商演示固件的板子），镜像能启动，但
+  试用状态按损坏处理、守卫日额与活动包读不出来，业务不运行。原因与验证见
+  [rf1-validation.md](../docs/rf1-validation.md)“启动缺陷修复的验证记录”。
+- 先擦存储分区，再按 `factory/forge/gate/gate_run.sh` 板级阶段的参数烧录。
+  esptool 用构建入口生成的垫片 `build/.toolbin/esptool`（传入
+  `--esptool-python` 时生成），或 `.venv` 里的 `python -m esptool`：
+
+  ```sh
+  esptool --chip esp32p4 -p <端口> erase-region 0x120000 0x100000
+  ```
+
+- 适用范围：五个产品镜像（`minimal`、`hw_flash_persist`、`hw_wifi_netmon`、
+  `hw_factory_intake`、`hw_cloud_chat`）。不碰存储分区的测试镜像不需要。
+  工厂闸的板级阶段已带这一步。
+- 擦除会清掉设备上的持久状态：试用与稳定集、模型日额、审计环、信任表、配置
+  与包槽。需要保留时先读回到仓库之外再擦。
+
 ## 来源与核验
 
 [固定依赖](dependencies.json)涵盖已采用的 Zephyr/Wasm 目标的

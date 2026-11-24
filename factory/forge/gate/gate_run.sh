@@ -2,6 +2,8 @@
 # D-3/D-4 工厂闭环闸驱动：native_sim 全链 → 板级烧录真机证据。
 # 用法：[RUN=run004] [MODE=product|dev] gate_run.sh [nsim|board|all]（默认 nsim）
 # board/all 另需 ENTELEA_HARDWARE_AUTH=1（使用前须获得所有者真机授权）。
+# board 阶段烧录前会擦除设备的存储分区（0x120000 起 1 MB；owner 2026-11-24
+# 规程，见 build-support/README.md“烧录与存储分区”）。
 # RF1：product（默认）= 无自动确认，超时后槽持续受门拒；dev =
 # FACTORY_DEV_AUTOCONFIRM=ON 执行夹具（无用户验收效力）。
 # nsim 阶段两模式都跑；board 阶段按 MODE。
@@ -99,7 +101,7 @@ board() {
   fi
   local run_dir
   run_dir="$(mktemp -d "${TMPDIR:-/tmp}/entelea-gate-board-XXXXXXXX")" || return 1
-  echo "== [gate] 板级构建+烧录+监听 =="
+  echo "== [gate] 板级构建+擦存储分区+烧录+监听 =="
   cd "$ENTELEA" || exit 1
   python3 tools/build_zephyr.py \
     --app platform/zephyr/apps/hw_factory_intake \
@@ -115,6 +117,12 @@ board() {
     --cmake-arg="$(mode_arg "$MODE")" \
     --cmake-arg=-DFACTORY_PKG_HEADER=$ENTELEA/factory/forge/artifacts/$RUN/factory_pkg.h \
     > "$run_dir/build.log" 2>&1 || { tail -20 "$run_dir/build.log"; return 1; }
+  # 产品镜像落板之前先擦存储分区（owner 2026-11-24；规程见 build-support/README.md
+  # “烧录与存储分区”）。分区里留着别的固件的数据时启动能过，但试用状态与 KV
+  # 会按失效保护拒绝，本闸第一项检查就会失败。擦除清掉设备上的持久状态。
+  "$ESPTOOL" --chip esp32p4 -p /dev/ttyACM0 -b 921600 \
+    erase-region 0x120000 0x100000 \
+    > "$run_dir/erase.log" 2>&1 || { tail -10 "$run_dir/erase.log"; return 1; }
   "$ESPTOOL" --chip esp32p4 -p /dev/ttyACM0 -b 921600 \
     --before default_reset --after hard_reset \
     write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB \
