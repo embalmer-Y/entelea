@@ -18,10 +18,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <zephyr/kernel.h>
+#include <zephyr/kernel/thread_stack.h>
 #include <zephyr/sys/printk.h>
 #include <entelea/lua_contract.h>
 #include <entelea/principal.h>
 #include "feasibility.h"
+
+#if defined(CONFIG_ESP_SPIRAM)
+#include <esp_psram.h>
+#endif
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -57,10 +62,40 @@
  * the contract. The quota never exceeds this heap.
  */
 #define FEAS_HEAP_BYTES (LUA_VM_HEAP_KB * 1024u)
+#define FEAS_STACK_BYTES (LUA_VM_STACK_KB * 1024u)
 
 BUILD_ASSERT(LUA_VM_QUOTA_KB <= LUA_VM_HEAP_KB, "quota larger than the heap");
 
-K_HEAP_DEFINE(feas_heap, FEAS_HEAP_BYTES);
+/* With PSRAM enabled (CONFIG_ESP_SPIRAM) the interpreter's heap buffer and
+ * the harness thread's stack are placed in PSRAM by linker section; without
+ * it both are ordinary static objects. The harness runs on its own thread
+ * so that its stack can be placed like that.
+ */
+#if defined(CONFIG_ESP_SPIRAM)
+#define FEAS_IN_PSRAM 1
+#define FEAS_HEAP_SECTION __attribute__((section(".ext_ram_noinit.feas_heap")))
+#define FEAS_STACK_SECTION \
+	__attribute__((section(".ext_ram_noinit.feas_stack")))
+static uint8_t FEAS_HEAP_SECTION feas_heap_buf[FEAS_HEAP_BYTES];
+static struct k_heap feas_heap;
+static Z_KERNEL_STACK_DEFINE_IN(feas_stack, FEAS_STACK_BYTES,
+				FEAS_STACK_SECTION);
+#else
+#define FEAS_IN_PSRAM 0
+static K_HEAP_DEFINE(feas_heap, FEAS_HEAP_BYTES);
+static K_THREAD_STACK_DEFINE(feas_stack, FEAS_STACK_BYTES);
+#endif
+static struct k_thread feas_thread;
+
+static void
+feas_heap_init(void)
+{
+#if FEAS_IN_PSRAM
+	/* The noinit section is not cleared at boot. sys_heap_init writes the
+	 * headers it needs and relies on nothing else in the buffer. */
+	k_heap_init(&feas_heap, feas_heap_buf, sizeof(feas_heap_buf));
+#endif
+}
 
 /* ---- C stack depth ----
  *
@@ -69,13 +104,13 @@ K_HEAP_DEFINE(feas_heap, FEAS_HEAP_BYTES);
  * kept in the Zephyr stack buffer rather than stack use. This measures
  * directly: the area below the stack pointer is painted before a chunk runs
  * and the deepest overwritten byte is located afterwards. The window is half
- * of the test thread's stack, which is also the limit of what can be
+ * of the harness thread's stack, which is also the limit of what can be
  * reported: a depth equal to the window means "at least".
  */
-#define FEAS_STACK_WINDOW (CONFIG_ZTEST_STACK_SIZE / 2)
+#define FEAS_STACK_WINDOW (FEAS_STACK_BYTES / 2)
 #define FEAS_STACK_MARK 0x5a
 
-BUILD_ASSERT(CONFIG_ZTEST_STACK_SIZE >= 16384, "C-stack window too small");
+BUILD_ASSERT(LUA_VM_STACK_KB >= 64, "C-stack window too small");
 
 /* ---- instance: one interpreter with its own memory and step budgets ---- */
 
@@ -373,8 +408,8 @@ feas_backtrack(struct feas_inst *in, unsigned items, int64_t *elapsed_us,
 	return status;
 }
 
-uint32_t
-entelea_lua_feasibility_run(void)
+static uint32_t
+feas_body(void)
 {
 	static const char typical[] =
 		"local t = {} for i = 1, 1000 do t[i] = i * i end "
@@ -400,10 +435,19 @@ entelea_lua_feasibility_run(void)
 
 	printk("[lua-feas] Lua %s, LUAI_MAXCCALLS=%d\n", LUA_VERSION,
 	       LUA_VM_MAXCCALLS);
-	printk("[lua-feas] heap: dedicated kernel heap of %u bytes, quota "
-	       "under "
-	       "test %d KB\n",
-	       (uint32_t) FEAS_HEAP_BYTES, LUA_VM_QUOTA_KB);
+	printk("[lua-feas] layout: harness thread stack %p (%u bytes), "
+	       "interpreter heap %p (%u bytes), in PSRAM: %d\n",
+	       (void *) feas_stack,
+	       (uint32_t) K_THREAD_STACK_SIZEOF(feas_stack),
+	       feas_heap.heap.init_mem, (uint32_t) FEAS_HEAP_BYTES,
+	       FEAS_IN_PSRAM);
+#if FEAS_IN_PSRAM
+	printk("[lua-feas] layout: PSRAM initialized %d, reported size %u "
+	       "bytes\n",
+	       (int) esp_psram_is_initialized(),
+	       (uint32_t) esp_psram_get_size());
+#endif
+	printk("[lua-feas] heap: quota under test %d KB\n", LUA_VM_QUOTA_KB);
 
 	/* ---- 1. memory budget: accounting, baseline, quota ---- */
 	in = feas_open(FEAS_QUOTA, FEAS_STEPS, false);
@@ -735,10 +779,34 @@ entelea_lua_feasibility_run(void)
 	       deepest >= FEAS_STACK_WINDOW ? "at least " : "", deepest,
 	       (size_t) FEAS_STACK_WINDOW);
 	/* A saturated window is a lower bound, not a failed measurement:
-	 * CONFIG_ZTEST_STACK_SIZE is doubled to resolve it. */
+	 * LUA_VM_STACK_KB is doubled to resolve it. */
 	if (deepest == 0) {
 		failed |= FEAS_FAIL_C_STACK;
 	}
 	printk("[lua-feas] failed mask=0x%x\n", failed);
 	return failed;
+}
+
+static uint32_t feas_result = FEAS_FAIL_FATAL;
+
+static void
+feas_entry(void *arg1, void *arg2, void *arg3)
+{
+	ARG_UNUSED(arg1);
+	ARG_UNUSED(arg2);
+	ARG_UNUSED(arg3);
+	feas_result = feas_body();
+}
+
+uint32_t
+entelea_lua_feasibility_run(void)
+{
+	feas_heap_init();
+	/* The harness thread takes the priority of its caller. */
+	k_thread_create(&feas_thread, feas_stack,
+			K_THREAD_STACK_SIZEOF(feas_stack), feas_entry, NULL,
+			NULL, NULL, k_thread_priority_get(k_current_get()), 0,
+			K_NO_WAIT);
+	(void) k_thread_join(&feas_thread, K_FOREVER);
+	return feas_result;
 }

@@ -47,9 +47,13 @@ endforeach()
 set(LUA_VM_MAXCCALLS 200 CACHE STRING "LUAI_MAXCCALLS of the pinned Lua (stock: 200)")
 # The interpreter runs on a dedicated kernel heap of LUA_VM_HEAP_KB, and the
 # harness checks a memory quota of LUA_VM_QUOTA_KB against it (never larger).
-# Both are static SRAM of the test image.
+# The harness runs on its own thread with a stack of LUA_VM_STACK_KB: Lua's
+# parser and C-level nesting use the C stack, and the stock nesting limit of
+# 200 needs about 294 KB of it on the ESP32-P4. With CONFIG_ESP_SPIRAM=y the
+# heap buffer and that stack are placed in PSRAM.
 set(LUA_VM_HEAP_KB 320 CACHE STRING "kernel heap under the interpreter, in KB")
 set(LUA_VM_QUOTA_KB 256 CACHE STRING "memory quota under test, in KB")
+set(LUA_VM_STACK_KB 1024 CACHE STRING "stack of the harness thread, in KB")
 
 zephyr_include_directories(${ENTELEA_ROOT}/framework/include ${LUA_DIR})
 zephyr_library_named(entelea_lua)
@@ -75,4 +79,4 @@ endif()
 target_link_libraries(app PRIVATE entelea_lua)
 target_compile_definitions(app PRIVATE ENTELEA_TEST=1
   LUA_VM_MAXCCALLS=${LUA_VM_MAXCCALLS} LUA_VM_HEAP_KB=${LUA_VM_HEAP_KB}
-  LUA_VM_QUOTA_KB=${LUA_VM_QUOTA_KB})
+  LUA_VM_QUOTA_KB=${LUA_VM_QUOTA_KB} LUA_VM_STACK_KB=${LUA_VM_STACK_KB})

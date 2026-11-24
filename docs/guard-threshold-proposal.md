@@ -44,7 +44,7 @@
 | 运行时内核堆余量 | **≥64 KB**（k_heap 128KB 的一半） | [B] 验收批加 heap 使用打印（k_malloc 水位快照）；无持续监测前以链接期红线为主闸 |
 | mbedtls 会话堆 | 64 KB（现有配置冻结） | r15 实测跑通；收窄实验留优化批（动它不保守） |
 | 栈（已定案冻结） | main 32K/tcp_work 8K/esp_hosted event 16K/sysworkq+RX 4K/ISR 2K | r15 攻坚定案值，board 表 §3 |
-| PSRAM | 首期**不启用** | A-1 论证不依赖；启用=新批+新红线 |
+| PSRAM | 首期**不启用** | A-1 论证不依赖；启用=新批+新红线。2026-11-24 owner 裁决 Lua 的分配改用 PSRAM：新批已开始，红线待定；真板上 PSRAM 尚未初始化成功，见 [lua-feasibility.md](lua-feasibility.md) |
 
 ## 6. 指令与队列 [A+B]
 

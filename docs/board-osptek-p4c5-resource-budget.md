@@ -13,7 +13,7 @@
 | HP SRAM（sramhp@0x4ff00000） | 768 KB | 主运行 RAM（dram0 段+noinit 从中划） |
 | 其中 nocache 窗（sramhp_nocache） | 16 KB | DMA 一致性窗口（PMA 非 cache 映射） |
 | LP SRAM | 32 KB | LP 域；仅 guard 的复位风暴计数使用 retained RAM（`guardretained`），其余未用 |
-| PSRAM（psram0，叠封） | 32 MB | **Zephyr 面未启用**（esp32p4 无上游 SPIRAM 堆集成；A-1 论证后不依赖） |
+| PSRAM（psram0，叠封） | 32 MB | **Zephyr 镜像未启用**。所钉定的 Zephyr 4.5 带有 ESP32-P4 的 PSRAM 支持（`CONFIG_ESP_SPIRAM`），此前“无上游集成”的说法不成立。2026-11-24 首次启用尝试（owner 裁决 Lua 的分配改用 PSRAM）：镜像可链接，静态 HP SRAM 从 638,448 B 降到 90,380 B，但真板上 PSRAM 不应答，见 [lua-feasibility.md](lua-feasibility.md) |
 | NOR flash（boya） | 16 MB | 分区表 0x2000 布局（storage 1MB@0x120000） |
 | RTC VBAT | — | 88-pin pad 84（严禁悬空，接 3.3V） |
 
