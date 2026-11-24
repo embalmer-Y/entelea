@@ -662,5 +662,6 @@ R02-R12 各验证文档"自行决策（建议值，待追认）"节所列全部�
 | 其他边界 | Linux 维持仅合同测试与诊断；旧格式处置追认现状；撤销/解绑/擦除先出合同草案；首期不做真实媒体；补回适用的旧机械安全检查 |
 | 质量债 | 三处空断言换成真实断言；为安全、存储、配置相关的未测公共函数补直接单测；补三处覆盖缺口；清理重复源列表 |
 | Lua（owner 2026-11-24） | 依赖以最新版本为准（钉定 5.5.1）；嵌套上限保持 200；标准库尽可能开放；首期不施加步数预算、不约束 C 代码；分配改用 PSRAM；上板测试已授权并执行。真板上 PSRAM 已初始化成功（512 KB 配额、嵌套 C 调用 200 层、失败掩码 0x0），见 docs/lua-feasibility.md |
+| ESP-IDF 6.1（owner 2026-11-24） | 所有者要求在家目录的 SDK 目录安装 ESP-IDF 6.1 并烧录最小自检验证 PSRAM，这是对 11-23“不装 ESP-IDF”的一次性例外，仅用于对照厂商行为与最小自检。安装在仓库外（`~/sdk/espressif-esp32p4/esp-idf-v6.1`，工具链在 `~/toolchain/esp-idf-v6.1`），**不是本工程的构建依赖**：固件构建仍只走钉定的 Zephyr 与 hal_espressif，`build-support/dependencies.json` 未因此改动 |
 | 内存红线（owner 2026-11-24） | 改为三档（最低、紧凑、宽松），按总内存需求定义。“原先的三档定义”不在仓库及其全部历史中，owner 补充：评估不限于本芯片，按芯片总内存（内部 SRAM + 已启用的 PSRAM）进行，并确认按评估表定案：最低 M − D ≥ 64 KB、紧凑 D ≤ 0.70 M、宽松 D ≤ 0.50 M。已落地于 tools/check_board_ram.py（镜像默认须满足紧凑档），评估见 docs/board-osptek-p4c5-resource-budget.md §6.5 |
 | PSRAM 与内存布局（owner 2026-11-24） | 有 PSRAM 则必须开启；有 PSRAM 时内部 SRAM 只放驱动固定缓冲区、内核核心、main 线程栈等，其余全部放 PSRAM。2026-11-24 已实测可用：根因是板级定义漏了叠封 PSRAM 的供电（芯片内部 LDO 通道 2），已按上游做法补进板级定义（设备树 `ldo2@2` + `CONFIG_REGULATOR=y`）并真机验证，Zephyr 与 ESP-IDF 6.1 均正常。上游现成机制仍只能搬动 `.bss`，`.noinit` 对象须另行处理。见 docs/board-osptek-p4c5-resource-budget.md §6 | PSRAM 的用量红线待定；`.noinit` 对象与 libc `malloc` 进 PSRAM 的落实待做。 |

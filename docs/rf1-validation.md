@@ -523,7 +523,7 @@ PSRAM，改完重新评估。前一条已记入包合同 D03 的“执行预算�
 所有者要求在 `~/sdk` 安装 ESP-IDF 6.1 并烧录最小测试验证 PSRAM，同时核对板卡
 配置是否写错。
 
-- **ESP-IDF v6.1 安装**：`~/sdk/esp-idf-v6.1`（上游标签 v6.1，提交
+- **ESP-IDF v6.1 安装**：`~/sdk/espressif-esp32p4/esp-idf-v6.1`（上游标签 v6.1，提交
   `fff9895c82d744c7237be8847347bdd1b07c6643`，与 GitHub 上带签名的标签对象
   核对一致；主仓库取自 Espressif 的 Gitee 官方镜像，28 个子模块全部检出到
   上层仓库钉定的提交）；工具链与 Python 环境在 `~/toolchain/esp-idf-v6.1`
@@ -646,8 +646,9 @@ cd /home/emb/project/entelea
    原生扩展，同步决定进程隔离及身份传递边界。Lua 一侧已裁决依赖版本
    （5.5.1）、嵌套上限（保持 200）、沙箱库（尽可能开放）、首期不施加步数
    预算与 C 代码约束，并已上板；分配改用 PSRAM 的新批已实测可用（根因与修法见
-   下节）。仍待裁决的（PSRAM 的用量红线、供电修法是否进板级定义、文件加载、
-   数字类型等）见 [docs/lua-feasibility.md](lua-feasibility.md)。
+   下节；供电已按上游做法进板级定义并真机验证）。仍待裁决的（PSRAM 的用量
+   红线、脚本线程栈、文件加载、数字类型等）见
+   [docs/lua-feasibility.md](lua-feasibility.md)。
 5. 硬件授权后单独规定负载、测量仪器、触发条件与停止阈值，再验证
    当前源码的物理停止、真复位、掉电与长期运行。历史日志不足以
    代替此验收。

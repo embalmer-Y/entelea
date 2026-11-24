@@ -12,8 +12,8 @@
 - **首期不施加步数预算，也不约束 C 代码**。步数预算的机制保留在实验里作为
   证据，启用与否另行裁决。本文把这句话理解为只针对执行时间方面的限制，内存
   配额不在其列。
-- **分配改用 PSRAM**，改完重新评估。这一项目前受阻于真板上 PSRAM 不应答，见
-  “PSRAM”一节。
+- **分配改用 PSRAM**，改完重新评估。已完成：栈与解释器堆经链接段放进 PSRAM，
+  板上实测通过（此前受阻于真板上 PSRAM 不应答，根因与修法见“PSRAM”一节）。
 
 本文先前在 5.4.9 上的测量已被 5.5.1 的测量取代，数字以本文为准。
 
@@ -56,13 +56,21 @@ python3 tools/build_zephyr.py --app platform/zephyr/tests/lua_vm --board native_
 | `-DLUA_VM_STACK_KB=<n>` | 1024 | 实验线程的栈；栈测量窗口是它的一半 |
 
 板级（ESP32-P4，`esp32p4c5_core_board/esp32p4/hpcore`）：`tools/build_zephyr.py`
-用 `--board-root platform/zephyr`、SDK 1.0.1、`riscv64-zephyr-elf` 14.3.0、模块
-`hal_espressif`、`--cmake-arg=-DESP_IDF_PATH=.deps/zephyrproject/modules/hal/espressif`。
-真机通过的配置是 `-DLUA_VM_MAXCCALLS=200 -DLUA_VM_QUOTA_KB=128
--DLUA_VM_HEAP_KB=192 -DLUA_VM_STACK_KB=352`。烧录与监听沿用
-`factory/forge/gate/gate_run.sh` 的参数：`esptool --chip esp32p4 -p /dev/ttyACM0
+用 `--board-root platform/zephyr`、`--sdk .deps/zephyr-sdk-1.0.1 --sdk-version 1.0.1`、
+`--toolchain riscv64-zephyr-elf --gcc-version 14.3.0`、
+`--module hal_espressif=.deps/zephyrproject/modules/hal/espressif`。
+
+真机通过的配置有两组（都带 `-DLUA_VM_FEASIBILITY=ON -DLUA_VM_MAXCCALLS=200`）：
+
+- 不用 PSRAM（栈与堆全在 SRAM）：`-DLUA_VM_QUOTA_KB=128 -DLUA_VM_HEAP_KB=192
+  -DLUA_VM_STACK_KB=352`。
+- 用 PSRAM（本文的最终数字）：`-DCONFIG_ESP_SPIRAM=y -DLUA_VM_QUOTA_KB=512
+  -DLUA_VM_HEAP_KB=1024 -DLUA_VM_STACK_KB=1024`。板级定义已在设备树里给叠封
+  PSRAM 供电并开启稳压器驱动，应用侧不需要任何供电代码。
+
+烧录沿用 `factory/forge/gate/gate_run.sh` 的参数：`esptool --chip esp32p4 -p /dev/ttyACM0
 -b 921600 write-flash --flash-mode dio --flash-freq 80m --flash-size 16MB 0x2000
-build/<dir>/zephyr/zephyr.bin`，控制台 115200，经 EN 引脚硬复位。
+build/<dir>/zephyr/zephyr.bin`，控制台 115200，经 EN 引脚硬复位后监听约 4 分钟。
 
 ## 实测结果
 
@@ -212,8 +220,9 @@ PROJECT EXECUTION SUCCESSFUL
 213.5 秒，与此前应用侧供电的结果一致。应用侧的临时文件
 `platform/zephyr/tests/lua_vm/src/psram_power.c` 已删除。
 
-**与 ESP-IDF 6.1 的对照（同一块板）。** 按所有者要求在 `~/sdk/esp-idf-v6.1`
-安装了 ESP-IDF 6.1，并做了最小自检（`~/workspace/sandbox/esp-idf-psram-selftest`）：
+**与 ESP-IDF 6.1 的对照（同一块板）。** 按所有者要求在
+`~/sdk/espressif-esp32p4/esp-idf-v6.1` 安装了 ESP-IDF 6.1（仓库外，不是本工程的
+构建依赖），并做了最小自检（`~/workspace/sandbox/esp-idf-psram-selftest`）：
 
 ```
 I (hex_psram): vendor id : 0x0d (AP)   density : 0x07 (256 Mbit)   BitMode : X16 Mode
@@ -301,9 +310,10 @@ PSRAM 之后、同一块板没有断过电，紧接着刷入 Zephyr 镜像，读
 烧录前把 16 MB 闪存完整备份到仓库之外（`/home/emb/project/entelea-board-backup/`，
 含校验和）；板上原先是一个 ESP-IDF v6.1 应用，已被测试镜像覆盖。SRAM 上共三次
 完整运行通过（上限 80、上限 200，以及改造为独立线程后的上限 200），每次约
-215–225 秒；PSRAM 侧先失败六次（原因见“PSRAM”一节），补上供电后三次通过：一次是
+215–225 秒；PSRAM 侧先失败六次（原因见“PSRAM”一节），补上供电后四次通过：一次是
 带临时诊断代码的镜像（228 秒），一次是应用侧供电的正式版本（228 秒，失败掩码
-0x0），最后一次是改用板级定义供电的版本（213.5 秒，失败掩码 0x0）。
+0x0），一次是改用板级定义供电的版本（213.5 秒，失败掩码 0x0），最后一次是在
+板级定义里把底板未接的 LDO 通道 3/4 显式关闭后的版本（212.9 秒，失败掩码 0x0）。
 板上现在驻留的是最后那个 PSRAM 镜像，每次复位运行约 4 分钟。
 
 ## 需要所有者裁决
@@ -312,14 +322,15 @@ PSRAM 之后、同一块板没有断过电，紧接着刷入 Zephyr 镜像，读
 不施加步数预算、不约束 C 代码；分配改用 PSRAM；内存红线为三档、按总内存
 （最低 M − D ≥ 64 KB、紧凑 D ≤ 0.70 M、宽松 D ≤ 0.50 M）。
 
+随 PSRAM 可用而不再需要裁决：PSRAM 的供电修法（已按上游做法进板级定义并真机
+验证）；脚本线程的栈（放进 PSRAM 后 1 MB 的栈放得下，无需临时降低嵌套上限）。
+
 仍待裁决或需要所有者动手：
 
 1. **PSRAM 的用量红线**：先前的裁决是“启用即新批、要定新红线”。栈和堆放进
    PSRAM 后 SRAM 占用降到 90 KB，PSRAM 用量规则还没有定。
-2. **脚本线程的栈**：在 PSRAM 可用之前，按上限 200 需要约 300 KB 的栈，产品
-   镜像放不下；是否在 PSRAM 可用前临时降低上限。
-3. 文件加载函数（`dofile`/`loadfile`）保持关闭是否同意：它们没有文件可加载，
+2. 文件加载函数（`dofile`/`loadfile`）保持关闭是否同意：它们没有文件可加载，
    将来有文件系统时也应经过宿主的权限闸。
-5. 数字类型：保持 `double`（板上走 ROM 软浮点）还是改 32 位。
-6. 5.5.1 是否批准为产品镜像的构建依赖（本次裁决确定了版本）。
-7. 板上现在驻留的是测试镜像，每次复位运行约 4 分钟；原固件可随时从备份恢复。
+3. 数字类型：保持 `double`（板上走 ROM 软浮点）还是改 32 位。
+4. 5.5.1 是否批准为产品镜像的构建依赖（本次裁决确定了版本）。
+5. 板上现在驻留的是测试镜像，每次复位运行约 4 分钟；原固件可随时从备份恢复。
