@@ -42,6 +42,12 @@
 #include <espressif/esp32p4/esp32p4_rev3.dtsi>
 #include "esp32p4c5_core_board_esp32p4_hpcore-pinctrl.dtsi"
 #include <espressif/partitions_0x2000_default_16M.dtsi>
+#include <zephyr/dt-bindings/memory-attr/memory-attr.h>
+#include <zephyr/dt-bindings/memory-attr/memory-attr-sw.h>
+
+/* Size of the in-package PSRAM; the device and the allocation pool below
+ * must agree. */
+#define PSRAM_BYTES DT_SIZE_M(32)
 
 / {
 	model = "Osptek ESP32-P4C5 Core Board HP Core";
@@ -60,6 +66,22 @@
 	aliases {
 		watchdog0 = &wdt0;
 	};
+
+	/*
+	 * The in-package PSRAM, all of it, is the allocation pool of the C
+	 * library's allocator (platform/zephyr/libc_heap.c; owner decision
+	 * 2026-11-24). It starts at the base of the mapped PSRAM, where the
+	 * linker's ext_dram_seg starts too, so nothing may be placed there at
+	 * link time: CONFIG_ESP_SPIRAM_HEAP_SIZE is 0 in the board defconfig and
+	 * the shared multi-heap is off (a zero-size window must not be handed to
+	 * it). An app that needs static objects in PSRAM shrinks this node.
+	 */
+	psram_heap: memory@48000000 {
+		compatible = "zephyr,memory-region";
+		reg = <0x48000000 PSRAM_BYTES>;
+		zephyr,memory-region = "PSRAM_HEAP";
+		zephyr,memory-attr = <(DT_MEM_CACHEABLE | DT_MEM_SW(ATTR_SW_ALLOC_CACHE))>;
+	};
 };
 
 &flash0 {
@@ -68,7 +90,7 @@
 };
 
 &psram0 {
-	size = <DT_SIZE_M(32)>;
+	size = <PSRAM_BYTES>;
 };
 
 /* v3.x silicon: valid CPU frequencies are 100/200/400 MHz */

@@ -68,6 +68,12 @@ python3 tools/build_zephyr.py --app platform/zephyr/tests/lua_vm --board native_
   -DLUA_VM_HEAP_KB=1024 -DLUA_VM_STACK_KB=1024`。板级定义已在设备树里给叠封
   PSRAM 供电并开启稳压器驱动，应用侧不需要任何供电代码。
 
+板级默认配置自 2026-11-24 起启用 PSRAM 并把整块 PSRAM 声明为 libc 分配器的池子
+（`platform/zephyr/libc_heap.c`）。本实验不链接那个分配器，解释器的内存仍来自它
+在 PSRAM 段里自建的专用堆，不经过 libc；在这个新配置下已重新上板验证通过
+（失败掩码 0x0，212.9 秒）。以后若让本镜像也使用 libc 分配器，需要缩小板级的池子
+节点，给这里链接器放置的栈和堆让出位置。
+
 烧录沿用 `factory/forge/gate/gate_run.sh` 的参数：`esptool --chip esp32p4 -p /dev/ttyACM0
 -b 921600 write-flash --flash-mode dio --flash-freq 80m --flash-size 16MB 0x2000
 build/<dir>/zephyr/zephyr.bin`，控制台 115200，经 EN 引脚硬复位后监听约 4 分钟。

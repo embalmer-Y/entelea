@@ -10,3 +10,14 @@ CONFIG_GPIO=y
 # 1.8 V) declared in the board devicetree. Same as the upstream boards with
 # in-package PSRAM.
 CONFIG_REGULATOR=y
+# The in-package PSRAM is on (owner rule: enable it when the board has it)
+# and is one allocation pool for the C library's allocator: see the
+# psram_heap node in the board devicetree and platform/zephyr/libc_heap.c.
+CONFIG_ESP_SPIRAM=y
+# The pool takes the whole PSRAM, so no window is left to the shared
+# multi-heap. The heap is switched off as well: a zero-size region must not
+# be registered with it.
+CONFIG_ESP_SPIRAM_HEAP_SIZE=0
+# CONFIG_SHARED_MULTI_HEAP is not set
+# Allocation pools are declared in the devicetree.
+CONFIG_MEM_ATTR=y

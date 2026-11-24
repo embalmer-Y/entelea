@@ -87,6 +87,10 @@ zephyr_include_directories(${WAMR_DIR}/core/iwasm/include
                            ${ENTELEA_ROOT}/platform/zephyr
                            ${CMAKE_CURRENT_SOURCE_DIR}
                            ${FACTORY_PKG_DIR})
+# The C library's allocator serves from the devicetree pools (the board's PSRAM).
+include(${ENTELEA_ROOT}/platform/zephyr/libc_heap.cmake)
+entelea_libc_heap_enable()
+
 target_compile_definitions(app PRIVATE ENTELEA_NO_RAM_BACKEND=1)
 if(FACTORY_DEV_AUTOCONFIRM)
   target_compile_definitions(app PRIVATE FACTORY_DEV_AUTOCONFIRM=1)

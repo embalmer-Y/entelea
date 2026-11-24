@@ -1,5 +1,6 @@
 """Verify the three-tier total-memory gate and that it fails closed on bad maps."""
 
+import struct
 import subprocess
 import sys
 import tempfile
@@ -60,11 +61,77 @@ def big(size, address=0x4FF20200):
     return f".big            0x{address:08x}      0x{size:x}"
 
 
+RODATA = 0x40000000
+NO_ELF = object()
+
+
+def elf_image(pools):
+    """Build a 32-bit little-endian ELF holding the pool table Zephyr generates.
+
+    `pools` is a sequence of (name, address, size); None builds an image that
+    has no table at all, i.e. does not use the allocator.
+    """
+    names = bytearray(b"\x00")
+    table = bytearray()
+    for name, address, size in pools or ():
+        name_at = len(names)
+        names += name.encode() + b"\x00"
+        table += struct.pack(
+            "<IIII", RODATA + 16 * len(pools) + name_at, address, size, 0x10001
+        )
+    rodata = bytes(table) + bytes(names)
+    strtab = b"\x00mem_attr_region\x00"
+    symbols = bytes(16)
+    if pools is not None:
+        symbols += struct.pack("<IIIBBH", 1, RODATA, len(table), 0x11, 0, 1)
+    rodata_at = 52
+    symtab_at = rodata_at + len(rodata)
+    strtab_at = symtab_at + len(symbols)
+    section_table_at = strtab_at + len(strtab)
+    section_names = b"\x00.rodata\x00.symtab\x00.strtab\x00"
+    header = b"\x7fELF" + bytes([1, 1, 1, 0]) + bytes(8)
+    header += struct.pack(
+        "<HHIIIIIHHHHHH",
+        2,
+        243,
+        1,
+        RODATA,
+        0,
+        section_table_at,
+        0,
+        52,
+        0,
+        0,
+        40,
+        5,
+        0,
+    )
+
+    def section(name, kind, address, offset, size, link=0):
+        return struct.pack("<10I", name, kind, 0, address, offset, size, link, 0, 4, 0)
+
+    sections = b"".join(
+        (
+            section(0, 0, 0, 0, 0),
+            section(1, 1, RODATA, rodata_at, len(rodata)),
+            section(9, 2, 0, symtab_at, len(symbols), 3),
+            section(17, 3, 0, strtab_at, len(strtab)),
+            section(0, 3, 0, section_table_at + 5 * 40, len(section_names)),
+        )
+    )
+    return header + rodata + symbols + strtab + sections + section_names
+
+
 class BoardRamTests(unittest.TestCase):
-    def run_checker(self, content, tier=None):
+    def run_checker(self, content, tier=None, pools=None, elf=NO_ELF):
+        """`pools` is the pool table of the ELF next to the map; `elf` replaces it."""
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "image.map"
             path.write_text(content)
+            if elf is NO_ELF:
+                path.with_name("zephyr.elf").write_bytes(elf_image(pools))
+            elif elf is not None:
+                path.with_name("zephyr.elf").write_bytes(elf)
             command = [sys.executable, str(CHECKER), str(path)]
             if tier:
                 command += ["--tier", tier]
@@ -249,6 +316,89 @@ class BoardRamTests(unittest.TestCase):
     def test_unknown_line_is_rejected(self):
         result = self.run_checker(board_map(), tier="generous")
         self.assertEqual(result.returncode, 2)
+
+    def test_declared_pool_is_listed_and_checked_but_is_not_demand(self):
+        pool = ("memory@48000000", 0x48000000, 0x2000000)
+        result = self.run_checker(board_map(psram=0x2000000), pools=[pool])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for expected in (
+            "memory@48000000 (declared pool)  33554432",
+            row("Total memory demand", f"{BASE_DEMAND} / {0x2000000 + SRAM_WINDOW}"),
+            row(
+                "Static demand + declared pools",
+                f"{BASE_DEMAND + 0x2000000} / {0x2000000 + SRAM_WINDOW}",
+            ),
+        ):
+            self.assertIn(expected.rstrip(), result.stdout)
+
+    def test_image_without_the_allocator_has_no_pool(self):
+        result = self.run_checker(board_map(psram=0x2000000), pools=None)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("(declared pool)", result.stdout)
+        empty = self.run_checker(board_map(psram=0x2000000), pools=[])
+        self.assertEqual(empty.returncode, 0, empty.stdout + empty.stderr)
+        self.assertNotIn("(declared pool)", empty.stdout)
+
+    def test_pool_may_also_be_carved_out_of_sram(self):
+        result = self.run_checker(
+            board_map(), pools=[("sram_pool", 0x4FF30000, 0x1000)]
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(
+            row(
+                "Static demand + declared pools",
+                f"{BASE_DEMAND + 0x1000} / {SRAM_WINDOW}",
+            ).rstrip(),
+            result.stdout,
+        )
+
+    def test_pool_overlapping_an_output_section_is_rejected(self):
+        for content, pool, section in (
+            (
+                board_map(
+                    psram=0x2000000, psram_section=".ext_ram.data   0x48001000   0x100"
+                ),
+                ("memory@48000000", 0x48000000, 0x2000000),
+                ".ext_ram.data",
+            ),
+            (board_map(), ("sram_pool", 0x4FF20100, 0x40), "sw_isr_table"),
+        ):
+            with self.subTest(pool=pool):
+                result = self.run_checker(content, pools=[pool])
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn(
+                    f"declared pool {pool[0]} overlaps output section {section}",
+                    result.stderr,
+                )
+
+    def test_pool_outside_the_memory_or_crossing_a_boundary_is_rejected(self):
+        for pool in (
+            ("nowhere", 0x20000000, 0x1000),
+            ("straddling", 0x47FF0000, 0x20000),
+            ("too_large", 0x48000000, 0x2000001),
+        ):
+            with self.subTest(pool=pool):
+                result = self.run_checker(board_map(psram=0x2000000), pools=[pool])
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("is not inside one memory window", result.stderr)
+
+    def test_overlapping_pools_are_rejected(self):
+        result = self.run_checker(
+            board_map(psram=0x2000000),
+            pools=[
+                ("first", 0x48000000, 0x100000),
+                ("second", 0x48080000, 0x100000),
+            ],
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("declared pools overlap: first, second", result.stderr)
+
+    def test_missing_or_unreadable_elf_is_rejected(self):
+        for elf in (None, b"", b"not an elf at all", b"\x7fELF" + bytes(60)):
+            with self.subTest(elf=elf):
+                result = self.run_checker(board_map(), elf=elf)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("FAIL", result.stderr)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,20 @@
+/* 仿真器：用板子 2 MB 内存的高端模拟两块内存区域（镜像之上），设备树写法
+ * 与任何真实目标相同，只是地址不同。两块用来覆盖“第一块分满后用第二块”。 */
+#include <zephyr/dt-bindings/memory-attr/memory-attr.h>
+#include <zephyr/dt-bindings/memory-attr/memory-attr-sw.h>
+
+/ {
+	sim_pool_a: memory@140000 {
+		compatible = "zephyr,memory-region";
+		reg = <0x00140000 0x00070000>;
+		zephyr,memory-region = "SIM_POOL_A";
+		zephyr,memory-attr = <(DT_MEM_CACHEABLE | DT_MEM_SW(ATTR_SW_ALLOC_CACHE))>;
+	};
+
+	sim_pool_b: memory@1b0000 {
+		compatible = "zephyr,memory-region";
+		reg = <0x001b0000 0x00048000>;
+		zephyr,memory-region = "SIM_POOL_B";
+		zephyr,memory-attr = <(DT_MEM_CACHEABLE | DT_MEM_SW(ATTR_SW_ALLOC_CACHE))>;
+	};
+};

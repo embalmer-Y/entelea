@@ -13,7 +13,7 @@
 | HP SRAM（sramhp@0x4ff00000） | 768 KB | 主运行 RAM（dram0 段+noinit 从中划） |
 | 其中 nocache 窗（sramhp_nocache） | 16 KB | DMA 一致性窗口（PMA 非 cache 映射） |
 | LP SRAM | 32 KB | LP 域；仅 guard 的复位风暴计数使用 retained RAM（`guardretained`），其余未用 |
-| PSRAM（psram0，叠封） | 32 MB | 2026-11-24 已启用并实测可用。所钉定的 Zephyr 4.5 带有 ESP32-P4 的 PSRAM 支持（`CONFIG_ESP_SPIRAM`），此前“无上游集成”的说法不成立。**供电**：叠封 PSRAM 与其锁相环由芯片内部 LDO 通道 2（1.8 V）供电，ESP-IDF 默认打开它，Zephyr 侧要求板级设备树声明该通道——本板原定义漏了这项，导致 PSRAM 无电；现已按上游做法补上（设备树 `ldo2@2` + `CONFIG_REGULATOR=y`）并真机验证。见 [lua-feasibility.md](lua-feasibility.md) |
+| PSRAM（psram0，叠封） | 32 MB | 2026-11-24 起板级默认启用，并且**整块是 libc 分配器的池子**（owner 裁决：PSRAM 有多大就给多大）。池子由板级设备树节点 `psram_heap` 声明，`platform/zephyr/libc_heap.c` 在 APPLICATION 级登记；链接器不再往 PSRAM 里放任何东西（`CONFIG_ESP_SPIRAM_HEAP_SIZE=0`、共享多堆关闭）。真机实测整块可分配、可写可读（8 项用例全过），见 §6.7。供电：叠封 PSRAM 与其锁相环由芯片内部 LDO 通道 2（1.8 V）供电，板级设备树已声明（`ldo2@2` + `CONFIG_REGULATOR=y`）。见 [lua-feasibility.md](lua-feasibility.md) |
 | NOR flash（boya） | 16 MB | 分区表 0x2000 布局（storage 1MB@0x120000） |
 | RTC VBAT | — | 88-pin pad 84（严禁悬空，接 3.3V） |
 
@@ -159,7 +159,8 @@ Zephyr 里是 `.noinit` 对象，需要另行处理（链接片段或段属性�
    见 [lua-feasibility.md](lua-feasibility.md)）。
 2. 在真板上核实 6.1 的四条约束。
 3. 落实布局：`.noinit` 对象与线程栈进 PSRAM、libc `malloc` 改走 PSRAM 堆，
-   逐镜像实测 SRAM 与 PSRAM 的占用。
+   逐镜像实测 SRAM 与 PSRAM 的占用。（libc `malloc` 已于 2026-11-24 落实，见 6.7；
+   `.noinit` 对象与线程栈仍未做。）
 4. 按布局后的实测值定三档红线的口径与数值，改 `tools/check_board_ram.py`。
 
 ### 6.5 按总内存的评估（owner 2026-11-24：不限于本芯片）
@@ -235,9 +236,9 @@ Lua 的 SRAM 量测镜像（638,448 B）不满足紧凑档；Lua 的 PSRAM 镜�
 增量是稳压器驱动的数据，各档归属不变。最新上板镜像（LDO 通道 3/4 显式关闭后）
 为 SRAM 90,520 B + PSRAM 3,146,368 B，总内存需求 3,236,888 B。
 
-这五个产品镜像现在都带稳压器驱动（PSRAM 的供电已打开），但**都还没有启用**
-`CONFIG_ESP_SPIRAM`：所有者“有 PSRAM 则必须开启”这条裁决目前只在 Lua 量测
-镜像上落实，产品镜像的启用与内存布局属于 6.4 的后续工作。
+上表是板级默认启用 PSRAM 之前的数字。2026-11-24 起五个产品镜像都启用 PSRAM
+并把 libc 分配器接到整块 PSRAM 池子上（§6.7），静态 SRAM 各增加约 9.2 KB
+（PSRAM 初始化与分配器模块）。
 
 ### 6.6 malloc 与动态内存：调研与链接级验证（2026-11-24，未上板）
 
@@ -366,6 +367,76 @@ POST_KERNEL 优先级 36，在控制器由驱动启动的芯片上会过早；�
   断言，保证链接器放入的内容不越入池子区；其余芯片没有这个问题。
 - `-Wl,--wrap` 是 GNU ld 与 lld 的特性，与芯片无关但与工具链有关。替代做法是给
   Zephyr 的 libc 打一个很小的补丁，仓库已有 6 个钉定补丁的先例。
+
+### 6.7 落实记录：libc 分配器改走整块 PSRAM（2026-11-24）
+
+裁决（owner 2026-11-24）：走 6.6 里“设备树声明池子”的通用分配器；libc 入口用
+`-Wl,--wrap`；P4 的池子“PSRAM 有多大就给多大”；烧录验证随时允许。
+
+实现：
+
+- `platform/zephyr/libc_heap.c`（约 240 行，不含芯片名、地址或链接符号）：
+  `malloc`/`realloc`/`free`/`aligned_alloc` 从设备树里带 `ATTR_SW_ALLOC_CACHE`
+  的内存区域分配；APPLICATION 级登记；池子分满返回空并置 `ENOMEM`，不回退到
+  SRAM；池子登记之前、以及没声明池子的板子上，走 Zephyr 原生分配器，从那里得到
+  的内存也归还到那里。`platform/zephyr/libc_heap.cmake` 提供
+  `entelea_libc_heap_enable()`，应用在 `find_package(Zephyr)` 之后调用。
+- 板级：设备树新增 `psram_heap`（`memory@48000000`，大小与 `psram0` 共用宏
+  `PSRAM_BYTES`）；默认配置 `CONFIG_ESP_SPIRAM=y`、`CONFIG_ESP_SPIRAM_HEAP_SIZE=0`、
+  关闭 `CONFIG_SHARED_MULTI_HEAP`（零大小的区域不能交给它）、`CONFIG_MEM_ATTR=y`。
+  链接器不再往 PSRAM 里放任何东西；以后要往 PSRAM 里放静态对象，就缩小这个节点。
+- 五个产品镜像（`minimal`、`hw_flash_persist`、`hw_wifi_netmon`、
+  `hw_factory_intake`、`hw_cloud_chat`）都已接入。
+- 测试 `platform/zephyr/tests/heap`：8 个用例，真机与仿真器跑同一份源码；仿真器
+  用 `boards/native_sim.overlay` 声明两块池子，顺带覆盖“第一块分满后用第二块”。
+- `tools/check_board_ram.py` 从 ELF 的 `mem_attr_region` 表读出池子：核对它整个
+  落在内存范围内、不与任何输出段或其它池子重叠，并单独列出；没有可读的 ELF 即失败。
+  池子是运行期堆，与此前“剩余 SRAM 即 libc 堆”的口径一致，**不计入**总内存需求 D；
+  结果里另给一行“静态占用加池子”。
+
+真机结果（日志在仓库外 `~/workspace/runs/2026-11-24-libc-heap/`）：
+
+| 项 | 结果 |
+| --- | --- |
+| 池子登记 | `[libc-heap] pool memory@48000000: 33554432 bytes at 0x48000000` |
+| `tests/heap` | 8 个用例全过，1.97 秒 |
+| 整块 PSRAM | 按 64 KB 分到分不动为止，每块逐字节写入并读回校验，全部归还后一次拿下约 32 MB：通过（1.09 秒）。此前只验证到前 3 MB，现在整块都验证了 |
+| 并发 | 3 个线程交错分配、增长、释放各 300 轮，互不破坏，之后池子完整：通过 |
+| 与原生分配器混用 | 池子登记之前取得的内存增长、释放都归还原处：通过 |
+| 速度数据点 | `malloc(1024)`+写+释放 1000 次共 4 毫秒；顺序写 4 MB 47 毫秒（约 85 MB/s）；间隔 64 字节读 4 MB 31 毫秒 |
+| 仿真器 | 同一份测试 8 个用例全过（两块池子） |
+| native_sim 回归 | 23 个目标、25 个套件、278 个用例全过 |
+
+产品镜像都只做了编译链接和静态核对（池子表、不重叠、调用全部转入），数字如下；
+除 `minimal` 外都**没有上板**：其余四个会写持久化状态或访问真实网络与云端。
+
+| 镜像 | 静态 SRAM | 比接入前增加 | 池子 | 静态占用加池子 / 总内存 |
+| --- | ---: | ---: | ---: | ---: |
+| minimal | 100,472 | +9,216 | 33,554,432 | 33,654,904 / 34,340,864 |
+| hw_flash_persist | 107,388 | +9,216 | 33,554,432 | 33,661,820 / 34,340,864 |
+| hw_wifi_netmon | 289,592 | +9,396 | 33,554,432 | 33,844,024 / 34,340,864 |
+| hw_factory_intake | 458,492 | +9,220 | 33,554,432 | 34,012,924 / 34,340,864 |
+| hw_cloud_chat | 490,992 | +9,332 | 33,554,432 | 34,045,424 / 34,340,864 |
+
+静态占用三档都过；若把池子也算作需求，则是总内存的 98%–99%，紧凑与宽松两档都
+不过——两种口径的含义见“需要所有者确认”。
+
+**顺带暴露的既有缺陷（与本批无关，对照实验确认）。** `minimal` 首次上板时无限
+重启：打印第一行后约 3 秒被软件复位，110 秒内 21 次。用提交 `c8989c0`（不含本批
+改动）在隔离目录里构建同一个镜像，现象相同。逐层定位：
+
+1. 失败的是启动步骤 4（`storage_init`），返回 `-8`（`ENTELEA_E_IO`）。
+2. flash 读调用本身没有报错；是审计分区扫描遇到了既非擦除状态也非合法记录的内容
+   （`page_scan` 的 `SLOT_CORRUPT`）。
+3. 烧录前的整片备份（`~/project/entelea-board-backup/`）显示存储分区（0x120000 起
+   1 MB）里是厂商固件留下的无关数据；板上读回的内容与备份一致。
+4. 启动步骤失败后走失效保护（停止喂狗），约 3 秒后被任务看门狗复位；而防复位风暴的
+   `guard_bootguard` 是最后一步，永远轮不到执行，所以是无限循环。
+
+也就是说，**产品镜像刷到存储分区不干净的板子上会无限重启**（例如出厂的新板子）。
+把板上存储分区擦除后（`esptool erase-region 0x120000 0x100000`），`minimal` 正常
+启动，守卫因之前的连续异常复位进入 SAFE-HALT，心跳每 5 秒一次。处置见
+[rf1-validation.md](rf1-validation.md) 的对应记录。
 
 ## 7. 厂商资料与硬件连接核对（2026-11-24）
 

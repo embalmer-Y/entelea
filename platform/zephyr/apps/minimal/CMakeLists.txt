@@ -6,6 +6,9 @@ project(entelea_minimal)
 set(ENTELEA_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
 zephyr_include_directories(${ENTELEA_ROOT}/framework/include
                            ${ENTELEA_ROOT}/platform/zephyr)
+# The C library's allocator serves from the devicetree pools (the board's PSRAM).
+include(${ENTELEA_ROOT}/platform/zephyr/libc_heap.cmake)
+entelea_libc_heap_enable()
 target_compile_definitions(app PRIVATE ENTELEA_NO_RAM_BACKEND=1
                                       ENTELEA_REQUIRE_GUARD_BOOTGUARD=1)
 target_sources(app PRIVATE

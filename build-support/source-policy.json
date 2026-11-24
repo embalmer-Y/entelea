@@ -47,6 +47,7 @@
     "framework/services/config/guard.c"
   ],
   "platform_zephyr": [
+    "platform/zephyr/libc_heap.c",
     "platform/zephyr/clock.c",
     "platform/zephyr/boot_steps.c",
     "platform/zephyr/flash_store.c",
@@ -95,7 +96,9 @@
     "platform/zephyr/guard_ports.c",
     "platform/zephyr/guard_store.c",
     "platform/linux/guard_ports.c",
-    "platform/linux/tests/guard_concurrency.c"
+    "platform/linux/tests/guard_concurrency.c",
+    "platform/zephyr/tests/heap/src/main.c",
+    "platform/zephyr/tests/heap/src/sim_region_source.c"
   ],
   "diagnostics": {},
   "protected_output_sources": [

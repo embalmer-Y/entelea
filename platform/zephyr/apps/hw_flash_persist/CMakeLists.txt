@@ -9,6 +9,10 @@ set(ENTELEA_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
 zephyr_include_directories(${ENTELEA_ROOT}/framework/include
                            ${ENTELEA_ROOT}/platform/zephyr)
 # 板级 SRAM 预算：RAM 镜像数组不编（flash 后端为唯一持久面）。
+# The C library's allocator serves from the devicetree pools (the board's PSRAM).
+include(${ENTELEA_ROOT}/platform/zephyr/libc_heap.cmake)
+entelea_libc_heap_enable()
+
 target_compile_definitions(app PRIVATE ENTELEA_NO_RAM_BACKEND=1)
 target_sources(app PRIVATE
   main.c
